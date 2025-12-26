@@ -21,6 +21,10 @@ logs/
 .env.local
 .env.*.local
 
+# Sensible Config-Dateien (mit echten Credentials)
+config/database.php
+config/users.php
+
 # Temporary files
 tmp/
 temp/
