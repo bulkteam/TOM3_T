@@ -1,0 +1,601 @@
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+TOM
+Architektur, Denkmodell &
+Umsetzungsleitfaden
+Hybrid-Architektur: SQL (System of Record) + Neo4j (Relationship Intelligence)
+Dieses Dokument konserviert die vollständige Gedankenlinie aus der Konzeptarbeit: vom
+"Vorgang als Motor" über Engines und Projektlogik bis zur Hybrid-Architektur (SQL +
+Neo4j), Sync-Vertrag und UI-Journeys. Es ist bewusst ausführlich: Es soll als Referenz
+dienen, neue Teammitglieder onboarden und spätere Erweiterungen leiten.
+Leserziel: Nach der Lektüre soll klar sein, was TOM ist, warum es so modelliert ist, was TOM
+nicht ist, und wie man es schrittweise baut – technisch und organisatorisch.
+Kernprinzip
+
+Kurzform
+
+Motor
+
+Vorgang (Case): Status + Phase + Engine + Regeln
+
+Container
+
+Projekt: bündelt mehrere Vorgänge, Stakeholder, Lieferanten, Meilensteine
+
+Frontdoor
+
+Customer Inbound: Annahme + Minimalstruktur + Routing
+
+Qualität
+
+Blocker, Pflichtoutputs, Rückläufermechanik
+
+Vertrieb
+
+Inside Sales ist proaktiv; Inbound ist nicht Inside Sales
+
+Architektur
+
+SQL führt operativ, Neo4j liefert Beziehungskontext & Insights
+
+Stand: 2025-12-23
+
+Seite 1
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+Inhalt
+• 1. Ausgangslage und Problemraum
+• 2. Leitgedanken von TOM
+• 3. Der Vorgang als Motor
+• 4. Engine-Modell und Rollenlogik
+• 5. Projektlogik als erste Klasse
+• 6. Stakeholder, Organisationen, Organigramme, Firmengeflechte
+• 7. Architekturentscheidung: Hybrid SQL + Neo4j
+• 8. Datenmodelle: SQL (operativ) und Neo4j (Beziehung)
+• 9. TOM-UI: Journeys und zentrale Screens
+• 10. Sync-Vertrag SQL→Neo4j (Outbox/CDC, Idempotenz, Versionierung)
+• 11. Umsetzungspfad: Phasen, Abhängigkeiten, technische Voraussetzungen
+• 12. Anti-Patterns und Leitplanken
+• Appendix A: Beispiel-Cypher Queries
+• Appendix B: Beispiel-Regeln (Pseudologik) und Pflichtoutputs je Phase
+
+Stand: 2025-12-23
+
+Seite 2
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+1. Ausgangslage und Problemraum
+Viele CRM-Implementierungen scheitern nicht an der Datenbank oder am UI, sondern an
+der falschen Grundmetapher: Kontakt und Historie stehen im Mittelpunkt, während Arbeit
+und Entscheidungen implizit bleiben. In der Praxis führt das zu "Datenablage mit
+Erinnerungsfunktion" – und genau das ist zu wenig für eure Komplexität (Anfragen,
+Reklamationen, Projekte, Lieferketten, mehrere Rollen).
+
+1.1 Typische Symptome
+• Anfragen versanden, weil niemand systemisch verantwortlich ist.
+• Übergaben sind Freitext und damit unzuverlässig.
+• Inside Sales wird als "Auffangbecken" missbraucht und verliert Fokus.
+• Order Admin wird in inhaltliche Diskussionen gezogen (Scope/Schuld), obwohl das formal
+ist.
+
+• Projekte werden in einem "Hauptvorgang" versteckt, wodurch Meilensteine und
+Stakeholder unsichtbar werden.
+
+• Reporting ist mühsam, weil Status/Entscheidungen nicht strukturiert erfasst werden.
+
+1.2 Zielzustand
+TOM soll Arbeit steuern und Menschen entlasten, indem es:
+
+• Vorgänge automatisch aus Events erzeugt, minimal strukturiert und routet.
+• Pflichtoutputs erzwingt (Zusammenfassung, Ziel, offene Punkte, Empfehlung).
+• Übergaben standardisiert und Rückläufer technisch erzwingt (keine Diskussion, nur
+Begründung).
+
+• Status aus Regeln ableitet (nicht manuell setzt).
+• Projekte als Container für mehrere Vorgänge, Lieferanten und Stakeholder etabliert.
+• Beziehungsintelligenz (Neo4j) nutzt, um Kontext und Vorschläge zu liefern (ohne
+Workflow-Regeln zu dominieren).
+
+Stand: 2025-12-23
+
+Seite 3
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+2. Leitgedanken von TOM
+Leitgedanken sind nicht Dekoration, sondern spätere Entscheidungsregeln: Wenn jemand
+ein Feature oder eine Abkürzung fordert, prüft ihr es gegen diese Leitgedanken.
+
+2.1 Vorgang ist der Motor
+Der Vorgang (Case) ist die kleinste Einheit, die TOM steuern kann. Ein Vorgang entsteht aus
+einem Event (Mail, Anruf, Wiedervorlage, Pflicht) oder intern (Eskalation, Folgefall). Er trägt
+Status, Phase, Engine und Pflichtoutputs.
+
+2.2 Projekt ist der Container
+Ein Projekt bündelt mehrere Vorgänge, mehrere Parteien (Kunde, Lieferanten, Berater) und
+Meilensteine. Projekte sind keine "Case-Links", sondern erste Klasse – sonst fehlt
+Steuerbarkeit.
+
+2.3 Rollen statt Personen
+Owner und Zuständigkeiten werden rollenbasiert modelliert (Customer Inbound, OPS,
+Inside Sales, Outside Sales, Order Admin). Personen können Rollen ausführen, aber das
+System bleibt stabil, wenn Personen wechseln.
+
+2.4 Regeln statt Erinnerungen
+Status und Eskalationen entstehen aus Regeln: Pflichtfelder, Aufgaben, Fristen, Übergaben.
+Kein manuelles "Status setzen" als Workaround.
+
+2.5 Neo4j ist Kontext, nicht Wahrheit
+Neo4j ist für Beziehungen, Netzwerke, Pfadsuchen und Vorschläge. Operative Steuerung
+bleibt in SQL. Damit verhindert ihr, dass unvollständige Organigramme falsche
+Workflow-Entscheidungen auslösen.
+
+Stand: 2025-12-23
+
+Seite 4
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+3. Der Vorgang als Motor
+3.1 Einheitliches Statusmodell (systemisch)
+Status ist engine-neutral und beschreibt den technischen Zustand. Empfohlenes
+Minimalset:
+Status
+
+Bedeutung
+
+Typische Ursache
+
+neu
+
+angelegt, noch nicht bearbeitet
+
+Event erzeugt Case
+
+in_bearbeitung
+
+aktive Bearbeitung
+
+Owner arbeitet in Phase
+
+wartend_intern
+
+Abhängigkeit intern
+
+Task bei Rolle offen
+
+wartend_extern
+
+Abhängigkeit extern
+
+Kunde/Lieferant offen
+
+blockiert
+
+Pflichtinfo/Regel fehlt
+
+Pflichtoutput fehlt, Übergabe unvollständig
+
+eskaliert
+
+SLA/Regel verletzt
+
+Frist überschritten, Rückläuferhäufung
+
+abgeschlossen
+
+Ziel erreicht oder sauber beendet
+
+Abschlusskriterium erfüllt
+
+Regel: Status wird nicht manuell gesetzt. Er wird berechnet aus Phase, offenen Tasks, SLA
+und Pflichtoutputs.
+
+3.2 Pflichtoutputs und Blocker
+Blocker sind die wichtigste Qualitätsmechanik. Ein Vorgang darf ohne Mindestinformation
+nicht weiterwandern.
+
+• Zusammenfassung (2 Sätze, paraphrasiert, kein "siehe Mail")
+• Ziel/Erwartung (was soll erreicht werden?)
+• Kategorie (für Routing/Reporting)
+• Offene Punkte (konkret, als Liste)
+• Empfehlung (für OPS und Sales bei Übergaben)
+
+3.3 Übergaben und Rückläufer
+Übergaben sind keine E-Mails, sondern definierte Übergabeobjekte. Wenn Ziel-Engine
+ablehnt, springt der Vorgang technisch zurück (vorherige Phase), Status wird blockiert,
+Begründung ist Pflicht. Rückläufer werden gemessen – sie sind Qualitätsindikator, kein
+persönlicher Vorwurf.
+
+3.4 Vorgangskoordinator
+Der Vorgangskoordinator ist die Funktion, die die erste Zuweisung sicherstellt und
+Routingqualität schützt. Das kann eine Rolle im Customer Inbound sein oder ein dedizierter
+OPS-Koordinator – aber die Funktion muss existieren, sonst entsteht wieder "niemand fühlt
+sich zuständig".
+
+Stand: 2025-12-23
+
+Seite 5
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+4. Engine-Modell und Rollenlogik
+Engines sind Laufzeit-Zustände eines Vorgangs: welche Logik gerade führt. Ein Vorgang hat
+immer genau eine führende Engine (keine Parallelführung, kein CC-Prozess).
+
+4.1 Customer Inbound (Frontdoor)
+Mandat: Annahme, Minimalstruktur, Klassifikation, Routing. Keine Lösung, keine
+Verhandlung.
+
+4.2 OPS (Inhalt & Qualität)
+Mandat: Strukturierung, Klärung, Entscheidungsreife, Empfehlung. Keine formalen Orders,
+keine finalen Konditionen.
+
+4.3 Inside Sales (proaktiv)
+Mandat: Wachstum, Akquise, Qualifizierung. Inside Sales bearbeitet keine Customer
+Inbounds. TOM liefert Listen/Trigger, kein Inbound-Ping-Pong.
+
+4.4 Outside Sales (Entscheidung & Abschluss)
+Mandat: Entscheidungsführung, Verhandlung, Abschluss/Abbruch. Keine inhaltliche
+Neukonstruktion (OPS), keine formale Abwicklung (Admin).
+
+4.5 Order Admin (Formalität & Risiko)
+Mandat: Aufträge/RMAs, Dokumente, Termine, ERP-Korrektheit. Keine
+Ursachen-/Schulddiskussion.
+
+4.6 Do/Don't Matrix (hart)
+Rolle
+
+Darf
+
+Customer Inbound
+
+Annehmen, paraphrasieren, kategorisieren, routen
+lösen, Preise nennen, Versprechen über Ursachen/Schuld
+
+OPS
+
+klären, anreichern, empfehlen, Kundenkommunikation
+abschließen
+inhaltlich
+(kommerziell),
+führen
+Orders/RMA anlegen ohne Klärung
+
+Inside Sales
+
+proaktiv kontaktieren, Leads qualifizieren, übergeben
+Inbound-Anfragen/Reklamationen "mitnehmen"
+
+Outside Sales
+
+verhandeln, commit erzwingen, Abschluss
+
+Order Admin
+
+formal prüfen/anlegen, abwickeln, Abweichungen
+inhaltlich
+melden
+argumentieren oder Lösungen verhandeln
+
+Stand: 2025-12-23
+
+Darf nicht (Beispiele)
+
+Scope neu definieren, Admin-Felder korrigieren
+
+Seite 6
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+5. Projektlogik als erste Klasse
+Bei euch ist "Projekt" häufig. Deshalb ist Projekt ein eigenes Objekt mit Status,
+Meilensteinen, Beteiligten und Stakeholdern. Ein Projekt bündelt mehrere Vorgänge, auch
+aus unterschiedlichen Engines (Anfrage, Angebot, Auftrag, Reklamation, Änderung).
+
+5.1 Projekt vs. Vorgang
+Projektstatus ist nicht Case-Status. Ein Projekt kann aktiv sein, obwohl einzelne Cases
+blockiert oder eskaliert sind. Umgekehrt kann ein Case abgeschlossen sein, während das
+Projekt weiterläuft.
+
+5.2 Mehrlieferanten-/Lösungsprojekte
+Ein Projekt kann mehrere Lieferanten, Berater und Ingenieurbüros enthalten. Diese werden
+als Projekt-Partner modelliert (DELIVERS/ADVISES), damit man Lösungen als Netzwerk sieht
+– nicht als linearer Ticketstrom.
+
+5.3 Meilensteine
+Meilensteine sind projektweite Zustände (z.B. RFQ erhalten, Angebot gesendet, PO
+erhalten, Lieferung, Abnahme). Meilensteine können an Cases gekoppelt werden, bleiben
+aber projektweit sichtbar.
+
+5.4 Stakeholder (projektweit)
+Stakeholder sind Personen aus beliebigen Organisationen: Kunde, Lieferant, Berater,
+Engineering-Firma. Wichtig ist die Rolle im Projekt (Decider/Influencer/User/etc.) und
+optional Einfluss/Decision Power.
+
+Stand: 2025-12-23
+
+Seite 7
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+6. Stakeholder, Organisationen, Organigramme,
+Firmengeflechte
+6.1 Warum das in Neo4j gehört
+Hierarchien und Netzwerke (Orgchart, Mutter/Töchter, Beteiligungen, Stakeholder über
+Projekte) sind graph-native. In SQL ist das möglich, aber Abfragen und Visualisierung
+werden schnell schwerfällig.
+
+6.2 Modellprinzip: Org als universelle Entität
+Statt Customer/Supplier/Consultant getrennt zu modellieren, wird in Neo4j eine universelle
+Entität Org verwendet, mit Eigenschaft org_kind. So können Stakeholder aus allen Entities
+einheitlich verknüpft werden.
+
+6.3 Organigramm (Abteilungen/Teams)
+Abteilungen/Teams werden als OrgUnit-Knoten modelliert, mit Hierarchie (SUBUNIT_OF)
+und Zugehörigkeit zu Org (UNIT_OF). Personen hängen an Org und optional an OrgUnits
+(MEMBER_OF). Zeitliche Gültigkeit (since/until) ist wichtig.
+
+6.4 Firmengeflechte
+Firmenhierarchien werden über PART_OF modelliert (Tochter/Holding/Division/Brand).
+Beteiligungen können später mit OWNS(pct) ergänzt werden. Wichtig: Diese Daten sind oft
+unvollständig – deshalb sind sie Kontext, nicht Workflow-Wahrheit.
+
+Stand: 2025-12-23
+
+Seite 8
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+7. Architekturentscheidung: Hybrid SQL + Neo4j
+Die Hybridentscheidung ist bewusst: SQL ist stark bei Transaktionen, Constraints, Reporting
+und operativen Workflows. Neo4j ist stark bei Pfadsuchen, Netzwerken, Ähnlichkeit und
+Kontext.
+
+7.1 SQL als System of Record
+• Workflows (Status, Phase, Blocker, Eskalation) sind transaktional und müssen konsistent
+sein.
+
+• Berechtigungen und Auditing sind einfacher und robuster in SQL.
+• Queues/Listen/Reports sind Standard (z.B. alle blockierten OPS-Cases).
+
+7.2 Neo4j als Relationship Intelligence
+• Projekt-Landschaften: wer liefert/berät in welchem Projekt?
+• Stakeholder-Netzwerk: wer ist Decider/Influencer über mehrere Projekte?
+• Konzernkontext: Mutter/Töchter und aktive Projekte/Cases.
+• Impact-Analyse: welche Cases/Meilensteine hängen indirekt an einer Blockade?
+
+7.3 Harte Leitplanke
+Neo4j darf keine operativen Zustände setzen. Keine Statuswechsel, keine Phase, keine
+Blocker. Neo4j liefert nur Lesekontext und Vorschläge, die durch Menschen oder
+SQL-Regeln bestätigt werden.
+
+Stand: 2025-12-23
+
+Seite 9
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+8. Datenmodelle: SQL (operativ) und Neo4j (Beziehung)
+8.1 SQL – Kernobjekte (konzeptionell)
+SQL-Entitäten: Org/Customer, Contact/Person, Project, ProjectMilestone, ProjectMember,
+Case, Task, Document, Note/Timeline, CaseLink, ProjectCase, Role, UserRole, PhaseDef,
+StatusDef, RequirementDef, PhaseRequirement, SLA, EscalationEvent, OutboxEvent.
+
+8.2 Neo4j – Nodes/Edges (v1)
+Nodes: Org, Person, OrgUnit, Project, (optional Case). Relationships: PART_OF, OWNS(opt),
+UNIT_OF, SUBUNIT_OF, AFFILIATED_WITH, MEMBER_OF, SPONSORS, DELIVERS, ADVISES,
+STAKEHOLDER_IN, HAS_CASE(opt), LINKED_TO(opt).
+
+8.3 Beispielhafte Queries (Kurzform)
+Siehe Appendix A für konkrete Cypher-Queries (Konzernkontext, Stakeholder pro Projekt,
+Solution-Graph, Multiplikatoren).
+
+Stand: 2025-12-23
+
+Seite 10
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+9. TOM-UI: Journeys und zentrale Screens
+9.1 Zentrale Screens
+MVP-Screens: (1) Customer Inbound Inbox, (2) Projektübersicht, (3) Case-Detail, (4)
+Übergabe-Dialog, (5) Rückläufer-Dialog, (6) Rollen-Queues.
+
+9.2 Journey: Reklamation mit RMA (Kurzablauf)
+Event (Anruf) → Customer Inbound (Annahme/Klassifikation) → OPS
+(Sachverhalt/Empfehlung) → ggf. Order Admin (RMA formal) → OPS Abschluss. Wichtig:
+Admin kommuniziert Formalitäten, OPS kommuniziert Inhalt.
+
+9.3 Journey: Projekt-RFQ bis Auftrag
+Inbound RFQ → Projekt anlegen/verknüpfen → OPS: Entscheidungsreife → Outside Sales:
+Verhandlung/Commit → Order Admin: Auftrag/AB/Termine → Projekt-Meilenstein "PO
+erhalten".
+
+9.4 Graph Panels im UI
+Auf Projektseite: Solution-Graph (beteiligte Orgs), Stakeholder-Panel (inkl. Abteilung),
+Konzernkontext (Mutter/Töchter) als read-only Panels aus Neo4j.
+
+Stand: 2025-12-23
+
+Seite 11
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+10. Sync-Vertrag SQL→Neo4j
+10.1 Grundprinzip
+SQL ist Quelle der Wahrheit. Änderungen werden über Outbox/CDC als Events exportiert.
+Ein Sync-Worker schreibt idempotent nach Neo4j (MERGE auf uuid).
+
+10.2 Idempotenz, Versionierung, Deletes
+Jede Node/Edge erhält sql_updated_at/version. Nur neuere Stände überschreiben.
+Zugehörigkeiten und Hierarchien werden bevorzugt via since/until beendet statt gelöscht.
+Harte Deletes nur, wenn Entität in SQL entfernt wird.
+
+10.3 Betrieb
+Monitoring: Sync-Lag, Fehlerquote, Queue-Backlog. Dead-Letter-Queue für fehlerhafte
+Events. Replayfähigkeit der Outbox für Migrationen.
+
+Stand: 2025-12-23
+
+Seite 12
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+11. Umsetzungspfad: Phasen, Abhängigkeiten, technische
+Voraussetzungen
+11.1 Phase 0 – Voraussetzungen
+Technisch: SQL DB (z.B. PostgreSQL), API-Schicht, Auth/RBAC, Audit/Logging.
+Organisatorisch: Rollenbesetzung, Mandate, Eskalationswege.
+
+11.2 Phase 1 – Vorgang + Engines (operativer Kern)
+Implementiert Case/Task/Document/Note, Statusberechnung, Pflichtoutputs, Blocker,
+Übergabe-Checklisten, Rückläufer.
+
+11.3 Phase 2 – Projekt (Container)
+Projektobjekt, Projekt-Cases (M:N), Meilensteine, Projekt-Partner, Projekt-Stakeholder
+(mindestens in SQL), Projektübersicht.
+
+11.4 Phase 3 – Graph v1
+Neo4j aufsetzen, Sync-Worker (Outbox/CDC), Nodes/Edges spiegeln, 3 UI-Panels
+(Solution-Graph, Stakeholder, Konzernkontext).
+
+11.5 Phase 4 – Intelligence
+Impact-Analyse, Ähnlichkeitsvorschläge, Inside-Sales-Triggerlisten (Graph + Regeln).
+
+Stand: 2025-12-23
+
+Seite 13
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+12. Anti-Patterns und Leitplanken
+• Inside Sales als Inbound-Auffangbecken: zerstört Fokus und verwischt Mandate.
+• Manuelles Statussetzen: macht Reporting wertlos und Regeln wirkungslos.
+• Übergaben per E-Mail ohne Checkliste: erzeugt stille Fehler und Eskalationen.
+• Neo4j als Workflow-Wahrheit: unvollständige Hierarchien führen zu falschen
+Entscheidungen.
+
+• Projekt als "Hauptcase": verliert Meilensteine, Partner, Stakeholder-Sichtbarkeit.
+• CC-Prozess (mehrere Engines gleichzeitig): niemand ist verantwortlich, alle sind
+informiert.
+Leitplanke: Wenn eine Erweiterung nicht in Engine/Projekt/Vorgang-Logik passt, ist sie
+entweder (a) ein externes Systemthema oder (b) muss als eigener Vorgangstyp modelliert
+werden – aber niemals als Freitext.
+
+Stand: 2025-12-23
+
+Seite 14
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+Appendix A: Beispiel-Cypher Queries
+Hinweis: Parameter $projectUuid, $orgUuid und $minProjects. Diese Queries dienen als Startpunkt für
+Panels/Analysen.
+
+A1 Stakeholder eines Projekts (inkl. Org/OrgUnit)
+MATCH (pr:Project {uuid:$projectUuid})
+MATCH (p:Person)-[s:STAKEHOLDER_IN]->(pr)
+OPTIONAL MATCH (p)-[:AFFILIATED_WITH]->(org:Org)
+OPTIONAL MATCH (p)-[:MEMBER_OF]->(u:OrgUnit)-[:UNIT_OF]->(org)
+RETURN p.display_name AS name, org.name AS orgName, org.org_kind AS orgKind,
+u.name AS orgUnit, s.role AS role, s.influence AS influence, s.decision_power AS
+decisionPower
+ORDER BY influence DESC, decisionPower DESC, name ASC;
+
+A2 Projekt-Solution-Graph (beteiligte Organisationen)
+MATCH (pr:Project {uuid:$projectUuid})
+OPTIONAL MATCH (org:Org)-[r]->(pr)
+WHERE type(r) IN ['SPONSORS','DELIVERS','ADVISES','PARTICIPATES_IN']
+RETURN pr.name AS project, org.name AS orgName, org.org_kind AS orgKind, type(r) AS
+relation,
+r.scope AS scope, r.contract_ref AS contractRef
+ORDER BY relation, orgKind, orgName;
+
+A3 Konzernkontext (Mutter/Töchter) + aktive Projekte
+MATCH (root:Org {uuid:$orgUuid})
+MATCH (org:Org)
+WHERE (org)-[:PART_OF*0..5]->(root) OR (root)-[:PART_OF*0..5]->(org)
+OPTIONAL MATCH (org)-[:SPONSORS]->(pr:Project)
+WHERE pr.status = 'active'
+RETURN org.name AS orgName, org.org_kind AS orgKind, collect(DISTINCT pr.name) AS
+activeProjects
+ORDER BY orgName;
+
+A4 Stakeholder-Multiplikatoren (Personen in vielen Projekten)
+MATCH (p:Person)-[:STAKEHOLDER_IN]->(pr:Project)
+WHERE pr.status = 'active'
+OPTIONAL MATCH (p)-[:AFFILIATED_WITH]->(org:Org)
+WITH p, org, count(DISTINCT pr) AS activeProjects
+WHERE activeProjects >= $minProjects
+RETURN p.display_name AS name, org.name AS orgName, org.org_kind AS orgKind,
+activeProjects
+ORDER BY activeProjects DESC, name ASC;
+
+Stand: 2025-12-23
+
+Seite 15
+
+TOM – Architektur, Denkmodell & Umsetzungsleitfaden (Hybrid: SQL + Neo4j)
+
+Appendix B: Beispiel-Regeln (Pseudologik) und Pflichtoutputs
+je Phase
+Die folgenden Beispiele sind bewusst pragmatisch und können direkt in
+Tickets/Implementierung überführt werden.
+
+B1 Pflichtoutputs pro Phase (MVP)
+Engine/Phase
+
+Pflichtoutputs (blockierend)
+
+CI-A Annahme
+
+Kunde/Person, Zusammenfassung, Dringlichkeit, Kanal
+
+CI-B Klassifikation
+
+Kategorie, Ziel-Engine, Kommunikationsstatus
+
+CI-C Übergabe
+
+Übergabeobjekt (Zusammenfassung, Ziel, offene Punkte), erzeugter Fach-Case
+
+OPS-A Strukturierung
+
+Ziel, offene Punkte, Kontext (Referenzen)
+
+OPS-B Klärung
+
+Fakten vs. Annahmen markiert, Tasks erstellt, Rückfragen dokumentiert
+
+OPS-C Entscheidungsreife
+
+Empfehlung, Risiken, Angebotsgrundlage/Variante
+
+OS-B Entscheidungsführung
+
+Next Steps, dokumentierte Reaktionen, Abschlusswahrscheinlichkeit (optional)
+
+OA-A Prüfung
+
+Vollständigkeitscheck bestanden oder Rückläufergrund
+
+B2 Beispiel-Pseudologik (Statusberechnung)
+IF missing_required_outputs(case.phase) THEN status = 'blockiert'
+ELSE IF sla_breached(case) THEN status = 'eskaliert'
+ELSE IF waiting_on_external(case) THEN status = 'wartend_extern'
+ELSE IF waiting_on_internal_tasks(case) THEN status = 'wartend_intern'
+ELSE IF case.closed_at IS NOT NULL THEN status = 'abgeschlossen'
+ELSE status = 'in_bearbeitung'
+
+Wichtig: Diese Reihenfolge ist absichtlich. Blocker schlagen alles. Abschluss erst nach
+erfüllten Kriterien. Eskalation ist ein Zustand, kein "Schrei" – sie triggert definierte
+Benachrichtigungen und ggf. Rollen-Owner.
+
+Stand: 2025-12-23
+
+Seite 16
+
+

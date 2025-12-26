@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOM3 - Vorgangssteuerung</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>TOM3</h1>
+                <p class="subtitle">Vorgangssteuerung</p>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#dashboard" class="nav-link active" data-page="dashboard">
+                    <span class="icon">📊</span> Dashboard
+                </a></li>
+                <li><a href="#cases" class="nav-link" data-page="cases">
+                    <span class="icon">📋</span> Vorgänge
+                </a></li>
+                <li><a href="#projects" class="nav-link" data-page="projects">
+                    <span class="icon">📁</span> Projekte
+                </a></li>
+                <li><a href="#orgs" class="nav-link" data-page="orgs">
+                    <span class="icon">🏢</span> Organisationen
+                </a></li>
+                <li><a href="#accounts" class="nav-link" data-page="accounts">
+                    <span class="icon">👥</span> Meine Kunden
+                </a></li>
+                <li><a href="#persons" class="nav-link" data-page="persons">
+                    <span class="icon">👤</span> Personen
+                </a></li>
+                <li><a href="monitoring.html" class="nav-link" target="_blank">
+                    <span class="icon">🔍</span> Monitoring
+                </a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard -->
+            <div id="page-dashboard" class="page active">
+                <div class="page-header">
+                    <h2>Dashboard</h2>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📋</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stat-cases-total">-</div>
+                            <div class="stat-label">Vorgänge gesamt</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔄</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stat-cases-active">-</div>
+                            <div class="stat-label">In Bearbeitung</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏸️</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stat-cases-waiting">-</div>
+                            <div class="stat-label">Wartend</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📁</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="stat-projects">-</div>
+                            <div class="stat-label">Projekte</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-section">
+                    <h3>Aktuelle Vorgänge</h3>
+                    <div id="dashboard-recent-cases" class="case-list"></div>
+                </div>
+            </div>
+
+            <!-- Cases Page -->
+            <div id="page-cases" class="page">
+                <div class="page-header">
+                    <h2>Vorgänge</h2>
+                    <button class="btn btn-primary" id="btn-create-case">+ Neuer Vorgang</button>
+                </div>
+                <div class="filters">
+                    <select id="filter-status" class="filter-select">
+                        <option value="">Alle Status</option>
+                        <option value="neu">Neu</option>
+                        <option value="in_bearbeitung">In Bearbeitung</option>
+                        <option value="wartend_intern">Wartend (intern)</option>
+                        <option value="wartend_extern">Wartend (extern)</option>
+                        <option value="blockiert">Blockiert</option>
+                        <option value="eskaliert">Eskaliert</option>
+                        <option value="abgeschlossen">Abgeschlossen</option>
+                    </select>
+                    <select id="filter-engine" class="filter-select">
+                        <option value="">Alle Engines</option>
+                        <option value="customer_inbound">Customer Inbound</option>
+                        <option value="ops">OPS</option>
+                        <option value="inside_sales">Inside Sales</option>
+                        <option value="outside_sales">Outside Sales</option>
+                        <option value="order_admin">Order Admin</option>
+                    </select>
+                    <input type="text" id="filter-search" class="filter-input" placeholder="Suche...">
+                </div>
+                <div id="cases-list" class="case-list"></div>
+            </div>
+
+            <!-- Case Detail Modal -->
+            <div id="modal-case-detail" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-case-title">Vorgang Details</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modal-case-body">
+                        <!-- Wird dynamisch gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Org Detail Modal (Stammdatenblatt) -->
+            <div id="modal-org-detail" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-org-title">Organisation Details</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modal-org-body">
+                        <!-- Wird dynamisch gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Projects Page -->
+            <div id="page-projects" class="page">
+                <div class="page-header">
+                    <h2>Projekte</h2>
+                    <button class="btn btn-primary" id="btn-create-project">+ Neues Projekt</button>
+                </div>
+                <div id="projects-list" class="project-list"></div>
+            </div>
+
+            <!-- Orgs Page - Search-first Design -->
+            <div id="page-orgs" class="page org-search-page">
+                <div class="org-search-header">
+                    <h1>Organisation finden</h1>
+                    <button class="btn btn-secondary" id="btn-create-org">+ Neue Organisation</button>
+                </div>
+                
+                <!-- Hauptsuchfeld (Search-first) -->
+                <div class="org-main-search">
+                    <div class="search-box-large">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="org-search-input" class="org-search-input-large" 
+                               placeholder="Firma suchen …" 
+                               autocomplete="off"
+                               autofocus>
+                        <div id="org-search-results" class="org-search-results-large"></div>
+                    </div>
+                    <div class="search-hint">
+                        (Name, Branche, Ort, Umsatz, Kürzel)
+                    </div>
+                    
+                    <!-- Filter einblenden Button -->
+                    <button class="btn-filter-toggle" id="btn-toggle-filters">
+                        <span class="filter-icon">⚙️</span>
+                        <span class="filter-text">Filter einblenden</span>
+                        <span class="filter-arrow">▾</span>
+                    </button>
+                </div>
+                
+                <!-- Ausklappbare Filter -->
+                <div id="org-filters-panel" class="org-filters-panel" style="display: none;">
+                    <div class="filters-grid">
+                        <div class="filter-group">
+                            <label>Branche</label>
+                            <div id="filter-industries" class="filter-checkboxes"></div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Ort / Region</label>
+                            <input type="text" id="filter-city" class="filter-input-small" placeholder="PLZ / Stadt">
+                            <input type="number" id="filter-radius" class="filter-input-small" placeholder="⌀ km" min="0" max="1000">
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Umsatz (letztes Jahr)</label>
+                            <div class="filter-range">
+                                <input type="number" id="filter-revenue-min" class="filter-input-small" placeholder="Min (Mio €)" min="0">
+                                <span>–</span>
+                                <input type="number" id="filter-revenue-max" class="filter-input-small" placeholder="Max (Mio €)" min="0">
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Mitarbeiter</label>
+                            <div id="filter-employees" class="filter-checkboxes">
+                                <label><input type="checkbox" value="0-10"> <10</label>
+                                <label><input type="checkbox" value="10-50"> 10–50</label>
+                                <label><input type="checkbox" value="50-250"> 50–250</label>
+                                <label><input type="checkbox" value="250+"> >250</label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Status</label>
+                            <div id="filter-status" class="filter-checkboxes">
+                                <label><input type="checkbox" value="lead"> Lead</label>
+                                <label><input type="checkbox" value="prospect"> Interessent</label>
+                                <label><input type="checkbox" value="customer"> Kunde</label>
+                                <label><input type="checkbox" value="inactive"> Inaktiv</label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Kundenklasse</label>
+                            <div id="filter-tiers" class="filter-checkboxes">
+                                <label><input type="checkbox" value="A"> A-Kunde</label>
+                                <label><input type="checkbox" value="B"> B-Kunde</label>
+                                <label><input type="checkbox" value="C"> C-Kunde</label>
+                                <label><input type="checkbox" value="S"> Strategisch (S)</label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Typ</label>
+                            <div id="filter-org-kind" class="filter-checkboxes">
+                                <label><input type="checkbox" value="customer"> Kunde</label>
+                                <label><input type="checkbox" value="supplier"> Lieferant</label>
+                                <label><input type="checkbox" value="consultant"> Berater</label>
+                                <label><input type="checkbox" value="engineering_firm"> Ingenieurbüro</label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>
+                                <input type="checkbox" id="filter-include-archived" data-filter="include_archived">
+                                Auch archivierte Organisationen anzeigen
+                            </label>
+                        </div>
+                    </div>
+                    <div class="filters-actions">
+                        <button class="btn btn-secondary" id="btn-reset-filters">Filter zurücksetzen</button>
+                    </div>
+                </div>
+                
+                <!-- Zuletzt verwendet Sektion -->
+                <div id="org-recent-section" class="org-recent-section">
+                    <h3>Zuletzt verwendet</h3>
+                    <div id="org-recent-list" class="org-recent-list"></div>
+                </div>
+                
+                <!-- Ergebnisliste -->
+                <div id="orgs-list" class="org-list-results"></div>
+                
+                <!-- Leerer Zustand / "Meintest du...?" -->
+                <div id="org-empty-state" class="org-empty-state" style="display: none;">
+                    <div class="empty-icon">❌</div>
+                    <h3>Keine Organisation gefunden</h3>
+                    <div id="org-suggestions" class="org-suggestions"></div>
+                    <button class="btn btn-secondary" id="btn-adjust-filters">Filter anpassen</button>
+                </div>
+            </div>
+
+            <!-- Persons Page -->
+            <div id="page-persons" class="page">
+                <div class="page-header">
+                    <h2>Personen</h2>
+                    <button class="btn btn-primary" id="btn-create-person">+ Neue Person</button>
+                </div>
+                <div id="persons-list" class="person-list"></div>
+            </div>
+
+            <!-- Accounts Page (Account Dashboard) -->
+            <div id="page-accounts" class="page">
+                <div class="page-header">
+                    <h2>Meine Kunden</h2>
+                    <div class="account-header-actions">
+                        <select id="account-filter-health" class="filter-select">
+                            <option value="">Alle</option>
+                            <option value="red">🔴 Aufmerksamkeit nötig</option>
+                            <option value="yellow">🟡 Risiken</option>
+                            <option value="green">🟢 Alles OK</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Aufmerksamkeit nötig Block -->
+                <div id="account-attention-section" class="account-attention-section" style="display: none;">
+                    <h3>⚠️ Aufmerksamkeit nötig</h3>
+                    <div id="account-attention-list" class="account-list"></div>
+                </div>
+                
+                <!-- Alle Accounts -->
+                <div id="accounts-list" class="account-list"></div>
+                
+                <!-- Empty State -->
+                <div id="accounts-empty-state" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">👤</div>
+                    <p>Keine Kunden zugeordnet</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Toast Notifications - Muss vor den Scripts sein -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,16 @@
+# TOM3 - Apache Rewrite Rules
+
+RewriteEngine On
+RewriteBase /TOM3/public/
+
+# API Routes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+# Frontend Routes (SPA)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.html [QSA,L]
+
+

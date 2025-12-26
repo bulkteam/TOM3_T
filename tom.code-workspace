@@ -1,0 +1,26 @@
+{
+	"folders": [
+		{
+			"path": "../konnexum"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"powershell.cwd": "TOM3",
+		"github-actions.workflows.pinned.workflows": [
+			
+		],
+		"scm.autoReveal": false,
+		"git.autoReveal": false,
+		"explorer.autoReveal": false,
+		"githubPullRequests.showReviewSummary": false,
+		"githubPullRequests.autoOpenReviewPanel": false,
+		"githubPullRequests.enableReviewMode": false,
+		"cursor.chat.autoContext": false,
+		"cursor.chat.includeChangedFiles": false,
+		"cursor.chat.smartContext": false,
+		"cursor.chat.autoAddFiles": false
+	}
+}

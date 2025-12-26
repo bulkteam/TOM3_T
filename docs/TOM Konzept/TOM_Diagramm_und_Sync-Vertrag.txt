@@ -1,0 +1,237 @@
+TOM – Architekturdiagramm (C4-light) & Sync-Vertrag
+Hybrid: SQL (System of Record) + Neo4j (Relationship
+Intelligence)
+Dieses Dokument ergänzt das Architekturkonzept um ein übersichtliches Systemdiagramm und einen
+klaren Sync-Vertrag (SQL → Neo4j) inklusive Mapping, Regeln und Betriebsanforderungen.
+
+TOM UI
+
+Graph Panels (read-only)
+
+Projekt- / Vorgang- / Inbox-Views
+
+Stakeholder
+Konzern
+Impact
+
+write
+
+read
+
+TOM Core API / Workflow Engine
+Status/Phase/Rules
+Rechte & Rollen
+Uebergaben & SLA
+
+TX
+
+queries
+
+SQL DB (System of Record)
+
+Neo4j (Relationship Intelligence)
+
+Projects
+Cases
+Tasks
+Docs
+
+Org/Person/OrgUnit
+Project
+Stakeholder
+
+Outbox / CDC
+SQL change log
+
+events
+
+Sync Worker
+
+upsert
+
+Outbox/CDC
+Upsert Nodes/Edges
+Idempotent
+
+Monitoring
+Lag
+metrics
+Errors
+Replay
+
+events
+
+insights
+
+ERP / E-Mail / Telefonie / DMS
+
+BI / Analytics
+
+Events & Referenzen
+
+SQL KPIs + Graph Insights
+
+Legende: Alle Schreibaktionen (Status/Phase/Uebergaben) laufen ueber den TOM Core und persistieren in SQL.
+Neo4j ist read-optimiert und liefert Beziehungskontext (Stakeholder, Org-Hierarchien, Projekt-Landschaft) sowie
+optionale Empfehlungen.
+
+Sync-Vertrag: SQL → Neo4j
+Ziel: Neo4j wird aus SQL (Quelle der Wahrheit) gespiegelt, um schnelle Netzwerkabfragen und
+Visualisierungen zu ermöglichen. Der Graph ist nicht entscheidungsführend für Workflow-Regeln; er
+liefert Kontexte und Insights.
+
+1. Scope v1 (Nodes/Edges)
+Neo4j Node
+
+Quelle (SQL)
+
+Schluessel / Sync-Hinweise
+
+Org
+
+org/customers (Stammdaten)
+
+uuid als PK; org_kind (customer, supplier,
+consultant, engineering_firm, …)
+
+Person
+
+contacts/persons
+
+uuid als PK; affiliation und orgunit ueber
+Beziehungen (nicht als Spalte)
+
+OrgUnit
+
+org_units
+
+uuid als PK; Hierarchie via SUBUNIT_OF;
+Zugehoerigkeit via UNIT_OF
+
+Project
+
+projects
+
+uuid als PK; status/priority/target_date; Sponsor-Org
+via SPONSORS
+
+Case (optional v1)
+
+cases
+
+uuid als PK; type/status/phase/engine als Properties
+
+2. Relationship-Mapping (v1)
+Neo4j Relationship
+
+Quelle (SQL)
+
+Bedeutung / Properties
+
+(Org)-[:PART_OF]->(Org)
+
+org_relations
+
+rel_type=subsidiary/division/brand;
+since/until
+
+(Org)-[:OWNS]->(Org) (opt.)
+
+org_ownerships
+
+pct; since/until
+
+(OrgUnit)-[:UNIT_OF]->(Org)
+
+org_units
+
+Abteilung gehoert zu Org
+
+(OrgUnit)-[:SUBUNIT_OF]->(OrgUni
+t)
+
+org_unit_relations
+
+Abteilungshierarchie; since/until (opt.)
+
+(Person)-[:AFFILIATED_WITH]->(Or
+g)
+
+person_affiliations
+
+kind=employee/advisor/…; title; since/until
+
+(Person)-[:MEMBER_OF]->(OrgUnit
+)
+
+person_orgunit_membership
+s
+
+role_title; since/until
+
+(Org)-[:SPONSORS]->(Project)
+
+projects
+
+Owner-/Kunden-Org des Projekts
+
+(Org)-[:DELIVERS]->(Project)
+
+project_partners
+
+scope; contract_ref
+
+(Org)-[:ADVISES]->(Project)
+
+project_partners
+
+Berater/Ingenieurbuero etc.
+
+(Person)-[:STAKEHOLDER_IN]->(P
+roject)
+
+project_stakeholders
+
+role; influence; decision_power; since/until
+
+(Project)-[:HAS_CASE]->(Case)
+(opt.)
+
+project_case
+
+workstream; is_primary
+
+(Case)-[:LINKED_TO]->(Case)
+(opt.)
+
+case_link
+
+type=parent_child/successor/dependency/ref
+erence
+
+3. Sync-Mechanik
+Quelle: SQL ist System of Record. Aenderungen werden ueber Outbox/CDC in eine Event-Queue
+geschrieben (oder aus einer Outbox-Tabelle gelesen).
+
+Idempotenz: Jeder Sync-Job arbeitet per Upsert (MERGE auf uuid). Wiederholte Events duerfen keinen
+doppelten Graph erzeugen.
+Versionierung: Jede Node/Edge erhaelt sql_updated_at oder version. Nur neuere Staende
+ueberschreiben aeltere.
+Deletes: Zugehoerigkeiten und Hierarchien werden bevorzugt ueber since/until beendet. Harte Deletes
+nur bei echten SQL-Loeschungen.
+Lag: Ziel z. B. < 60s fuer Projekte/Stakeholder. Historie kann in Batch nachgezogen werden.
+
+4. Betrieb: Monitoring & Recovery
+• Monitoring: Sync-Lag, Fehlerquote, Queue-Backlog, Neo4j-Write-Latenz
+• Dead-Letter-Queue: fehlerhafte Events isolieren, Stream laeuft weiter
+• Replay: Outbox-Events wiederholbar (z. B. nach Schemaaenderungen)
+• Security: Neo4j read-only fuer Business-User; Schreibrechte nur fuer Sync-Worker
+
+5. Technische Voraussetzungen
+• SQL DB (z. B. PostgreSQL) mit Outbox-Tabelle oder CDC (z. B. Debezium)
+• Neo4j (Start: Community) + Treiber (Bolt) fuer Sync-Worker
+• Sync-Worker Service (Container) mit Retry-Logik und Idempotenz
+• TOM Core: schreibt nur SQL; liest Graph nur fuer Panels/Insights
+• Schema Governance: Versionierung + Migrationen
+
+

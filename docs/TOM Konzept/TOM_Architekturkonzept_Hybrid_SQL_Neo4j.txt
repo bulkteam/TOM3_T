@@ -1,0 +1,94 @@
+TOM – Architekturkonzept
+Hybrid-Architektur (SQL + Neo4j)
+Dieses Dokument beschreibt das Zielbild, die Architekturentscheidungen und den empfohlenen
+Umsetzungspfad für TOM als vorgangs- und projektgetriebenes System. Es konsolidiert alle bisher
+erarbeiteten Erkenntnisse in einer umsetzbaren, technischen Architektur.
+
+1. Zielbild von TOM
+TOM ist kein klassisches CRM, sondern ein Vorgangs- und Entscheidungssteuerungssystem mit
+Projektfokus. Es steuert Arbeit aktiv über Status, Phasen, Regeln und Rollen und nutzt
+Beziehungsintelligenz zur Unterstützung von Entscheidungen.
+Kernprinzipien: Vorgang als Motor, Projekt als Container, Rollen statt Personen, Regeln statt
+Erinnerungen.
+
+2. Fachliches Domänenmodell
+Zentrale fachliche Objekte sind: Kunde/Organisation, Person/Kontakt, Projekt, Vorgang (Case), Aufgabe,
+Dokument und Event.
+Ein Projekt bündelt mehrere Vorgänge. Vorgänge durchlaufen Phasen und wechseln Engines (Customer
+Inbound, OPS, Inside Sales, Outside Sales, Order Admin).
+
+3. Architekturentscheidung: Hybrid
+Die Architektur folgt einem Hybridansatz:
+• Relationale SQL-Datenbank als System of Record für alle operativen und regelgetriebenen Daten.
+• Neo4j als Relationship- und Intelligence-Layer für Hierarchien, Netzwerke und komplexe Abfragen.
+SQL ist führend. Neo4j liefert Kontexte und Empfehlungen, trifft aber keine operativen Entscheidungen.
+
+4. Verantwortung der SQL-Schicht
+SQL hält die verbindliche Wahrheit für:
+• Projekte, Vorgänge, Status, Phasen, SLA, Eskalationen
+• Rollen, Berechtigungen, Pflichtfelder, Übergaben, Rückläufer
+• Dokumente, Aufgaben, Timeline-Einträge
+Alle Workflow-Entscheidungen (Blockieren, Eskalieren, Abschließen) erfolgen ausschließlich hier.
+
+5. Verantwortung der Neo4j-Schicht
+Neo4j modelliert und analysiert Beziehungen, u.a.:
+• Firmenhierarchien (Holding, Tochter, Beteiligung)
+
+• Personen, Abteilungen und Organigramme
+• Projekte mit mehreren beteiligten Organisationen (Lieferanten, Berater, Kunden)
+• Stakeholder-Netzwerke über Projekte hinweg
+Neo4j erlaubt Pfad-, Impact- und Ähnlichkeitsanalysen, ohne die operative Steuerung zu beeinflussen.
+
+6. Gemeinsame Identität & Synchronisation
+Alle relevanten Entitäten besitzen globale UUIDs. Diese werden in SQL erzeugt und in Neo4j gespiegelt.
+Die Synchronisation erfolgt ereignisbasiert (Outbox-Pattern oder CDC). Neo4j ist read-optimiert und
+idempotent befüllt.
+
+7. Konzeptionelles Datenmodell
+SQL-Entitäten: Customer/Org, Contact/Person, Project, Case, Task, Document, Role, Phase, Status,
+Requirement.
+Neo4j-Nodes: Org, Person, OrgUnit, Project, Case.
+Neo4j-Relationships: PART_OF, OWNS, AFFILIATED_WITH, MEMBER_OF, SPONSORS, DELIVERS,
+ADVISES, STAKEHOLDER_IN, HAS_CASE, LINKED_TO.
+
+8. Nutzung im TOM-UI
+Die Benutzeroberfläche bleibt SQL-zentriert (Projekt- und Vorgangsseiten).
+Neo4j liefert eingebettete Panels, z. B.:
+• Projekt-Solution-Graph (beteiligte Organisationen)
+• Stakeholder-Übersicht inkl. Abteilung und Rolle
+• Konzernkontext eines Kunden
+Alle Aktionen schreiben weiterhin in SQL.
+
+9. Sicherheit & Governance
+Rollen und Rechte werden ausschließlich in SQL geprüft.
+Neo4j ist read-only für Business-User und erhält nur die Daten, die für Analysezwecke notwendig sind.
+Hierarchische Daten dürfen unvollständig sein, werden aber zeitlich versioniert (since/until).
+
+10. Empfohlener Umsetzungspfad
+Phase 1 – Fundament
+• SQL-Datenmodell für Projekt, Case, Status, Phase, Engine
+• Rollen- & Regelwerk technisch umsetzen
+• Customer Inbound, OPS, Sales, Admin lauffähig machen
+
+Phase 2 – Graph v1
+• Neo4j aufsetzen
+• Org, Person, Project spiegeln
+• Stakeholder- und Projektbeziehungen abbilden
+• Erste Graph-Queries im UI integrieren
+Phase 3 – Intelligence
+• Firmenhierarchien vertiefen
+• Ähnlichkeits- und Impact-Analysen
+• Inside-Sales-Trigger aus Graph ableiten
+
+11. Technische Voraussetzungen
+• Relationale DB (PostgreSQL, MySQL oder vergleichbar)
+• Neo4j (Community reicht für Start)
+• Message/CDC-Mechanismus (z. B. Outbox-Tabelle, Kafka optional)
+• API-Schicht zwischen TOM-Core und UI
+• Klare Rollen- und Berechtigungsmatrix
+
+12. Schlussbemerkung
+Mit dieser Architektur ist TOM skalierbar, erweiterbar und robust. Sie trennt operative Verbindlichkeit von
+analytischer Intelligenz und erlaubt es, Komplexität kontrolliert zu beherrschen.
+
+

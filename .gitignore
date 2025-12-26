@@ -1,0 +1,47 @@
+# TOM3 - Git Ignore
+
+# Composer
+/vendor/
+composer.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# XAMPP specific
+xampp/
+
+# Database dumps (optional - kann auch committed werden)
+*.sql
+!database/migrations/*.sql
+
+# Node modules (falls später verwendet)
+node_modules/
+npm-debug.log
+
+# Build files
+dist/
+build/
+

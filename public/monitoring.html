@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOM3 - Monitoring Dashboard</title>
+    <link rel="stylesheet" href="css/monitoring.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="monitoring-container">
+        <!-- Header -->
+        <header class="monitoring-header">
+            <div class="header-content">
+                <h1>🔍 TOM3 Monitoring Dashboard</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="btn-refresh">Aktualisieren</button>
+                    <label class="auto-refresh-toggle">
+                        <input type="checkbox" id="auto-refresh" checked>
+                        <span>Auto-Refresh (30s)</span>
+                    </label>
+                    <a href="index.html" class="btn btn-primary">Zur Haupt-UI</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- System Status -->
+        <section class="status-section">
+            <h2>System Status</h2>
+            <div class="status-grid">
+                <div class="status-card" id="status-database">
+                    <div class="status-indicator" data-status="unknown"></div>
+                    <div class="status-content">
+                        <div class="status-label">PostgreSQL</div>
+                        <div class="status-value" id="db-status">Prüfe...</div>
+                    </div>
+                </div>
+                <div class="status-card" id="status-neo4j">
+                    <div class="status-indicator" data-status="unknown"></div>
+                    <div class="status-content">
+                        <div class="status-label">Neo4j</div>
+                        <div class="status-value" id="neo4j-status">Prüfe...</div>
+                    </div>
+                </div>
+                <div class="status-card" id="status-sync">
+                    <div class="status-indicator" data-status="unknown"></div>
+                    <div class="status-content">
+                        <div class="status-label">Sync-Worker</div>
+                        <div class="status-value" id="sync-status">Prüfe...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Outbox Events -->
+        <section class="metrics-section">
+            <h2>Outbox Events</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">📥</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-pending">-</div>
+                        <div class="metric-label">Pending Events</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">✅</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-processed">-</div>
+                        <div class="metric-label">Processed (24h)</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">❌</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-errors">-</div>
+                        <div class="metric-label">Errors (24h)</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">⏱️</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-lag">-</div>
+                        <div class="metric-label">Sync Lag</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-events"></canvas>
+            </div>
+        </section>
+
+        <!-- Case Statistics -->
+        <section class="metrics-section">
+            <h2>Case Statistics</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">📋</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-cases-total">-</div>
+                        <div class="metric-label">Total Cases</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">🔄</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-cases-active">-</div>
+                        <div class="metric-label">Active</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">⏸️</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-cases-waiting">-</div>
+                        <div class="metric-label">Waiting</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">🚫</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-cases-blocked">-</div>
+                        <div class="metric-label">Blocked</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-cases"></canvas>
+            </div>
+        </section>
+
+        <!-- Sync Statistics -->
+        <section class="metrics-section">
+            <h2>Neo4j Sync Statistics</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">🔄</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-sync-total">-</div>
+                        <div class="metric-label">Total Synced</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">⚡</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-sync-rate">-</div>
+                        <div class="metric-label">Sync Rate (events/min)</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">📊</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-sync-orgs">-</div>
+                        <div class="metric-label">Orgs in Neo4j</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">👥</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="metric-sync-persons">-</div>
+                        <div class="metric-label">Persons in Neo4j</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Errors -->
+        <section class="errors-section">
+            <h2>Recent Errors</h2>
+            <div id="errors-list" class="errors-list">
+                <div class="loading">Lade Fehler...</div>
+            </div>
+        </section>
+
+        <!-- Event Types Distribution -->
+        <section class="metrics-section">
+            <h2>Event Types Distribution</h2>
+            <div class="chart-container">
+                <canvas id="chart-event-types"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script src="js/monitoring.js"></script>
+</body>
+</html>
+
+

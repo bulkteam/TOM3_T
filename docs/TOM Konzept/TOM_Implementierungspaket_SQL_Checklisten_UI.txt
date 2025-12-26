@@ -1,0 +1,404 @@
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+TOM – Implementierungspaket
+Konkrete Grundlage für Umsetzung: SQL-Schema (PostgreSQL), Engine-Checklisten &
+UI-Wireframes (MVP).
+Dieses Dokument ist absichtlich handfest: Es liefert ein SQL-Startschema,
+Pflichten/Checklisten je Engine-Phase und einfache Wireframes für die wichtigsten Screens.
+Es ist kein endgültiges ERD, sondern ein belastbarer Ausgangspunkt, der sich in Tickets
+zerlegen lässt.
+Prinzip: SQL ist operativ führend. Neo4j wird gespiegelt und dient Panels/Insights. Dieses
+Paket fokussiert auf den operativen Kern und die Schnittstellenpunkte.
+
+Stand: 2025-12-23
+
+Seite 1
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+1. SQL-Schema (PostgreSQL) – Startentwurf
+Hinweis: Der Entwurf ist modular. Ihr könnt zunächst nur
+Org/Person/Project/Case/Task/Outbox bauen und später Dokumente, SLAs, Metriken
+erweitern.
+
+1.1 Kern-Tabellen (DDL-Skizze)
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- ORG (Kunde/Lieferant/Berater etc. im operativen TOM)
+CREATE TABLE org (
+org_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+name TEXT NOT NULL,
+org_kind TEXT NOT NULL, -- customer | supplier | consultant | engineering_firm | internal |
+other
+external_ref TEXT,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- PERSON / CONTACT
+CREATE TABLE person (
+person_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+display_name TEXT NOT NULL,
+email TEXT,
+phone TEXT,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Zugehörigkeit Person ↔ Org (zeitlich)
+CREATE TABLE person_affiliation (
+person_uuid UUID NOT NULL REFERENCES person(person_uuid) ON DELETE CASCADE,
+org_uuid UUID NOT NULL REFERENCES org(org_uuid) ON DELETE CASCADE,
+kind TEXT NOT NULL, -- employee | contractor | advisor | other
+title TEXT,
+since_date DATE,
+until_date DATE,
+PRIMARY KEY (person_uuid, org_uuid, kind, COALESCE(since_date, DATE '1900-01-01'))
+);
+-- Org Units (Abteilungen/Teams)
+CREATE TABLE org_unit (
+org_unit_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+org_uuid UUID NOT NULL REFERENCES org(org_uuid) ON DELETE CASCADE,
+name TEXT NOT NULL,
+unit_type TEXT, -- department | team | plant | business_unit
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- OrgUnit Hierarchie (zeitlich)
+CREATE TABLE org_unit_relation (
+parent_org_unit_uuid UUID NOT NULL REFERENCES org_unit(org_unit_uuid) ON DELETE CASCADE,
+child_org_unit_uuid UUID NOT NULL REFERENCES org_unit(org_unit_uuid) ON DELETE CASCADE,
+rel_type TEXT NOT NULL DEFAULT 'subunit',
+since_date DATE,
+until_date DATE,
+PRIMARY KEY (parent_org_unit_uuid, child_org_unit_uuid, COALESCE(since_date, DATE
+
+Stand: 2025-12-23
+
+Seite 2
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+'1900-01-01'))
+);
+-- Person ↔ OrgUnit (zeitlich)
+CREATE TABLE person_org_unit_membership (
+person_uuid UUID NOT NULL REFERENCES person(person_uuid) ON DELETE CASCADE,
+org_unit_uuid UUID NOT NULL REFERENCES org_unit(org_unit_uuid) ON DELETE CASCADE,
+role_title TEXT,
+since_date DATE,
+until_date DATE,
+PRIMARY KEY (person_uuid, org_unit_uuid, COALESCE(since_date, DATE '1900-01-01'))
+);
+-- PROJECT (Container)
+CREATE TABLE project (
+project_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+name TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'active', -- active | on_hold | closed
+priority INTEGER,
+target_date DATE,
+sponsor_org_uuid UUID REFERENCES org(org_uuid), -- Kunde/Owner-Org
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Projektpartner (Lieferanten/Berater/Engineering etc.)
+CREATE TABLE project_partner (
+project_uuid UUID NOT NULL REFERENCES project(project_uuid) ON DELETE CASCADE,
+org_uuid UUID NOT NULL REFERENCES org(org_uuid) ON DELETE RESTRICT,
+relation TEXT NOT NULL, -- delivers | advises | participates
+scope TEXT,
+contract_ref TEXT,
+PRIMARY KEY (project_uuid, org_uuid, relation)
+);
+-- Projekt-Stakeholder (Personen, egal aus welcher Org)
+CREATE TABLE project_stakeholder (
+project_uuid UUID NOT NULL REFERENCES project(project_uuid) ON DELETE CASCADE,
+person_uuid UUID NOT NULL REFERENCES person(person_uuid) ON DELETE RESTRICT,
+role TEXT NOT NULL,
+influence INTEGER, -- 1..5
+decision_power INTEGER, -- 0..100
+since_date DATE,
+until_date DATE,
+PRIMARY KEY (project_uuid, person_uuid, role, COALESCE(since_date, DATE '1900-01-01'))
+);
+-- CASE / Vorgang (Motor)
+CREATE TABLE case_item (
+case_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+case_type TEXT NOT NULL,
+engine TEXT NOT NULL, -- customer_inbound | ops | inside_sales | outside_sales |
+order_admin
+phase TEXT NOT NULL, -- CI-A, CI-B, OPS-A, ...
+status TEXT NOT NULL, -- berechnet
+owner_role TEXT NOT NULL,
+owner_user_id TEXT,
+org_uuid UUID REFERENCES org(org_uuid),
+project_uuid UUID REFERENCES project(project_uuid),
+title TEXT,
+summary TEXT,
+category TEXT,
+priority INTEGER,
+
+Stand: 2025-12-23
+
+Seite 3
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+due_at TIMESTAMPTZ,
+opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+closed_at TIMESTAMPTZ,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- PROJECT ↔ CASE (M:N)
+CREATE TABLE project_case (
+project_uuid UUID NOT NULL REFERENCES project(project_uuid) ON DELETE CASCADE,
+case_uuid UUID NOT NULL REFERENCES case_item(case_uuid) ON DELETE CASCADE,
+workstream TEXT,
+is_primary BOOLEAN NOT NULL DEFAULT false,
+PRIMARY KEY (project_uuid, case_uuid)
+);
+-- CASE LINKS (gerichtete Kanten)
+CREATE TABLE case_link (
+from_case_uuid UUID NOT NULL REFERENCES case_item(case_uuid) ON DELETE CASCADE,
+to_case_uuid UUID NOT NULL REFERENCES case_item(case_uuid) ON DELETE CASCADE,
+link_type TEXT NOT NULL,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+PRIMARY KEY (from_case_uuid, to_case_uuid, link_type)
+);
+-- TASKS (Aufgaben)
+CREATE TABLE task (
+task_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+case_uuid UUID NOT NULL REFERENCES case_item(case_uuid) ON DELETE CASCADE,
+title TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'open', -- open | done | cancelled
+assignee_role TEXT,
+assignee_user_id TEXT,
+due_at TIMESTAMPTZ,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+done_at TIMESTAMPTZ
+);
+-- TIMELINE / NOTES
+CREATE TABLE case_note (
+note_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+case_uuid UUID NOT NULL REFERENCES case_item(case_uuid) ON DELETE CASCADE,
+note_type TEXT NOT NULL, -- event | comment | handover | return | decision | system
+author_user_id TEXT,
+body TEXT NOT NULL,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- OUTBOX (für Sync nach Neo4j & Integrationen)
+CREATE TABLE outbox_event (
+event_uuid UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+aggregate_type TEXT NOT NULL,
+aggregate_uuid UUID NOT NULL,
+event_type TEXT NOT NULL,
+payload JSONB NOT NULL,
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+processed_at TIMESTAMPTZ
+);
+-- Indizes (MVP)
+CREATE INDEX idx_case_engine_status ON case_item(engine, status);
+
+Stand: 2025-12-23
+
+Seite 4
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+CREATE
+CREATE
+CREATE
+CREATE
+CREATE
+NULL;
+
+INDEX
+INDEX
+INDEX
+INDEX
+INDEX
+
+idx_case_owner_role ON case_item(owner_role);
+idx_case_org ON case_item(org_uuid);
+idx_case_project ON case_item(project_uuid);
+idx_task_case_status ON task(case_uuid, status);
+idx_outbox_unprocessed ON outbox_event(processed_at) WHERE processed_at IS
+
+1.2 Pflicht: Status nicht frei editierbar
+Implementiert Status als abgeleitet (berechnet) oder zumindest als guarded Feld: UI setzt
+Status nicht direkt, sondern führt Aktionen aus (Task done, Übergabe, Rückläufer, Close), die
+Statuswechsel auslösen. Sonst ist Reporting kaputt.
+
+Stand: 2025-12-23
+
+Seite 5
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+2. Engine-Checklisten (Übergabe, Rückläufer, Abschluss)
+Diese Checklisten sind bewusst kurz, aber blockierend. Sie verhindern Ping-Pong und sichern
+Entscheidungsgüte. Im UI sind sie als Checklist/Required Outputs sichtbar; fehlende Punkte
+blockieren Übergabe/Abschluss.
+
+2.1 Customer Inbound – Annahme (CI-A)
+• Kontakt/Organisation eindeutig (oder "unbekannt" + Callback-Task).
+• Zusammenfassung in 2 Sätzen (paraphrasiert).
+• Kanal + Zeitstempel erfasst (Mail/Call/…); Anhänge/Referenzen verlinkt.
+• Dringlichkeit (low/med/high) + Begründung (1 Satz).
+2.2 Customer Inbound – Klassifikation (CI-B)
+• Kategorie gesetzt (Routingfähig).
+• Ziel-Engine bestimmt (OPS/Admin/Sales) + Begründung.
+• "Was ist die konkrete Erwartung?" als Ziel formuliert.
+• Falls unklar: Rückfrage-Task an Kunde erstellt (nicht "weiterleiten").
+2.3 Customer Inbound – Übergabe (CI-C)
+• Übergabeobjekt erstellt: Ziel, Kontext, offene Punkte, Empfehlung (falls möglich).
+• Empfängerrolle gesetzt (OPS/Admin) – keine Personensuche notwendig.
+• Rückläuferbedingung klar: "Wenn X fehlt, bitte als Rückläufer".
+2.4 OPS – Strukturierung (OPS-A)
+• Fakten vs. Annahmen getrennt markiert.
+• Offene Punkte als Tasks modelliert (intern/extern).
+• Benötigte Dokumente/Referenzen verlinkt (DMS/ERP/…)
+• Risiko-/Impact-Notiz (1–2 Sätze): was passiert, wenn falsch entschieden wird?
+2.5 OPS – Entscheidungsreife (OPS-C)
+• Empfehlung (Option A/B, inkl. Vor-/Nachteile).
+• Klare Entscheidungsvorlage an Sales/Admin: "commit needed" / "formal needed".
+• Wenn an Admin: Vollständigkeitscheck (was muss im Auftrag/RMA vorhanden sein).
+2.6 Outside Sales – Abschlussvorbereitung
+• Entscheider/Stakeholder benannt (mind. einer) oder als offen markiert.
+• Nächster Schritt + Datum im Vorgang (keine vagen 'wir melden uns').
+• Abbruchkriterium dokumentiert (wann schließen wir ohne Erfolg?).
+
+Stand: 2025-12-23
+
+Seite 6
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+2.7 Order Admin – Formale Prüfung
+• Pflichtdaten vollständig (Adressen, Artikel, Mengen, Incoterms/Terms, Referenzen).
+• Abweichungen dokumentiert: was stimmt nicht zum Angebot/Standard?
+• Wenn unklar: Rückläufer an Sales/OPS mit konkreter Frage, nicht als Kommentar.
+
+Stand: 2025-12-23
+
+Seite 7
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+3. UI-Wireframes (MVP) – Screens & Kerninteraktionen
+Wireframes sind low fidelity. Ziel ist Informationsarchitektur: Engine/Phase/Status, Blocker,
+Checkliste, Übergaben, Graph-Panels (read-only).
+
+Customer Inbound – Inbox
+Customer Inbound – Inbox
+Nav
+
+Filterleiste: Kanal | Dringlichkeit | Kategorie | SLA
+
+Liste: neue Events/Inbound-Cases (Snippet, Org, Zeit)
+
+Preview: Zusammenfassung + Quick-Actions (Klassifizieren, Task, Route)
+
+Routing Panel: Ziel-Engine + Begründung + Übergabeobjekt
+
+Case Detail – (alle Engines)
+
+Stand: 2025-12-23
+
+Seite 8
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+Case Detail – (alle Engines)
+Nav
+
+Header: Titel | Engine | Phase | Status | Owner Rolle | SLA
+
+Blocker/Checklist (required outputs) + Fix now
+
+Tabs: Timeline | Tasks | Dokumente | Links | Übergaben/Rückläufer
+
+Aktionen: Übergabe | Rückläufer | Eskalation | Abschluss
+
+Graph Panels (read-only): Stakeholder | Konzern | Impact
+
+Project – Übersicht
+Project – Übersicht
+Nav
+
+Header: Status | Priorität | Zieltermin | Sponsor-Org
+
+Meilensteine / Health (Ampel aus Cases)
+
+Beteiligte Orgs (Sponsor/Deliver/Advise) + Verträge
+
+Stakeholder-Liste + Rollen (Decider/Influencer)
+
+Projekt-Cases (Workstreams) + Drilldown
+
+Übergabe-Dialog (Handover)
+
+Stand: 2025-12-23
+
+Seite 9
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+Übergabe-Dialog (Handover)
+Nav
+
+Ziel-Engine + Ziel-Rolle auswählen
+
+Übergabeobjekt: Ziel | Kontext | Offene Punkte | Empfehlung
+
+Checklist Gate: alles erfüllt? (blockierend)
+
+Send + Timeline + optional Notify
+
+Rückläufer-Dialog (Return)
+Rückläufer-Dialog (Return)
+Nav
+
+Rückläufergrund (Dropdown) + Begründung (Pflicht)
+
+Zu welcher Phase zurück? (systemisch vorgeschlagen)
+
+Blocker setzen + benötigte Outputs als Checklist
+
+Send + Metrik: Rückläufer zählt gegen Routingqualität
+
+Stand: 2025-12-23
+
+Seite 10
+
+TOM – Implementierungspaket (SQL Schema, Checklisten, UI-Wireframes)
+
+4. Umsetzung in Tickets (Epics → Stories)
+Ticket-Schnitt für MVP, damit ihr sofort in Umsetzung gehen könnt.
+
+4.1 Epic A – Core Datenmodell + RBAC
+• SQL-Tabellen: org, person, project, case_item, task, case_note.
+• RBAC: Rollen (CI/OPS/IS/OS/OA) + Berechtigungen pro Aktion (handover/return/close).
+• Audit: Timeline (case_note) verpflichtend bei Handover/Return/Close.
+4.2 Epic B – Workflow Engine (Status/Blocker/Checklisten)
+• Phase-Definitionen + Required Outputs (config-driven).
+• Statusberechnung (blockiert > eskaliert > wartend > in_bearbeitung).
+• Handover-Mechanik (Übergabeobjekt + Gate).
+• Return-Mechanik (Begründung + Blocker + Metrik).
+4.3 Epic C – Outbox + Sync Worker + Neo4j Panels
+• Outbox-Events bei upserts: org/person/project/case + relationships.
+• Sync Worker: idempotent MERGE nach Neo4j, DLQ, Replay.
+• UI Panels: Solution-Graph, Stakeholder, Konzernkontext (read-only).
+4.4 Epic D – UI MVP
+• Inbox (Customer Inbound) + Filter + Quick Actions.
+• Case Detail (Checkliste, Tasks, Timeline, Aktionen).
+• Project Overview (Meilensteine, Partner, Stakeholder, Cases).
+• Handover/Return Dialoge als modale Flows.
+Wenn du willst, erstelle ich dir als nächsten Schritt ein echtes Backlog mit Akzeptanzkriterien (Definition
+of Done) pro Story.
+
+Stand: 2025-12-23
+
+Seite 11
+
+

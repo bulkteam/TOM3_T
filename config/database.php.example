@@ -1,0 +1,24 @@
+<?php
+/**
+ * TOM3 - Database Configuration
+ * 
+ * Kopiere diese Datei nach database.php und passe die Werte an.
+ */
+
+return [
+    'postgresql' => [
+        'host' => 'localhost',
+        'port' => 5432,
+        'dbname' => 'tom3',
+        'user' => 'postgres',
+        'password' => 'password',
+        'charset' => 'utf8'
+    ],
+    'neo4j' => [
+        'uri' => 'bolt://localhost:7687',
+        'user' => 'neo4j',
+        'password' => 'password'
+    ]
+];
+
+
