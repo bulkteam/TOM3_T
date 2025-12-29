@@ -14,6 +14,12 @@
                 <h1>TOM3</h1>
                 <p class="subtitle">Vorgangssteuerung</p>
             </div>
+            <div id="user-info" class="user-info" style="display: none;">
+                <div class="user-name" id="user-name">-</div>
+                <div class="user-email" id="user-email">-</div>
+                <div class="user-roles" id="user-roles"></div>
+                <a href="logout.php" class="logout-link">Abmelden</a>
+            </div>
             <ul class="nav-menu">
                 <li><a href="#dashboard" class="nav-link active" data-page="dashboard">
                     <span class="icon">📊</span> Dashboard
@@ -36,6 +42,11 @@
                 <li><a href="monitoring.html" class="nav-link" target="_blank">
                     <span class="icon">🔍</span> Monitoring
                 </a></li>
+                <li id="admin-menu-item" style="display: none;">
+                    <a href="#admin" class="nav-link" data-page="admin">
+                        <span class="icon">⚙️</span> Admin
+                    </a>
+                </li>
             </ul>
         </nav>
 
@@ -138,6 +149,485 @@
                 </div>
             </div>
 
+            <!-- Add/Edit Relation Modal -->
+            <div id="modal-relation" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-relation-title">Relation hinzufügen</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="form-relation">
+                            <input type="hidden" id="relation-uuid" name="relation_uuid">
+                            <input type="hidden" id="relation-parent-org-uuid" name="parent_org_uuid">
+                            
+                            <div class="form-group">
+                                <label for="relation-type">Relationstyp <span class="required">*</span></label>
+                                <select id="relation-type" name="relation_type" required>
+                                    <option value="">-- Bitte wählen --</option>
+                                    <optgroup label="Konzern & Struktur">
+                                        <option value="parent_of">Muttergesellschaft von</option>
+                                        <option value="subsidiary_of">Tochtergesellschaft von</option>
+                                        <option value="sister_company">Schwestergesellschaft</option>
+                                        <option value="holding_of">Holding von</option>
+                                        <option value="operating_company_of">Operative Gesellschaft von</option>
+                                        <option value="branch_of">Niederlassung von</option>
+                                        <option value="location_of">Standort von</option>
+                                        <option value="division_of">Zweigstelle von</option>
+                                    </optgroup>
+                                    <optgroup label="Beteiligungen">
+                                        <option value="owns_stake_in">Beteiligung an</option>
+                                        <option value="joint_venture_with">Joint Venture mit</option>
+                                        <option value="ubo_of">Ultimate Beneficial Owner von</option>
+                                    </optgroup>
+                                    <optgroup label="Transaktionen">
+                                        <option value="acquired_from">Übernommen von</option>
+                                        <option value="merged_with">Fusioniert mit</option>
+                                        <option value="spun_off_from">Abgespalten von</option>
+                                        <option value="legal_successor_of">Rechtsnachfolger von</option>
+                                        <option value="in_liquidation_by">In Liquidation durch</option>
+                                    </optgroup>
+                                    <optgroup label="Geschäftliche Beziehungen">
+                                        <option value="customer_of">Kunde von</option>
+                                        <option value="supplier_of">Lieferant von</option>
+                                        <option value="distributor_of">Distributor von</option>
+                                        <option value="reseller_of">Reseller von</option>
+                                        <option value="partner_of">Partner von</option>
+                                        <option value="service_provider_of">Service Provider von</option>
+                                        <option value="logistics_partner_of">Logistikpartner von</option>
+                                        <option value="franchise_giver_of">Franchisegeber von</option>
+                                        <option value="franchise_taker_of">Franchisenehmer von</option>
+                                        <option value="contract_partner_of">Vertragspartner von</option>
+                                        <option value="framework_contract_for">Rahmenvertrag für</option>
+                                        <option value="implementation_partner_for">Implementierungspartner für</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="relation-child-org">Ziel-Organisation <span class="required">*</span></label>
+                                <input type="text" id="relation-child-org-search" class="org-search-input" 
+                                       placeholder="Organisation suchen..." autocomplete="off">
+                                <input type="hidden" id="relation-child-org-uuid" name="child_org_uuid" required>
+                                <div id="relation-child-org-results" class="org-search-results" style="display: none;"></div>
+                                <small class="form-hint">Geben Sie den Namen der Organisation ein</small>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="relation-since-date">Seit (Datum)</label>
+                                    <input type="date" id="relation-since-date" name="since_date">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="relation-until-date">Bis (Datum)</label>
+                                    <input type="date" id="relation-until-date" name="until_date">
+                                    <small class="form-hint">Leer lassen für aktuelle Relation</small>
+                                </div>
+                            </div>
+
+                            <div id="relation-ownership-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="relation-ownership-percent">Beteiligungsanteil (%)</label>
+                                        <input type="number" id="relation-ownership-percent" name="ownership_percent" 
+                                               min="0" max="100" step="0.01" placeholder="z.B. 51.5">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>
+                                            <input type="checkbox" id="relation-has-voting-rights" name="has_voting_rights" value="1">
+                                            Stimmberechtigt
+                                        </label>
+                                        <br>
+                                        <label>
+                                            <input type="checkbox" id="relation-is-direct" name="is_direct" value="1" checked>
+                                            Direkt (nicht indirekt)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="relation-confidence">Vertrauenswürdigkeit</label>
+                                    <select id="relation-confidence" name="confidence">
+                                        <option value="high">Hoch</option>
+                                        <option value="medium">Mittel</option>
+                                        <option value="low">Niedrig</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="relation-is-current" name="is_current" value="1" checked>
+                                        Aktuell gültig
+                                    </label>
+                                    <small class="form-hint">Deaktivieren für historische Relationen</small>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="relation-tags">Tags</label>
+                                <input type="text" id="relation-tags" name="tags" 
+                                       placeholder="z.B. Konzernstruktur, Go-to-Market (kommagetrennt)">
+                                <small class="form-hint">Mehrere Tags durch Komma trennen</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="relation-source">Quelle/Beleg</label>
+                                <input type="text" id="relation-source" name="source" 
+                                       placeholder="Link, Datei, Referenz...">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="relation-notes">Notizen</label>
+                                <textarea id="relation-notes" name="notes" rows="3" 
+                                          placeholder="Zusätzliche Informationen..."></textarea>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-relation">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary" id="btn-submit-relation">Speichern</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add/Edit Address Modal -->
+            <div id="modal-address" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-address-title">Adresse hinzufügen</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="form-address">
+                            <input type="hidden" id="address-uuid" name="address_uuid">
+                            
+                            <div class="form-group">
+                                <label for="address-type">Adresstyp <span class="required">*</span></label>
+                                <select id="address-type" name="address_type" required>
+                                    <option value="headquarters">Hauptsitz</option>
+                                    <option value="delivery">Lieferadresse</option>
+                                    <option value="billing">Rechnungsadresse</option>
+                                    <option value="other">Sonstiges</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="address-street">Straße</label>
+                                <input type="text" id="address-street" name="street" placeholder="Musterstraße">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="address-additional">Adresszusatz</label>
+                                <input type="text" id="address-additional" name="address_additional" placeholder="z.B. Gebäude A, Etage 3">
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="address-postal-code">PLZ</label>
+                                    <input type="text" id="address-postal-code" name="postal_code" placeholder="12345" maxlength="10">
+                                </div>
+                                <div class="form-group">
+                                    <label for="address-city">Stadt <span class="required">*</span></label>
+                                    <input type="text" id="address-city" name="city" required placeholder="Musterstadt">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="address-country">Land</label>
+                                    <select id="address-country" name="country">
+                                        <option value="DE">Deutschland</option>
+                                        <option value="AT">Österreich</option>
+                                        <option value="CH">Schweiz</option>
+                                        <option value="FR">Frankreich</option>
+                                        <option value="IT">Italien</option>
+                                        <option value="NL">Niederlande</option>
+                                        <option value="BE">Belgien</option>
+                                        <option value="PL">Polen</option>
+                                        <option value="CZ">Tschechien</option>
+                                        <option value="UK">Vereinigtes Königreich</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="address-state">Bundesland / Region</label>
+                                    <input type="text" id="address-state" name="state" placeholder="z.B. Bayern">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="address-is-default" name="is_default" value="1">
+                                    Als Standardadresse markieren
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="address-notes">Notizen</label>
+                                <textarea id="address-notes" name="notes" rows="3" placeholder="Zusätzliche Informationen..."></textarea>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary">Speichern</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add/Edit Channel Modal -->
+            <div id="modal-channel" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-channel-title">Kommunikationskanal hinzufügen</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="form-channel">
+                            <input type="hidden" id="channel-uuid" name="channel_uuid">
+                            
+                            <div class="form-group">
+                                <label for="channel-type">Kanaltyp <span class="required">*</span></label>
+                                <select id="channel-type" name="channel_type" required>
+                                    <option value="email">E-Mail</option>
+                                    <option value="phone">Telefon</option>
+                                    <option value="mobile">Mobil</option>
+                                    <option value="fax">Fax</option>
+                                    <option value="website">Website</option>
+                                    <option value="other">Sonstiges</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="channel-value">Wert <span class="required">*</span></label>
+                                <input type="text" id="channel-value" name="value" required 
+                                       placeholder="z.B. info@example.com oder +49 123 456789">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="channel-label">Bezeichnung</label>
+                                <input type="text" id="channel-label" name="label" placeholder="z.B. Hauptnummer, Geschäftsführung">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="channel-is-primary" name="is_primary" value="1">
+                                    Als primären Kanal markieren
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="channel-is-public" name="is_public" value="1">
+                                    Öffentlich sichtbar
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="channel-notes">Notizen</label>
+                                <textarea id="channel-notes" name="notes" rows="3" placeholder="Zusätzliche Informationen..."></textarea>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary">Speichern</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add/Edit VAT Registration Modal -->
+            <div id="modal-vat" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-vat-title">USt-ID hinzufügen</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="form-vat">
+                            <input type="hidden" id="vat-uuid" name="vat_registration_uuid">
+                            
+                            <div class="form-group">
+                                <label for="vat-country-code">Land <span class="required">*</span></label>
+                                <select id="vat-country-code" name="country_code" required>
+                                    <option value="DE">Deutschland</option>
+                                    <option value="AT">Österreich</option>
+                                    <option value="CH">Schweiz</option>
+                                    <option value="FR">Frankreich</option>
+                                    <option value="IT">Italien</option>
+                                    <option value="NL">Niederlande</option>
+                                    <option value="BE">Belgien</option>
+                                    <option value="PL">Polen</option>
+                                    <option value="CZ">Tschechien</option>
+                                    <option value="UK">Vereinigtes Königreich</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="vat-id">USt-ID <span class="required">*</span></label>
+                                <input type="text" id="vat-id" name="vat_id" required 
+                                       placeholder="z.B. DE123456789 oder ATU12345678">
+                                <small class="form-hint">Format je nach Land unterschiedlich</small>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="vat-valid-from">Gültig ab</label>
+                                    <input type="date" id="vat-valid-from" name="valid_from">
+                                </div>
+                                <div class="form-group">
+                                    <label for="vat-valid-to">Gültig bis</label>
+                                    <input type="date" id="vat-valid-to" name="valid_to">
+                                    <small class="form-hint">Leer lassen für aktuell gültig</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="vat-location-type">Standorttyp</label>
+                                <select id="vat-location-type" name="location_type">
+                                    <option value="">-- Keine Angabe --</option>
+                                    <option value="HQ">Hauptsitz</option>
+                                    <option value="Branch">Niederlassung</option>
+                                    <option value="Subsidiary">Tochtergesellschaft</option>
+                                    <option value="SalesOffice">Verkaufsbüro</option>
+                                    <option value="Plant">Produktionsstätte</option>
+                                    <option value="Warehouse">Lager</option>
+                                    <option value="Other">Sonstiges</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="vat-is-primary" name="is_primary_for_country" value="1">
+                                    Als primäre USt-ID für dieses Land markieren
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="vat-notes">Notizen</label>
+                                <textarea id="vat-notes" name="notes" rows="3" placeholder="Zusätzliche Informationen..."></textarea>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary">Speichern</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Org Modal -->
+            <div id="modal-create-org" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3>Neue Organisation anlegen</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="form-create-org">
+                            <div class="form-group">
+                                <label for="org-create-name">Name <span class="required">*</span></label>
+                                <input type="text" id="org-create-name" name="name" required 
+                                       placeholder="Firmenname" autocomplete="organization">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="org-create-external-ref">Kundennummer</label>
+                                <input type="text" id="org-create-external-ref" name="external_ref" 
+                                       placeholder="Wird automatisch vergeben" readonly>
+                                <small class="form-hint">Die nächste verfügbare Nummer wird automatisch zugewiesen</small>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="org-create-org-kind">Typ <span class="required">*</span></label>
+                                    <select id="org-create-org-kind" name="org_kind" required>
+                                        <option value="">-- Bitte wählen --</option>
+                                        <option value="customer">Kunde</option>
+                                        <option value="supplier">Lieferant</option>
+                                        <option value="consultant">Berater</option>
+                                        <option value="engineering_firm">Ingenieurbüro</option>
+                                        <option value="internal">Intern</option>
+                                        <option value="other">Sonstiges</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="org-create-status">Status</label>
+                                    <select id="org-create-status" name="status">
+                                        <option value="lead">Lead</option>
+                                        <option value="prospect">Interessent</option>
+                                        <option value="customer">Kunde</option>
+                                        <option value="inactive">Inaktiv</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="org-create-industry-main">Branche (Hauptklasse)</label>
+                                    <select id="org-create-industry-main" name="industry_main_uuid">
+                                        <option value="">-- Bitte wählen --</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="org-create-industry-sub">Branche (Unterklasse)</label>
+                                    <select id="org-create-industry-sub" name="industry_sub_uuid" disabled>
+                                        <option value="">-- Zuerst Hauptklasse wählen --</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="org-create-revenue-range">Umsatzgröße</label>
+                                    <select id="org-create-revenue-range" name="revenue_range">
+                                        <option value="">-- Bitte wählen --</option>
+                                        <option value="micro">Micro (< 1 Mio €)</option>
+                                        <option value="small">Small (1-10 Mio €)</option>
+                                        <option value="medium">Medium (10-50 Mio €)</option>
+                                        <option value="large">Large (50-250 Mio €)</option>
+                                        <option value="enterprise">Enterprise (> 250 Mio €)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="org-create-employee-count">Mitarbeiter (ca.)</label>
+                                    <input type="number" id="org-create-employee-count" name="employee_count" 
+                                           min="0" placeholder="z.B. 50">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="org-create-website">Website</label>
+                                <input type="text" id="org-create-website" name="website" 
+                                       placeholder="www.example.com oder https://www.example.com">
+                                <small class="form-hint">Protokoll (https://) wird automatisch hinzugefügt</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="org-create-notes">Notizen</label>
+                                <textarea id="org-create-notes" name="notes" rows="3" 
+                                          placeholder="Interne Notizen..."></textarea>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-create-org">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary" id="btn-submit-create-org">Organisation anlegen</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <!-- Projects Page -->
             <div id="page-projects" class="page">
                 <div class="page-header">
@@ -181,7 +671,12 @@
                     <div class="filters-grid">
                         <div class="filter-group">
                             <label>Branche</label>
-                            <div id="filter-industries" class="filter-checkboxes"></div>
+                            <select id="filter-industry-main" class="filter-select">
+                                <option value="">-- Hauptklasse wählen --</option>
+                            </select>
+                            <select id="filter-industry-sub" class="filter-select" style="margin-top: 0.5rem;" disabled>
+                                <option value="">-- Unterklasse wählen --</option>
+                            </select>
                         </div>
                         
                         <div class="filter-group">
@@ -247,6 +742,7 @@
                         </div>
                     </div>
                     <div class="filters-actions">
+                        <button class="btn btn-primary" id="btn-apply-filters">Filter anwenden</button>
                         <button class="btn btn-secondary" id="btn-reset-filters">Filter zurücksetzen</button>
                     </div>
                 </div>
@@ -307,6 +803,34 @@
                     <p>Keine Kunden zugeordnet</p>
                 </div>
             </div>
+
+            <!-- Admin-Bereich -->
+            <div id="page-admin" class="page">
+                <div class="page-header">
+                    <h2>Admin - User & Rollenverwaltung</h2>
+                </div>
+                
+                <div class="admin-section">
+                    <div class="admin-tabs">
+                        <button class="admin-tab active" data-tab="users">User</button>
+                        <button class="admin-tab" data-tab="roles">Rollen</button>
+                    </div>
+                    
+                    <!-- User-Verwaltung -->
+                    <div id="admin-tab-users" class="admin-tab-content active">
+                        <div class="admin-actions">
+                            <button class="btn btn-primary" id="btn-create-user">Neuer User</button>
+                            <button class="btn btn-secondary" id="btn-show-inactive">Inaktive User anzeigen</button>
+                        </div>
+                        <div id="admin-users-list" class="admin-list"></div>
+                    </div>
+                    
+                    <!-- Rollen-Verwaltung -->
+                    <div id="admin-tab-roles" class="admin-tab-content">
+                        <div id="admin-roles-list" class="admin-list"></div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
     
@@ -314,7 +838,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="js/api.js"></script>
-    <script src="js/app.js"></script>
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>
 

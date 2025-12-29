@@ -88,3 +88,4 @@ USt-Registrierungen:
 ✅ **Flexibler:** Adressen sind optionaler Kontext
 ✅ **Erweiterbar:** Später für Organisationsstrukturen nutzbar
 
+

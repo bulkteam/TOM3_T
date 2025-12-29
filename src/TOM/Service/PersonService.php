@@ -49,6 +49,35 @@ class PersonService
         return $stmt->fetch() ?: null;
     }
     
+    public function updatePerson(string $personUuid, array $data): array
+    {
+        $allowedFields = ['display_name', 'email', 'phone'];
+        $updates = [];
+        $params = ['uuid' => $personUuid];
+        
+        foreach ($allowedFields as $field) {
+            if (isset($data[$field])) {
+                $updates[] = "$field = :$field";
+                $params[$field] = $data[$field];
+            }
+        }
+        
+        if (empty($updates)) {
+            return $this->getPerson($personUuid) ?: [];
+        }
+        
+        $sql = "UPDATE person SET " . implode(', ', $updates) . " WHERE person_uuid = :uuid";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        
+        $person = $this->getPerson($personUuid);
+        if ($person) {
+            $this->eventPublisher->publish('person', $person['person_uuid'], 'PersonUpdated', $person);
+        }
+        
+        return $person ?: [];
+    }
+    
     public function listPersons(): array
     {
         $stmt = $this->db->query("SELECT * FROM person ORDER BY display_name");

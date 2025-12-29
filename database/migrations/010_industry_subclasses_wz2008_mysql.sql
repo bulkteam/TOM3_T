@@ -327,3 +327,4 @@ INSERT INTO industry (industry_uuid, name, code, parent_industry_uuid)
 SELECT REPLACE(UUID(), '-', ''), 'N82 - Erbringung von wirtschaftlichen Dienstleistungen für Unternehmen und Privatpersonen', 'N82', industry_uuid
 FROM industry WHERE code = 'N' AND parent_industry_uuid IS NULL LIMIT 1;
 
+

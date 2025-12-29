@@ -10,6 +10,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Service\OrgService;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $db = DatabaseConnection::getInstance();
@@ -28,8 +29,14 @@ if ($method !== 'GET') {
     exit;
 }
 
-// TODO: Echten user_id aus Session/Auth holen
-$userId = $_GET['user_id'] ?? 'default_user';
+// Hole aktuellen User aus Session/Auth
+$userId = AuthHelper::getCurrentUserId();
+if (!$userId) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
+
 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
 
 try {

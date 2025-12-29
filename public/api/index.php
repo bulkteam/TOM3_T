@@ -75,6 +75,12 @@ try {
         case 'industries':
             require __DIR__ . '/industries.php';
             break;
+        case 'plz-lookup':
+            require __DIR__ . '/plz-lookup.php';
+            break;
+        case 'address-types':
+            require __DIR__ . '/address-types.php';
+            break;
         case 'accounts':
             require __DIR__ . '/accounts.php';
             break;
@@ -89,6 +95,9 @@ try {
             break;
         case 'monitoring':
             require __DIR__ . '/monitoring.php';
+            break;
+        case 'auth':
+            require __DIR__ . '/auth.php';
             break;
         default:
             http_response_code(404);

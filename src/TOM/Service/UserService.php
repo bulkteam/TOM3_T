@@ -3,100 +3,227 @@ declare(strict_types=1);
 
 namespace TOM\Service;
 
+use PDO;
+use TOM\Infrastructure\Database\DatabaseConnection;
+
 /**
  * UserService - Verwaltung von Usern und Rollen
  * 
- * Lädt User-Definitionen aus config/users.php und stellt Methoden
- * zur Rollen-Verwaltung bereit.
+ * Lädt User-Definitionen aus der Datenbank (users Tabelle)
  */
 class UserService
 {
-    private ?array $config = null;
+    private PDO $db;
     
-    private function loadConfig(): array
+    public function __construct(?PDO $db = null)
     {
-        if ($this->config === null) {
-            $configFile = __DIR__ . '/../../config/users.php';
-            if (file_exists($configFile)) {
-                $this->config = require $configFile;
-            } else {
-                $this->config = [
-                    'users' => [],
-                    'workflow_roles' => [],
-                    'account_team_roles' => [],
-                    'permission_roles' => []
-                ];
-            }
-        }
-        return $this->config;
+        $this->db = $db ?? DatabaseConnection::getInstance();
     }
     
     /**
-     * Hole alle User
+     * Hole alle User (optional inkl. inaktive)
      */
-    public function getAllUsers(): array
+    public function getAllUsers(bool $includeInactive = false): array
     {
-        $config = $this->loadConfig();
-        return $config['users'] ?? [];
+        $whereClause = $includeInactive ? '' : 'WHERE u.is_active = 1';
+        
+        $stmt = $this->db->query("
+            SELECT 
+                u.user_id,
+                u.email,
+                u.name,
+                u.is_active,
+                u.created_at,
+                u.created_by_user_id,
+                u.disabled_at,
+                u.disabled_by_user_id,
+                u.last_login_at,
+                GROUP_CONCAT(DISTINCT r.role_code ORDER BY r.role_code SEPARATOR ', ') as roles,
+                GROUP_CONCAT(DISTINCT wr.role_code ORDER BY wr.role_code SEPARATOR ', ') as workflow_roles
+            FROM users u
+            LEFT JOIN user_role ur ON u.user_id = ur.user_id
+            LEFT JOIN role r ON ur.role_id = r.role_id
+            LEFT JOIN user_workflow_role uwr ON u.user_id = uwr.user_id
+            LEFT JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
+            $whereClause
+            GROUP BY u.user_id, u.email, u.name, u.is_active, u.created_at, u.created_by_user_id, u.disabled_at, u.disabled_by_user_id, u.last_login_at
+            ORDER BY u.is_active DESC, u.name
+        ");
+        
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere user_id zu String für Kompatibilität
+        foreach ($users as &$user) {
+            $user['user_id'] = (string)$user['user_id'];
+        }
+        
+        return $users;
     }
     
     /**
      * Hole einen User anhand der user_id
+     * 
+     * @param string|int $userId User-ID (wird als String behandelt für Kompatibilität)
      */
-    public function getUser(string $userId): ?array
+    public function getUser($userId, bool $includeInactive = true): ?array
     {
-        $users = $this->getAllUsers();
-        foreach ($users as $user) {
-            if (($user['user_id'] ?? '') === $userId) {
-                return $user;
-            }
+        $userIdInt = (int)$userId;
+        
+        $whereClause = $includeInactive ? '' : 'AND u.is_active = 1';
+        
+        $stmt = $this->db->prepare("
+            SELECT 
+                u.user_id,
+                u.email,
+                u.name,
+                u.is_active,
+                u.created_at,
+                u.last_login_at
+            FROM users u
+            WHERE u.user_id = :user_id $whereClause
+        ");
+        $stmt->execute(['user_id' => $userIdInt]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            return null;
         }
-        return null;
+        
+        // Lade System-Rollen (Permission-Rollen)
+        $stmt = $this->db->prepare("
+            SELECT r.role_code, r.role_name, r.description
+            FROM user_role ur
+            JOIN role r ON ur.role_id = r.role_id
+            WHERE ur.user_id = :user_id
+            ORDER BY r.role_code
+        ");
+        $stmt->execute(['user_id' => $userIdInt]);
+        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $user['roles'] = array_column($roles, 'role_code');
+        $user['roles_detail'] = $roles;
+        
+        // Lade Workflow-Rollen
+        $stmt = $this->db->prepare("
+            SELECT wr.role_code, wr.role_name, wr.description
+            FROM user_workflow_role uwr
+            JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
+            WHERE uwr.user_id = :user_id
+            ORDER BY wr.role_code
+        ");
+        $stmt->execute(['user_id' => $userIdInt]);
+        $workflowRoles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $user['workflow_roles'] = array_column($workflowRoles, 'role_code');
+        $user['workflow_roles_detail'] = $workflowRoles;
+        
+        // Für Kompatibilität: user_id als String zurückgeben
+        $user['user_id'] = (string)$user['user_id'];
+        
+        return $user;
     }
     
     /**
      * Hole alle Workflow-Rollen eines Users
      */
-    public function getUserWorkflowRoles(string $userId): array
+    public function getUserWorkflowRoles($userId): array
     {
-        $user = $this->getUser($userId);
-        return $user['workflow_roles'] ?? [];
+        $userIdInt = (int)$userId;
+        
+        $stmt = $this->db->prepare("
+            SELECT wr.role_code
+            FROM user_workflow_role uwr
+            JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
+            WHERE uwr.user_id = :user_id
+            ORDER BY wr.role_code
+        ");
+        $stmt->execute(['user_id' => $userIdInt]);
+        
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'role_code');
     }
     
     /**
      * Prüfe, ob ein User eine bestimmte Workflow-Rolle hat
      */
-    public function userHasWorkflowRole(string $userId, string $role): bool
+    public function userHasWorkflowRole($userId, string $role): bool
     {
         $roles = $this->getUserWorkflowRoles($userId);
         return in_array($role, $roles, true);
     }
     
     /**
-     * Hole alle verfügbaren Workflow-Rollen
+     * Hole alle verfügbaren Workflow-Rollen (aus DB)
      */
     public function getAvailableWorkflowRoles(): array
     {
-        $config = $this->loadConfig();
-        return $config['workflow_roles'] ?? [];
+        $stmt = $this->db->query("
+            SELECT workflow_role_id, role_code, role_name, description
+            FROM workflow_role
+            ORDER BY role_code
+        ");
+        
+        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere zu altem Format für Kompatibilität
+        $result = [];
+        foreach ($roles as $role) {
+            $result[$role['role_code']] = [
+                'name' => $role['role_name'],
+                'description' => $role['description']
+            ];
+        }
+        
+        return $result;
     }
     
     /**
-     * Hole alle verfügbaren Account-Team-Rollen
+     * Hole alle verfügbaren Account-Team-Rollen (aus DB)
      */
     public function getAvailableAccountTeamRoles(): array
     {
-        $config = $this->loadConfig();
-        return $config['account_team_roles'] ?? [];
+        $stmt = $this->db->query("
+            SELECT account_team_role_id, role_code, role_name, description
+            FROM account_team_role
+            ORDER BY role_code
+        ");
+        
+        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere zu altem Format für Kompatibilität
+        $result = [];
+        foreach ($roles as $role) {
+            $result[$role['role_code']] = [
+                'name' => $role['role_name'],
+                'description' => $role['description']
+            ];
+        }
+        
+        return $result;
     }
     
     /**
-     * Hole alle verfügbaren Berechtigungs-Rollen
+     * Hole alle verfügbaren Berechtigungs-Rollen (aus DB)
      */
     public function getAvailablePermissionRoles(): array
     {
-        $config = $this->loadConfig();
-        return $config['permission_roles'] ?? [];
+        $stmt = $this->db->query("
+            SELECT role_code, role_name, description
+            FROM role
+            ORDER BY role_code
+        ");
+        
+        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere zu altem Format für Kompatibilität
+        $result = [];
+        foreach ($roles as $role) {
+            $result[$role['role_code']] = [
+                'name' => $role['role_name'],
+                'description' => $role['description']
+            ];
+        }
+        
+        return $result;
     }
     
     /**
@@ -104,44 +231,73 @@ class UserService
      */
     public function getUsersByWorkflowRole(string $role): array
     {
-        $users = $this->getAllUsers();
-        $result = [];
+        $stmt = $this->db->prepare("
+            SELECT 
+                u.user_id,
+                u.email,
+                u.name,
+                u.is_active
+            FROM users u
+            JOIN user_workflow_role uwr ON u.user_id = uwr.user_id
+            JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
+            WHERE wr.role_code = :role_code AND u.is_active = 1
+            ORDER BY u.name
+        ");
+        $stmt->execute(['role_code' => $role]);
         
-        foreach ($users as $user) {
-            $userRoles = $user['workflow_roles'] ?? [];
-            if (in_array($role, $userRoles, true)) {
-                $result[] = $user;
-            }
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere user_id zu String für Kompatibilität
+        foreach ($users as &$user) {
+            $user['user_id'] = (string)$user['user_id'];
         }
         
-        return $result;
+        return $users;
     }
     
     /**
      * Prüfe, ob ein User als Account Owner fungieren kann
+     * 
+     * Standard: Alle aktiven User können Account Owner sein
      */
-    public function canUserBeAccountOwner(string $userId): bool
+    public function canUserBeAccountOwner($userId): bool
     {
         $user = $this->getUser($userId);
-        if (!$user) {
-            return false;
-        }
-        return $user['can_be_account_owner'] ?? true; // Default: true
+        return $user !== null; // Alle aktiven User können Account Owner sein
     }
     
     /**
-     * Hole Berechtigungs-Rolle eines Users
+     * Hole Berechtigungs-Rolle eines Users (aus DB)
      */
-    public function getUserPermissionRole(string $userId): ?string
+    public function getUserPermissionRole($userId): ?string
     {
         $user = $this->getUser($userId);
-        return $user['permission_role'] ?? null;
+        if (!$user || empty($user['roles'])) {
+            return null;
+        }
+        
+        // Priorität: admin > manager > user > readonly
+        $priority = ['admin' => 4, 'manager' => 3, 'user' => 2, 'readonly' => 1];
+        $userRoles = $user['roles'];
+        
+        $highestRole = null;
+        $highestPriority = 0;
+        
+        foreach ($userRoles as $role) {
+            $rolePriority = $priority[$role] ?? 0;
+            if ($rolePriority > $highestPriority) {
+                $highestPriority = $rolePriority;
+                $highestRole = $role;
+            }
+        }
+        
+        return $highestRole;
     }
     
     /**
      * Prüfe, ob ein User eine bestimmte Berechtigung hat
      */
-    public function userHasPermission(string $userId, string $permission): bool
+    public function userHasPermission($userId, string $permission): bool
     {
         $userRole = $this->getUserPermissionRole($userId);
         
@@ -153,5 +309,266 @@ class UserService
         // Spezifische Berechtigungen
         return $userRole === $permission;
     }
+    
+    /**
+     * Prüft, ob mindestens ein Admin-User aktiv ist
+     * 
+     * @param int|null $excludeUserId User-ID, die von der Prüfung ausgeschlossen werden soll (z.B. der zu deaktivierende User)
+     * @return bool True wenn mindestens ein Admin aktiv ist
+     */
+    private function hasActiveAdmin(?int $excludeUserId = null): bool
+    {
+        $sql = "
+            SELECT COUNT(*) as admin_count
+            FROM users u
+            JOIN user_role ur ON u.user_id = ur.user_id
+            JOIN role r ON ur.role_id = r.role_id
+            WHERE r.role_code = 'admin' 
+              AND u.is_active = 1
+        ";
+        
+        $params = [];
+        if ($excludeUserId !== null) {
+            $sql .= " AND u.user_id != :exclude_user_id";
+            $params['exclude_user_id'] = $excludeUserId;
+        }
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return (int)($result['admin_count'] ?? 0) > 0;
+    }
+    
+    /**
+     * Deaktiviert einen User (archiviert statt löschen)
+     * 
+     * @param int|string $userId User-ID
+     * @param int|null $currentUserId User-ID des aktuellen Users (für Admin-Schutz und Audit)
+     * @return bool Erfolg
+     * @throws \Exception Wenn Admin deaktiviert werden soll oder letzter Admin deaktiviert würde
+     */
+    public function deactivateUser($userId, $currentUserId = null): bool
+    {
+        $userIdInt = (int)$userId;
+        $currentUserIdInt = $currentUserId ? (int)$currentUserId : null;
+        
+        // Prüfe ob User Admin ist
+        $user = $this->getUserById($userIdInt, false); // Auch inaktive User laden
+        if ($user) {
+            $roles = $user['roles'] ?? [];
+            if (in_array('admin', $roles, true)) {
+                // Prüfe ob mindestens ein anderer Admin aktiv bleibt
+                if (!$this->hasActiveAdmin($userIdInt)) {
+                    throw new \Exception('Der letzte Admin-User kann nicht deaktiviert werden. Mindestens ein Admin muss aktiv bleiben.');
+                }
+            }
+        }
+        
+        // Prüfe ob versucht wird, sich selbst zu deaktivieren
+        if ($currentUserIdInt && $currentUserIdInt === $userIdInt) {
+            throw new \Exception('Sie können sich nicht selbst deaktivieren');
+        }
+        
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET is_active = 0, 
+                disabled_at = NOW(),
+                disabled_by_user_id = :disabled_by,
+                updated_at = NOW()
+            WHERE user_id = :user_id
+        ");
+        
+        $result = $stmt->execute([
+            'user_id' => $userIdInt,
+            'disabled_by' => $currentUserIdInt
+        ]);
+        
+        // Session-Invalidierung: Alle Sessions dieses Users beenden
+        $this->invalidateUserSessions($userIdInt);
+        
+        return $result;
+    }
+    
+    /**
+     * Aktiviert einen User wieder
+     * 
+     * @param int|string $userId User-ID
+     * @return bool Erfolg
+     */
+    public function activateUser($userId): bool
+    {
+        $userIdInt = (int)$userId;
+        
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET is_active = 1, 
+                disabled_at = NULL,
+                disabled_by_user_id = NULL,
+                updated_at = NOW()
+            WHERE user_id = :user_id
+        ");
+        
+        return $stmt->execute(['user_id' => $userIdInt]);
+    }
+    
+    /**
+     * Holt einen User anhand der user_id (auch inaktive)
+     * 
+     * @param int $userId User-ID
+     * @param bool $activeOnly Nur aktive User
+     * @return array|null User-Daten
+     */
+    private function getUserById(int $userId, bool $activeOnly = true): ?array
+    {
+        $whereClause = $activeOnly ? 'AND u.is_active = 1' : '';
+        
+        $stmt = $this->db->prepare("
+            SELECT 
+                u.user_id,
+                u.email,
+                u.name,
+                u.is_active,
+                u.created_at,
+                u.created_by_user_id,
+                u.disabled_at,
+                u.disabled_by_user_id,
+                u.last_login_at
+            FROM users u
+            WHERE u.user_id = :user_id $whereClause
+        ");
+        $stmt->execute(['user_id' => $userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            return null;
+        }
+        
+        // Lade System-Rollen
+        $stmt = $this->db->prepare("
+            SELECT r.role_code, r.role_name, r.description
+            FROM user_role ur
+            JOIN role r ON ur.role_id = r.role_id
+            WHERE ur.user_id = :user_id
+            ORDER BY r.role_code
+        ");
+        $stmt->execute(['user_id' => $userId]);
+        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $user['roles'] = array_column($roles, 'role_code');
+        $user['roles_detail'] = $roles;
+        
+        $user['user_id'] = (string)$user['user_id'];
+        
+        return $user;
+    }
+    
+    /**
+     * Erstellt einen neuen User
+     * 
+     * @param array $data User-Daten (email, name, roles)
+     * @param int|null $createdByUserId User-ID des Erstellers
+     * @return array Erstellter User
+     */
+    public function createUser(array $data, ?int $createdByUserId = null): array
+    {
+        // Validierung
+        if (empty($data['email']) || empty($data['name'])) {
+            throw new \InvalidArgumentException('Email und Name sind erforderlich');
+        }
+        
+        // Prüfe ob Email bereits existiert
+        $stmt = $this->db->prepare("SELECT user_id FROM users WHERE email = :email");
+        $stmt->execute(['email' => $data['email']]);
+        if ($stmt->fetch()) {
+            throw new \InvalidArgumentException('Ein User mit dieser Email existiert bereits');
+        }
+        
+        // Erstelle User
+        $stmt = $this->db->prepare("
+            INSERT INTO users (email, name, created_by_user_id, is_active, created_at, updated_at)
+            VALUES (:email, :name, :created_by, 1, NOW(), NOW())
+        ");
+        $stmt->execute([
+            'email' => $data['email'],
+            'name' => $data['name'],
+            'created_by' => $createdByUserId
+        ]);
+        
+        $userId = (int)$this->db->lastInsertId();
+        
+        // Zuweise Rollen
+        if (!empty($data['roles']) && is_array($data['roles'])) {
+            foreach ($data['roles'] as $roleCode) {
+                $stmt = $this->db->prepare("
+                    INSERT INTO user_role (user_id, role_id, assigned_by_user_id)
+                    SELECT :user_id, r.role_id, :assigned_by
+                    FROM role r
+                    WHERE r.role_code = :role_code
+                ");
+                $stmt->execute([
+                    'user_id' => $userId,
+                    'role_code' => $roleCode,
+                    'assigned_by' => $createdByUserId
+                ]);
+            }
+        }
+        
+        return $this->getUserById($userId);
+    }
+    
+    /**
+     * Aktualisiert einen User
+     * 
+     * @param int|string $userId User-ID
+     * @param array $data Zu aktualisierende Felder (name, email)
+     * @return array Aktualisierter User
+     */
+    public function updateUser($userId, array $data): array
+    {
+        $userIdInt = (int)$userId;
+        
+        $allowedFields = ['name', 'email'];
+        $updates = [];
+        $params = ['user_id' => $userIdInt];
+        
+        foreach ($allowedFields as $field) {
+            if (isset($data[$field])) {
+                $updates[] = "$field = :$field";
+                $params[$field] = $data[$field];
+            }
+        }
+        
+        if (empty($updates)) {
+            return $this->getUserById($userIdInt) ?: [];
+        }
+        
+        $sql = "UPDATE users SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE user_id = :user_id";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        
+        return $this->getUserById($userIdInt) ?: [];
+    }
+    
+    /**
+     * Invalidiert alle Sessions eines Users
+     * 
+     * Da wir PHP-Sessions verwenden, können wir nicht direkt auf Session-Daten zugreifen.
+     * Stattdessen setzen wir ein Flag in der Session, das bei jedem Request geprüft wird.
+     * 
+     * @param int $userId User-ID
+     */
+    private function invalidateUserSessions(int $userId): void
+    {
+        // Da PHP-Sessions serverseitig gespeichert werden, können wir nicht direkt
+        // alle Sessions eines Users löschen. Stattdessen:
+        // 1. Der AuthService prüft bei jedem Request, ob der User noch aktiv ist
+        // 2. Wenn nicht, wird die Session automatisch invalidiert
+        
+        // Optional: Wir könnten eine user_sessions Tabelle einführen für bessere Kontrolle,
+        // aber für die Testphase ist die aktuelle Lösung ausreichend.
+        
+        // Die Session-Invalidierung erfolgt automatisch durch getCurrentUser() im AuthService,
+        // der prüft ob is_active = 1 ist.
+    }
 }
-

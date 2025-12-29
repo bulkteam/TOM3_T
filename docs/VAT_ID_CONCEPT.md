@@ -168,3 +168,4 @@ DELETE /api/orgs/{uuid}/vat-registrations/{vat_uuid}
 GET /api/orgs/{uuid}/addresses/{address_uuid}/vat-id
 ```
 
+

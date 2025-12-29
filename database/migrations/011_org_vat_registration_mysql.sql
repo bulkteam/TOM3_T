@@ -59,3 +59,4 @@ CREATE INDEX idx_org_default_vat_id ON org(default_vat_id);
 -- org.default_vat_id ist nur ein Fallback und sollte nicht als alleinige
 -- Wahrheit verwendet werden.
 
+

@@ -19,3 +19,4 @@ CREATE TABLE IF NOT EXISTS org_audit_trail (
     INDEX idx_org_audit_action (action)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+

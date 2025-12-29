@@ -33,6 +33,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Service\OrgService;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $db = DatabaseConnection::getInstance();
@@ -45,6 +46,9 @@ try {
     ]);
     exit;
 }
+
+// Hole aktuellen User aus Session (Fallback: default_user für Kompatibilität)
+$currentUserId = AuthHelper::getCurrentUserId();
 
 $method = $_SERVER['REQUEST_METHOD'];
 // Verwende die vom Router übergebenen Parameter
@@ -61,6 +65,19 @@ if ($id === 'owners') {
         $owners = $orgService->getAvailableAccountOwners();
     }
     echo json_encode($owners);
+    exit;
+}
+
+// Spezielle Behandlung für /api/orgs/next-customer-number
+if ($id === 'next-customer-number') {
+    // GET /api/orgs/next-customer-number - Nächste verfügbare Kundennummer
+    try {
+        $nextNumber = $orgService->getNextCustomerNumber();
+        echo json_encode(['next_customer_number' => $nextNumber]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
     exit;
 }
 
@@ -112,6 +129,17 @@ switch ($method) {
                 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
                 $auditTrail = $orgService->getAuditTrail($orgUuid, $limit);
                 echo json_encode($auditTrail);
+            } elseif ($action === 'track-access') {
+                // POST /api/orgs/{uuid}/track-access
+                $userId = $_GET['user_id'] ?? $currentUserId;
+                $accessType = $_GET['access_type'] ?? 'recent';
+                try {
+                    $orgService->trackAccess($userId, $orgUuid, $accessType);
+                    echo json_encode(['success' => true]);
+                } catch (Exception $e) {
+                    http_response_code(500);
+                    echo json_encode(['error' => $e->getMessage()]);
+                }
             } elseif ($action === 'health') {
                 // GET /api/orgs/{uuid}/health - Account-Gesundheit
                 $health = $orgService->getAccountHealth($orgUuid);
@@ -123,7 +151,7 @@ switch ($method) {
                 // Track Zugriff beim Abrufen (optional, nur wenn explizit gewünscht)
                 $trackAccess = isset($_GET['track']) && $_GET['track'] === 'true';
                 if ($trackAccess && $org) {
-                    $userId = $_GET['user_id'] ?? 'default_user';
+                    $userId = $_GET['user_id'] ?? $currentUserId;
                     try {
                         $orgService->trackAccess($userId, $orgUuid, 'recent');
                     } catch (Exception $e) {
@@ -160,7 +188,7 @@ switch ($method) {
             $result = $orgService->addAddress($orgUuid, $data);
             
             // Track Zugriff beim Hinzufügen einer Adresse
-            $userId = $_GET['user_id'] ?? 'default_user';
+                $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -175,10 +203,10 @@ switch ($method) {
             if (!isset($data['parent_org_uuid'])) {
                 $data['parent_org_uuid'] = $orgUuid;
             }
-            $result = $orgService->addRelation($data);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->addRelation($data, $userId);
             
             // Track Zugriff beim Hinzufügen einer Relation
-            $userId = $_GET['user_id'] ?? 'default_user';
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -192,7 +220,7 @@ switch ($method) {
             $result = $orgService->addCommunicationChannel($orgUuid, $data);
             
             // Track Zugriff beim Hinzufügen eines Kanals
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -211,7 +239,7 @@ switch ($method) {
             $result = $orgService->addVatRegistration($orgUuid, $data);
             
             // Track Zugriff beim Hinzufügen einer USt-ID
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -221,7 +249,7 @@ switch ($method) {
             echo json_encode($result);
         } elseif ($orgUuid && $action === 'archive') {
             // POST /api/orgs/{uuid}/archive
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $result = $orgService->archiveOrg($orgUuid, $userId);
                 echo json_encode($result);
@@ -231,7 +259,7 @@ switch ($method) {
             }
         } elseif ($orgUuid && $action === 'unarchive') {
             // POST /api/orgs/{uuid}/unarchive
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $result = $orgService->unarchiveOrg($orgUuid, $userId);
                 echo json_encode($result);
@@ -247,7 +275,7 @@ switch ($method) {
                 echo json_encode(['error' => 'Invalid JSON data']);
                 exit;
             }
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             $result = $orgService->createOrg($data, $userId);
             echo json_encode($result);
         }
@@ -266,7 +294,7 @@ switch ($method) {
             }
             
             // Track Zugriff beim Bearbeiten
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             $result = $orgService->updateOrg($orgUuid, $data, $userId);
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
@@ -288,7 +316,7 @@ switch ($method) {
             $result = $orgService->updateAddress($addressUuid, $data);
             
             // Track Zugriff beim Bearbeiten einer Adresse
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -305,10 +333,10 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $result = $orgService->updateRelation($relationUuid, $data);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->updateRelation($relationUuid, $data, $userId);
             
             // Track Zugriff beim Bearbeiten einer Relation
-            $userId = $_GET['user_id'] ?? 'default_user';
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -328,7 +356,7 @@ switch ($method) {
             $result = $orgService->updateCommunicationChannel($channelUuid, $data);
             
             // Track Zugriff beim Bearbeiten eines Kanals
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -367,7 +395,7 @@ switch ($method) {
                 }
                 
                 // Track Zugriff beim Bearbeiten einer USt-ID
-                $userId = $_GET['user_id'] ?? 'default_user';
+                $userId = $_GET['user_id'] ?? $currentUserId;
                 try {
                     $orgService->trackAccess($userId, $orgUuid, 'recent');
                 } catch (Exception $e) {
@@ -446,7 +474,8 @@ switch ($method) {
                 echo json_encode(['error' => 'relation_uuid required']);
                 exit;
             }
-            $result = $orgService->deleteRelation($relationUuid);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->deleteRelation($relationUuid, $userId);
             echo json_encode(['success' => $result]);
         } elseif ($orgUuid && $action === 'channels') {
             // DELETE /api/orgs/{uuid}/channels/{channel_uuid}
@@ -480,7 +509,7 @@ switch ($method) {
             }
             
             // Track Zugriff beim Löschen eines Kanals
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -515,7 +544,7 @@ switch ($method) {
             }
             
             // Track Zugriff beim Löschen einer USt-ID
-            $userId = $_GET['user_id'] ?? 'default_user';
+            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {

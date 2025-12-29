@@ -2,11 +2,11 @@
 
 ## Voraussetzungen
 
-- **PostgreSQL** 12+ (für operative Daten)
+- **MySQL/MariaDB** 5.7+ oder **MySQL** 8.0+ (für operative Daten)
 - **Neo4j** 4.4+ (optional, für Graph-Intelligence)
 - **PHP** 8.1+ mit Extensions:
   - `pdo`
-  - `pdo_pgsql`
+  - `pdo_mysql`
   - `json`
 - **Composer** (für PHP-Dependencies)
 - **Apache** mit mod_rewrite (oder Nginx)
@@ -39,12 +39,13 @@ Bearbeite `config/database.php` und passe die Werte an:
 
 ```php
 return [
-    'postgresql' => [
+    'mysql' => [
         'host' => 'localhost',
-        'port' => 5432,
-        'dbname' => 'tom3',
-        'user' => 'postgres',
-        'password' => 'dein_passwort'
+        'port' => 3306,
+        'dbname' => 'tom',
+        'user' => 'root',
+        'password' => 'dein_passwort',
+        'charset' => 'utf8mb4'
     ],
     'neo4j' => [
         'uri' => 'bolt://localhost:7687',
@@ -54,25 +55,35 @@ return [
 ];
 ```
 
-### 4. PostgreSQL-Datenbank einrichten
+### 4. MySQL-Datenbank einrichten
 
 #### Automatisch (empfohlen)
 
 ```bash
-php scripts/setup-database.php
+php scripts/setup-mysql-database.php
+```
+
+Oder führe die Migrationen einzeln aus:
+
+```bash
+php scripts/run-migration-001.php
+php scripts/run-migration-002.php
+# ... weitere Migrationen
 ```
 
 #### Manuell
 
 1. Erstelle die Datenbank:
 ```sql
-CREATE DATABASE tom3;
+CREATE DATABASE tom CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-2. Führe die Migrationen aus:
+2. Führe die Migrationen aus (in Reihenfolge):
 ```bash
-psql -d tom3 -f database/migrations/001_tom_core_schema.sql
-psql -d tom3 -f database/migrations/002_workflow_definitions.sql
+mysql -u root -p tom < database/migrations/001_tom_core_schema_mysql.sql
+mysql -u root -p tom < database/migrations/002_workflow_definitions_mysql.sql
+mysql -u root -p tom < database/migrations/003_org_addresses_and_relations_mysql.sql
+# ... weitere Migrationen
 ```
 
 ### 5. Neo4j einrichten (optional)
@@ -126,7 +137,7 @@ Für Neo4j-Synchronisation:
 php scripts/sync-worker.php
 
 # Daemon-Modus
-php scripts/setup-database.php --daemon
+php scripts/sync-worker.php --daemon
 ```
 
 ## Verifizierung
@@ -158,9 +169,10 @@ curl http://localhost/TOM3/public/api/cases
 
 ### Datenbank-Verbindungsfehler
 
-- Prüfe PostgreSQL-Laufstatus
+- Prüfe MySQL-Laufstatus
 - Prüfe `config/database.php` (Host, Port, Credentials)
 - Prüfe Firewall-Regeln
+- Prüfe ob MySQL-Service läuft: `net start MySQL` (Windows) oder `systemctl status mysql` (Linux)
 
 ### Neo4j-Verbindungsfehler
 
@@ -197,5 +209,3 @@ composer install
 ---
 
 *Setup-Anleitung für TOM3*
-
-

@@ -31,3 +31,4 @@ ADD COLUMN location_type VARCHAR(50) COMMENT 'Optional: HQ | Branch | Subsidiary
 -- Später können USt-IDs auch an org_relation gebunden werden,
 -- wenn komplexe Organisationsstrukturen (Holding, Tochter) vorhanden sind.
 
+

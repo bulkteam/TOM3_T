@@ -7,6 +7,7 @@ use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Events\EventPublisher;
 use TOM\Infrastructure\Utils\UuidHelper;
+use TOM\Infrastructure\Utils\UrlHelper;
 
 class OrgService
 {
@@ -27,6 +28,11 @@ class OrgService
         // Automatische Kundennummer-Generierung, wenn keine angegeben wurde
         if (empty($data['external_ref'])) {
             $data['external_ref'] = $this->generateCustomerNumber();
+        }
+        
+        // Normalisiere Website-URL
+        if (!empty($data['website'])) {
+            $data['website'] = UrlHelper::normalize($data['website']);
         }
         
         $stmt = $this->db->prepare("
@@ -95,6 +101,11 @@ class OrgService
     {
         // Hole alte Werte für Audit-Trail
         $oldOrg = $this->getOrg($orgUuid);
+        
+        // Normalisiere Website-URL falls vorhanden
+        if (isset($data['website'])) {
+            $data['website'] = UrlHelper::normalize($data['website']);
+        }
         
         $allowedFields = ['name', 'org_kind', 'external_ref', 'industry', 'industry_main_uuid', 'industry_sub_uuid', 'revenue_range', 'employee_count', 'website', 'notes', 'status', 'account_owner_user_id', 'account_owner_since'];
         $updates = [];
@@ -312,61 +323,26 @@ class OrgService
      */
     public function getAvailableAccountOwners(): array
     {
-        $owners = [];
-        
-        // 1. Lade User aus Config-Datei (falls vorhanden)
-        // Versuche verschiedene Pfade
-        $possiblePaths = [
-            __DIR__ . '/../../config/users.php',  // Relativ von src/TOM/Service/
-            dirname(__DIR__, 3) . '/config/users.php',  // Vom Projekt-Root
-            __DIR__ . '/../../../config/users.php',  // Alternative relativ
-        ];
-        
-        $configFile = null;
-        foreach ($possiblePaths as $path) {
-            if (file_exists($path)) {
-                $configFile = $path;
-                break;
-            }
-        }
-        
-        if ($configFile) {
-            $config = require $configFile;
-            if (isset($config['users']) && is_array($config['users'])) {
-                foreach ($config['users'] as $user) {
-                    if (isset($user['user_id'])) {
-                        // Nur User, die als Account Owner fungieren können
-                        $canBeOwner = $user['can_be_account_owner'] ?? true; // Default: true
-                        if ($canBeOwner) {
-                            $owners[$user['user_id']] = $user['display_name'] ?? $user['user_id'];
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 2. Hole alle User-IDs, die bereits als Account Owner verwendet werden
+        // Hole alle aktiven User aus der DB
         $stmt = $this->db->query("
-            SELECT DISTINCT account_owner_user_id as user_id
-            FROM org
-            WHERE account_owner_user_id IS NOT NULL
-            ORDER BY account_owner_user_id
+            SELECT 
+                u.user_id,
+                u.name,
+                u.email
+            FROM users u
+            WHERE u.is_active = 1
+            ORDER BY u.name
         ");
-        $dbOwners = $stmt->fetchAll();
         
-        foreach ($dbOwners as $row) {
-            $userId = $row['user_id'];
-            // Füge nur hinzu, wenn noch nicht in Liste (aus Config)
-            if (!isset($owners[$userId])) {
-                $owners[$userId] = $userId; // Verwende user_id als display_name, wenn nicht in Config
-            }
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere zu Array von user_ids (als String für Kompatibilität)
+        $userIds = [];
+        foreach ($users as $user) {
+            $userIds[] = (string)$user['user_id'];
         }
         
-        // Sortiere alphabetisch nach user_id
-        ksort($owners);
-        
-        // Konvertiere zu Array von user_ids (für einfache Verwendung im Dropdown)
-        return array_keys($owners);
+        return $userIds;
     }
     
     /**
@@ -375,54 +351,29 @@ class OrgService
      */
     public function getAvailableAccountOwnersWithNames(): array
     {
-        $owners = [];
-        
-        // 1. Lade User aus Config-Datei (falls vorhanden)
-        // Versuche verschiedene Pfade
-        $possiblePaths = [
-            __DIR__ . '/../../config/users.php',  // Relativ von src/TOM/Service/
-            dirname(__DIR__, 3) . '/config/users.php',  // Vom Projekt-Root
-            __DIR__ . '/../../../config/users.php',  // Alternative relativ
-        ];
-        
-        $configFile = null;
-        foreach ($possiblePaths as $path) {
-            if (file_exists($path)) {
-                $configFile = $path;
-                break;
-            }
-        }
-        
-        if ($configFile) {
-            $config = require $configFile;
-            if (isset($config['users']) && is_array($config['users'])) {
-                foreach ($config['users'] as $user) {
-                    if (isset($user['user_id'])) {
-                        $owners[$user['user_id']] = $user['display_name'] ?? $user['user_id'];
-                    }
-                }
-            }
-        }
-        
-        // 2. Hole alle User-IDs, die bereits als Account Owner verwendet werden
+        // Hole alle aktiven User aus der DB
         $stmt = $this->db->query("
-            SELECT DISTINCT account_owner_user_id as user_id
-            FROM org
-            WHERE account_owner_user_id IS NOT NULL
-            ORDER BY account_owner_user_id
+            SELECT 
+                u.user_id,
+                u.name,
+                u.email
+            FROM users u
+            WHERE u.is_active = 1
+            ORDER BY u.name
         ");
-        $dbOwners = $stmt->fetchAll();
         
-        foreach ($dbOwners as $row) {
-            $userId = $row['user_id'];
-            // Füge nur hinzu, wenn noch nicht in Liste (aus Config)
-            if (!isset($owners[$userId])) {
-                $owners[$userId] = $userId; // Verwende user_id als display_name, wenn nicht in Config
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Konvertiere zu Array: user_id => name (email)
+        $owners = [];
+        foreach ($users as $user) {
+            $userId = (string)$user['user_id'];
+            $displayName = $user['name'];
+            if ($user['email']) {
+                $displayName .= ' (' . $user['email'] . ')';
             }
+            $owners[$userId] = $displayName;
         }
-        
-        // Sortiere alphabetisch nach user_id
-        ksort($owners);
         
         return $owners;
     }
@@ -657,9 +608,9 @@ class OrgService
             $params['country'] = $filters['country'];
         }
         
-        // Filter nach Branche
+        // Filter nach Branche (über industry_main_uuid oder industry_sub_uuid)
         if (!empty($filters['industry'])) {
-            $sql .= " AND i.industry_uuid = :industry";
+            $sql .= " AND (o.industry_main_uuid = :industry OR o.industry_sub_uuid = :industry)";
             $params['industry'] = $filters['industry'];
         }
         
@@ -788,12 +739,12 @@ class OrgService
         
         $stmt = $this->db->prepare("
             INSERT INTO org_address (
-                address_uuid, org_uuid, address_type, street, city, postal_code, 
-                country, state, is_default, notes
+                address_uuid, org_uuid, address_type, street, address_additional, city, postal_code, 
+                country, state, latitude, longitude, is_default, notes
             )
             VALUES (
-                :address_uuid, :org_uuid, :address_type, :street, :city, :postal_code,
-                :country, :state, :is_default, :notes
+                :address_uuid, :org_uuid, :address_type, :street, :address_additional, :city, :postal_code,
+                :country, :state, :latitude, :longitude, :is_default, :notes
             )
         ");
         
@@ -808,10 +759,13 @@ class OrgService
             'org_uuid' => $orgUuid,
             'address_type' => $data['address_type'] ?? 'other',
             'street' => $data['street'] ?? null,
+            'address_additional' => $data['address_additional'] ?? null,
             'city' => $data['city'] ?? null,
             'postal_code' => $data['postal_code'] ?? null,
             'country' => $data['country'] ?? null,
             'state' => $data['state'] ?? null,
+            'latitude' => isset($data['latitude']) && $data['latitude'] !== '' ? (float)$data['latitude'] : null,
+            'longitude' => isset($data['longitude']) && $data['longitude'] !== '' ? (float)$data['longitude'] : null,
             'is_default' => $data['is_default'] ?? 0,
             'notes' => $data['notes'] ?? null
         ]);
@@ -848,14 +802,19 @@ class OrgService
     
     public function updateAddress(string $addressUuid, array $data): array
     {
-        $allowed = ['address_type', 'street', 'city', 'postal_code', 'country', 'state', 'is_default', 'notes'];
+        $allowed = ['address_type', 'street', 'address_additional', 'city', 'postal_code', 'country', 'state', 'latitude', 'longitude', 'is_default', 'notes'];
         $updates = [];
         $params = ['uuid' => $addressUuid];
         
         foreach ($allowed as $field) {
             if (isset($data[$field])) {
                 $updates[] = "$field = :$field";
-                $params[$field] = $data[$field];
+                // Spezielle Behandlung für Koordinaten (können null sein)
+                if (in_array($field, ['latitude', 'longitude'])) {
+                    $params[$field] = ($data[$field] !== null && $data[$field] !== '') ? (float)$data[$field] : null;
+                } else {
+                    $params[$field] = $data[$field];
+                }
             }
         }
         
@@ -1132,18 +1091,21 @@ class OrgService
     // RELATION MANAGEMENT
     // ============================================================================
     
-    public function addRelation(array $data): array
+    public function addRelation(array $data, ?string $userId = null): array
     {
         $uuid = UuidHelper::generate($this->db);
+        $userId = $userId ?? 'default_user';
         
         $stmt = $this->db->prepare("
             INSERT INTO org_relation (
                 relation_uuid, parent_org_uuid, child_org_uuid, relation_type,
-                ownership_percent, since_date, until_date, notes
+                ownership_percent, since_date, until_date, notes,
+                has_voting_rights, is_direct, source, confidence, tags, is_current
             )
             VALUES (
                 :relation_uuid, :parent_org_uuid, :child_org_uuid, :relation_type,
-                :ownership_percent, :since_date, :until_date, :notes
+                :ownership_percent, :since_date, :until_date, :notes,
+                :has_voting_rights, :is_direct, :source, :confidence, :tags, :is_current
             )
         ");
         
@@ -1151,14 +1113,40 @@ class OrgService
             'relation_uuid' => $uuid,
             'parent_org_uuid' => $data['parent_org_uuid'],
             'child_org_uuid' => $data['child_org_uuid'],
-            'relation_type' => $data['relation_type'] ?? 'subsidiary',
+            'relation_type' => $data['relation_type'] ?? 'subsidiary_of',
             'ownership_percent' => $data['ownership_percent'] ?? null,
             'since_date' => $data['since_date'] ?? null,
             'until_date' => $data['until_date'] ?? null,
-            'notes' => $data['notes'] ?? null
+            'notes' => $data['notes'] ?? null,
+            'has_voting_rights' => isset($data['has_voting_rights']) ? (int)$data['has_voting_rights'] : 0,
+            'is_direct' => isset($data['is_direct']) ? (int)$data['is_direct'] : 1,
+            'source' => $data['source'] ?? null,
+            'confidence' => $data['confidence'] ?? 'high',
+            'tags' => $data['tags'] ?? null,
+            'is_current' => isset($data['is_current']) ? (int)$data['is_current'] : 1
         ]);
         
         $relation = $this->getRelation($uuid);
+        
+        // Protokolliere im Audit-Trail
+        if ($relation) {
+            $this->insertAuditEntry(
+                $data['parent_org_uuid'],
+                $userId,
+                'create',
+                null,
+                null,
+                'relation_added',
+                [
+                    'relation_uuid' => $uuid,
+                    'child_org_uuid' => $data['child_org_uuid'],
+                    'relation_type' => $relation['relation_type'],
+                    'child_org_name' => $relation['child_org_name'] ?? null
+                ],
+                $relation
+            );
+        }
+        
         $this->eventPublisher->publish('org', $data['parent_org_uuid'], 'OrgRelationAdded', $relation);
         
         return $relation;
@@ -1166,7 +1154,16 @@ class OrgService
     
     public function getRelation(string $relationUuid): ?array
     {
-        $stmt = $this->db->prepare("SELECT * FROM org_relation WHERE relation_uuid = :uuid");
+        $stmt = $this->db->prepare("
+            SELECT 
+                r.*,
+                parent.name as parent_org_name,
+                child.name as child_org_name
+            FROM org_relation r
+            LEFT JOIN org parent ON r.parent_org_uuid = parent.org_uuid
+            LEFT JOIN org child ON r.child_org_uuid = child.org_uuid
+            WHERE r.relation_uuid = :uuid
+        ");
         $stmt->execute(['uuid' => $relationUuid]);
         return $stmt->fetch() ?: null;
     }
@@ -1174,44 +1171,67 @@ class OrgService
     public function getRelations(string $orgUuid, ?string $direction = null): array
     {
         // direction: 'parent' = wo ist orgUuid Kind, 'child' = wo ist orgUuid Parent, null = beide
-        $sql = "SELECT * FROM org_relation WHERE 1=1";
+        $sql = "
+            SELECT 
+                r.*,
+                parent.name as parent_org_name,
+                child.name as child_org_name
+            FROM org_relation r
+            LEFT JOIN org parent ON r.parent_org_uuid = parent.org_uuid
+            LEFT JOIN org child ON r.child_org_uuid = child.org_uuid
+            WHERE 1=1
+        ";
         $params = [];
         
         if ($direction === 'parent') {
-            $sql .= " AND child_org_uuid = :org_uuid";
+            $sql .= " AND r.child_org_uuid = :org_uuid";
             $params['org_uuid'] = $orgUuid;
         } elseif ($direction === 'child') {
-            $sql .= " AND parent_org_uuid = :org_uuid";
+            $sql .= " AND r.parent_org_uuid = :org_uuid";
             $params['org_uuid'] = $orgUuid;
         } else {
-            $sql .= " AND (parent_org_uuid = :org_uuid OR child_org_uuid = :org_uuid)";
+            $sql .= " AND (r.parent_org_uuid = :org_uuid OR r.child_org_uuid = :org_uuid)";
             $params['org_uuid'] = $orgUuid;
         }
         
-        // Nur aktive Relationen (until_date ist NULL oder in der Zukunft)
-        $sql .= " AND (until_date IS NULL OR until_date >= CURDATE())";
-        $sql .= " ORDER BY relation_type, since_date DESC";
+        // Nur aktuelle Relationen (is_current = 1 und until_date ist NULL oder in der Zukunft)
+        $sql .= " AND r.is_current = 1 AND (r.until_date IS NULL OR r.until_date >= CURDATE())";
+        $sql .= " ORDER BY r.relation_type, r.since_date DESC";
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
     
-    public function updateRelation(string $relationUuid, array $data): array
+    public function updateRelation(string $relationUuid, array $data, ?string $userId = null): array
     {
-        $allowed = ['relation_type', 'ownership_percent', 'since_date', 'until_date', 'notes'];
+        $userId = $userId ?? 'default_user';
+        $oldRelation = $this->getRelation($relationUuid);
+        
+        if (!$oldRelation) {
+            throw new \Exception("Relation nicht gefunden");
+        }
+        
+        $allowed = [
+            'relation_type', 'ownership_percent', 'since_date', 'until_date', 'notes',
+            'has_voting_rights', 'is_direct', 'source', 'confidence', 'tags', 'is_current'
+        ];
         $updates = [];
         $params = ['uuid' => $relationUuid];
         
         foreach ($allowed as $field) {
             if (isset($data[$field])) {
+                if (in_array($field, ['has_voting_rights', 'is_direct', 'is_current'])) {
+                    $params[$field] = (int)$data[$field];
+                } else {
+                    $params[$field] = $data[$field];
+                }
                 $updates[] = "$field = :$field";
-                $params[$field] = $data[$field];
             }
         }
         
         if (empty($updates)) {
-            return $this->getRelation($relationUuid);
+            return $oldRelation;
         }
         
         $sql = "UPDATE org_relation SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE relation_uuid = :uuid";
@@ -1220,23 +1240,77 @@ class OrgService
         
         $relation = $this->getRelation($relationUuid);
         if ($relation) {
+            // Protokolliere Änderungen im Audit-Trail
+            $changedFields = [];
+            foreach ($allowed as $field) {
+                $oldValue = $oldRelation[$field] ?? null;
+                $newValue = $relation[$field] ?? null;
+                if ($oldValue !== $newValue) {
+                    $changedFields[$field] = [
+                        'old' => $oldValue,
+                        'new' => $newValue
+                    ];
+                }
+            }
+            
+            if (!empty($changedFields)) {
+                $this->insertAuditEntry(
+                    $relation['parent_org_uuid'],
+                    $userId,
+                    'update',
+                    null,
+                    null,
+                    'relation_updated',
+                    [
+                        'relation_uuid' => $relationUuid,
+                        'child_org_uuid' => $relation['child_org_uuid'],
+                        'child_org_name' => $relation['child_org_name'] ?? null,
+                        'changed_fields' => $changedFields
+                    ],
+                    $changedFields
+                );
+            }
+            
             $this->eventPublisher->publish('org', $relation['parent_org_uuid'], 'OrgRelationUpdated', $relation);
         }
         
         return $relation;
     }
     
-    public function deleteRelation(string $relationUuid): bool
+    public function deleteRelation(string $relationUuid, ?string $userId = null): bool
     {
+        $userId = $userId ?? 'default_user';
         $relation = $this->getRelation($relationUuid);
         if (!$relation) {
             return false;
         }
         
+        $parentOrgUuid = $relation['parent_org_uuid'];
+        $childOrgUuid = $relation['child_org_uuid'];
+        $childOrgName = $relation['child_org_name'] ?? null;
+        $relationType = $relation['relation_type'];
+        
         $stmt = $this->db->prepare("DELETE FROM org_relation WHERE relation_uuid = :uuid");
         $stmt->execute(['uuid' => $relationUuid]);
         
-        $this->eventPublisher->publish('org', $relation['parent_org_uuid'], 'OrgRelationDeleted', ['relation_uuid' => $relationUuid]);
+        // Protokolliere im Audit-Trail
+        $this->insertAuditEntry(
+            $parentOrgUuid,
+            $userId,
+            'delete',
+            null,
+            null,
+            'relation_removed',
+            [
+                'relation_uuid' => $relationUuid,
+                'child_org_uuid' => $childOrgUuid,
+                'child_org_name' => $childOrgName,
+                'relation_type' => $relationType
+            ],
+            $relation
+        );
+        
+        $this->eventPublisher->publish('org', $parentOrgUuid, 'OrgRelationDeleted', ['relation_uuid' => $relationUuid]);
         
         return true;
     }
@@ -1287,6 +1361,16 @@ class OrgService
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
+    /**
+     * Gibt die nächste verfügbare Kundennummer zurück (ohne sie zu vergeben)
+     * 
+     * @return string Numerische Kundennummer
+     */
+    public function getNextCustomerNumber(): string
+    {
+        return $this->generateCustomerNumber();
+    }
+
     /**
      * Generiert eine neue Kundennummer basierend auf der höchsten vorhandenen Nummer
      * 

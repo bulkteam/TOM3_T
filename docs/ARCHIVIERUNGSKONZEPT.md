@@ -206,3 +206,4 @@ WHERE org_uuid = :org_uuid;
 5. **Sollen archivierte Datensätze in Statistiken/Reports erscheinen?**
    - Nein, nur aktive Datensätze
 
+

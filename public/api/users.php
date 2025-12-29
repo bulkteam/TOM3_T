@@ -11,6 +11,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Service\UserService;
+use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $userService = new UserService();
@@ -24,16 +25,33 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
-$pathParts = explode('/', trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/'));
-// Entferne /TOM3/public/api falls vorhanden
-$pathParts = array_filter($pathParts, function($part) {
-    return $part !== 'TOM3' && $part !== 'public' && $part !== 'api';
-});
-$pathParts = array_values($pathParts);
 
-// users ist parts[0], action ist parts[1], id ist parts[2]
-$action = $pathParts[1] ?? null;
-$userId = $pathParts[2] ?? null;
+// Wenn von index.php aufgerufen, verwende die bereits geparsten Variablen
+// Ansonsten parse den Pfad selbst
+if (isset($id) || isset($action)) {
+    // Von index.php: $id ist der erste Teil nach 'users' (z.B. '1' für /api/users/1)
+    $userId = $id ?? null;
+    $action = $action ?? null;
+} else {
+    // Direkter Aufruf: Parse den Pfad selbst
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
+    
+    // Entferne /TOM3/public falls vorhanden
+    $path = preg_replace('#^/TOM3/public#', '', $path);
+    // Entferne /api prefix
+    $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    $path = trim($path, '/');
+    
+    $pathParts = explode('/', $path);
+    // Filtere 'users' heraus, da wir bereits wissen dass wir in users.php sind
+    $pathParts = array_filter($pathParts, function($p) { return $p !== 'users' && $p !== ''; });
+    $pathParts = array_values($pathParts);
+    
+    // users ist parts[0], action ist parts[1], id ist parts[2]
+    $action = $pathParts[1] ?? null;
+    $userId = $pathParts[0] ?? null; // Erster Teil nach 'users' ist die User-ID
+}
 
 switch ($method) {
     case 'GET':
@@ -59,7 +77,9 @@ switch ($method) {
             echo json_encode($roles);
         } elseif ($userId) {
             // GET /api/users/{user_id} - Einzelner User
-            $user = $userService->getUser($userId);
+            // Erlaube auch inaktive User für Admin-Bearbeitung
+            $includeInactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] === 'true';
+            $user = $userService->getUser($userId, $includeInactive);
             if ($user) {
                 echo json_encode($user);
             } else {
@@ -73,8 +93,53 @@ switch ($method) {
             echo json_encode($users);
         } else {
             // GET /api/users - Alle User
-            $users = $userService->getAllUsers();
+            $includeInactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] === 'true';
+            $users = $userService->getAllUsers($includeInactive);
             echo json_encode($users);
+        }
+        break;
+        
+    case 'PUT':
+        // Prüfe Admin-Berechtigung
+        $currentUser = AuthHelper::getCurrentUser();
+        if (!$currentUser || !in_array('admin', $currentUser['roles'] ?? [], true)) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Admin-Berechtigung erforderlich']);
+            exit;
+        }
+        
+        if ($action === 'deactivate' && $userId) {
+            // PUT /api/users/{user_id}/deactivate - User deaktivieren
+            try {
+                $currentUserId = AuthHelper::getCurrentUserId();
+                $userService->deactivateUser($userId, $currentUserId);
+                echo json_encode(['success' => true, 'message' => 'User wurde deaktiviert']);
+            } catch (\Exception $e) {
+                http_response_code(400);
+                echo json_encode(['error' => $e->getMessage()]);
+            }
+        } elseif ($action === 'activate' && $userId) {
+            // PUT /api/users/{user_id}/activate - User aktivieren
+            try {
+                $userService->activateUser($userId);
+                echo json_encode(['success' => true, 'message' => 'User wurde aktiviert']);
+            } catch (\Exception $e) {
+                http_response_code(400);
+                echo json_encode(['error' => $e->getMessage()]);
+            }
+        } elseif ($userId) {
+            // PUT /api/users/{user_id} - User aktualisieren
+            $data = json_decode(file_get_contents('php://input'), true);
+            try {
+                $user = $userService->updateUser($userId, $data);
+                echo json_encode($user);
+            } catch (\Exception $e) {
+                http_response_code(400);
+                echo json_encode(['error' => $e->getMessage()]);
+            }
+        } else {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid request']);
         }
         break;
         

@@ -64,3 +64,4 @@ Für ein B2B-CRM ist der aktuelle Stand ausreichend. Die fehlenden Hauptklassen 
 
 Falls später benötigt, können die fehlenden Unterklassen einfach ergänzt werden.
 
+

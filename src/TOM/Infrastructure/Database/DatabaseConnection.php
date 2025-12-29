@@ -34,7 +34,11 @@ class DatabaseConnection
                 $dbConfig['password'] ?? '',
                 [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    // Keine persistent connections - verhindert Verbindungsprobleme
+                    PDO::ATTR_PERSISTENT => false,
+                    // Timeout für Verbindungen (30 Sekunden)
+                    PDO::ATTR_TIMEOUT => 30
                 ]
             );
         }

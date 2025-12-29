@@ -7,7 +7,7 @@ Das Monitoring-Dashboard bietet eine umfassende Übersicht über den Systemstatu
 ## Features
 
 ### System Status
-- **PostgreSQL Status**: Datenbank-Verbindungsstatus
+- **MySQL Status**: Datenbank-Verbindungsstatus
 - **Neo4j Status**: Graph-Datenbank-Verbindungsstatus
 - **Sync-Worker Status**: Status des Neo4j-Sync-Workers
 

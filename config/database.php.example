@@ -6,19 +6,17 @@
  */
 
 return [
-    'postgresql' => [
-        'host' => 'localhost',
-        'port' => 5432,
-        'dbname' => 'tom3',
-        'user' => 'postgres',
-        'password' => 'password',
-        'charset' => 'utf8'
+    'mysql' => [
+        'host' => $_ENV['MYSQL_HOST'] ?? 'localhost',
+        'port' => (int)($_ENV['MYSQL_PORT'] ?? 3306),
+        'dbname' => $_ENV['MYSQL_DBNAME'] ?? 'tom',
+        'user' => $_ENV['MYSQL_USER'] ?? 'root',
+        'password' => $_ENV['MYSQL_PASSWORD'] ?? '',
+        'charset' => 'utf8mb4'
     ],
     'neo4j' => [
-        'uri' => 'bolt://localhost:7687',
-        'user' => 'neo4j',
-        'password' => 'password'
+        'uri' => $_ENV['NEO4J_URI'] ?? 'bolt://localhost:7687',
+        'user' => $_ENV['NEO4J_USER'] ?? 'neo4j',
+        'password' => $_ENV['NEO4J_PASSWORD'] ?? 'password'
     ]
 ];
-
-

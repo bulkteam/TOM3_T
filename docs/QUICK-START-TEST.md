@@ -1,68 +1,43 @@
 # TOM3 - Quick Start für Testversion
 
-## Schritt 1: Datenbank-Einstellungen finden
+## Schritt 1: Datenbank-Einstellungen prüfen
 
-Führe dieses Script aus, um zu sehen, welche Datenbank-Einstellungen du hast:
+Falls du XAMPP verwendest, ist MySQL bereits installiert:
+- Standard-Benutzer: `root`
+- Standard-Passwort: (leer) oder `root`
+- Datenbank über phpMyAdmin erstellen: http://localhost/phpmyadmin
 
-```powershell
-cd C:\xampp\htdocs\TOM3
-powershell -ExecutionPolicy Bypass -File scripts\find-database-settings.ps1
-```
+## Schritt 2: Datenbank erstellen
 
-Dieses Script zeigt dir:
-- Ob PostgreSQL installiert ist
-- Welcher Port verwendet wird
-- Ob der Service läuft
-- Ob Neo4j läuft
+### Option A: Über phpMyAdmin (XAMPP)
 
-## Schritt 2: Standard-Testnutzer erstellen (empfohlen)
+1. Öffne http://localhost/phpmyadmin
+2. Klicke auf **"Neu"** (neue Datenbank)
+3. Datenbankname: `tom`
+4. Kollation: `utf8mb4_unicode_ci`
+5. Klicke auf **"Erstellen"**
 
-Dieses Script erstellt automatisch:
-- Datenbank: `tom3`
-- Benutzer: `tom3_test`
-- Passwort: `tom3_test`
-
-Und aktualisiert automatisch `config/database.php`.
+### Option B: Über MySQL-Kommandozeile
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
-powershell -ExecutionPolicy Bypass -File scripts\create-test-users.ps1
+mysql -u root -p
+CREATE DATABASE tom CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+EXIT;
 ```
 
-**Wichtig:** Du wirst nach dem Passwort für den `postgres`-Benutzer gefragt (das Passwort, das du bei der PostgreSQL-Installation gesetzt hast).
+## Schritt 3: Datenbank-Konfiguration
 
-## Schritt 3: Datenbank-Schema erstellen
-
-Nachdem die Testnutzer erstellt wurden:
-
-```powershell
-php scripts\setup-database.php
-```
-
-Dies erstellt alle Tabellen und führt die Migrationen aus.
-
-## Schritt 4: Testen
-
-Öffne im Browser:
-- API-Test: http://localhost/TOM3/public/api/test.php
-- UI: http://localhost/TOM3/public/
-
-## Manuelle Konfiguration (falls gewünscht)
-
-Falls du die Testnutzer nicht verwenden möchtest, bearbeite manuell:
-
-`config/database.php`
+Bearbeite `config/database.php`:
 
 ```php
-<?php
 return [
-    'postgresql' => [
+    'mysql' => [
         'host' => 'localhost',
-        'port' => 5432,
-        'dbname' => 'deine_datenbank',
-        'user' => 'dein_benutzer',
-        'password' => 'dein_passwort',
-        'charset' => 'utf8'
+        'port' => 3306,
+        'dbname' => 'tom',
+        'user' => 'root',
+        'password' => '',  // Leer bei XAMPP Standard
+        'charset' => 'utf8mb4'
     ],
     'neo4j' => [
         'uri' => 'bolt://localhost:7687',
@@ -72,16 +47,36 @@ return [
 ];
 ```
 
+## Schritt 4: Datenbank-Schema erstellen
+
+```powershell
+cd C:\xampp\htdocs\TOM3
+php scripts/setup-mysql-database.php
+```
+
+Oder führe die Migrationen einzeln aus:
+
+```powershell
+php scripts/run-migration-018.php
+php scripts/run-migration-019.php
+# ... weitere Migrationen nach Bedarf
+```
+
+## Schritt 5: Testen
+
+Öffne im Browser:
+- API-Test: http://localhost/TOM3/public/api/orgs
+- UI: http://localhost/TOM3/public/
+- Login: http://localhost/TOM3/public/login.php
+
 ## Standard-Testwerte
 
-Wenn du die automatischen Testnutzer verwendest:
-
-**PostgreSQL:**
+**MySQL (XAMPP):**
 - Host: `localhost`
-- Port: `5432`
-- Datenbank: `tom3`
-- Benutzer: `tom3_test`
-- Passwort: `tom3_test`
+- Port: `3306`
+- Datenbank: `tom`
+- Benutzer: `root`
+- Passwort: (leer) oder `root`
 
 **Neo4j (optional):**
 - URI: `bolt://localhost:7687`
@@ -90,34 +85,26 @@ Wenn du die automatischen Testnutzer verwendest:
 
 ## Troubleshooting
 
-### PostgreSQL nicht gefunden
-
-Das Script sucht standardmäßig in `C:\Program Files\PostgreSQL\16`. Falls PostgreSQL woanders installiert ist:
-
-```powershell
-.\create-test-users.ps1 -InstallPath "C:\Program Files\PostgreSQL\15"
-```
-
-### Service läuft nicht
+### MySQL-Service läuft nicht
 
 ```powershell
 # Service-Status prüfen
-Get-Service | Where-Object { $_.Name -like "*postgres*" }
+Get-Service | Where-Object { $_.Name -like "*mysql*" }
 
-# Service starten
-Start-Service -Name "postgresql-x64-16"
+# Service starten (XAMPP)
+# Über XAMPP Control Panel: MySQL → Start
 ```
 
-### Passwort vergessen
+### Datenbank-Verbindungsfehler
 
-Falls du das postgres-Passwort vergessen hast, kannst du es zurücksetzen:
+- Prüfe ob MySQL-Service läuft
+- Prüfe `config/database.php` (Host, Port, Credentials)
+- Prüfe ob Datenbank `tom` existiert
+- Teste Verbindung: `mysql -u root -p`
 
-1. Öffne `pg_hba.conf` (normalerweise in `C:\Program Files\PostgreSQL\16\data\`)
-2. Ändere `md5` zu `trust` für localhost
-3. Starte PostgreSQL neu
-4. Ändere das Passwort: `ALTER USER postgres WITH PASSWORD 'neues_passwort';`
-5. Ändere `pg_hba.conf` zurück zu `md5`
+### Migration-Fehler
 
-
-
-
+Falls eine Migration fehlschlägt:
+- Prüfe ob vorherige Migrationen erfolgreich waren
+- Prüfe MySQL-Logs
+- Führe Migrationen einzeln aus, um Fehlerquelle zu finden

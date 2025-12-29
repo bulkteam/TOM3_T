@@ -2,12 +2,17 @@
  * TOM3 - API Client
  */
 
+// Helper: Ermittelt den Base-Path der Anwendung
+function getBasePath() {
+    const path = window.location.pathname;
+    // Entferne index.html, login.php oder trailing slash
+    const base = path.replace(/\/index\.html$/, '').replace(/\/login\.php$/, '').replace(/\/$/, '');
+    return base || '';
+}
+
 // API Base URL - relativ zum aktuellen Pfad
 const API_BASE = (() => {
-    const path = window.location.pathname;
-    // Entferne index.html oder trailing slash
-    const base = path.replace(/\/index\.html$/, '').replace(/\/$/, '');
-    return base + '/api';
+    return getBasePath() + '/api';
 })();
 
 class TOM3API {
@@ -31,6 +36,16 @@ class TOM3API {
 
         try {
             const response = await fetch(url, config);
+            
+            // Bei 401 (Unauthorized) -> weiterleiten zu Login
+            if (response.status === 401) {
+                const currentPath = window.location.pathname;
+                if (!currentPath.includes('login.php')) {
+                    const basePath = currentPath.replace(/\/index\.html$/, '').replace(/\/$/, '') || '';
+                    window.location.href = (basePath ? basePath + '/' : '') + 'login.php';
+                }
+                throw new Error('Unauthorized - redirecting to login');
+            }
             
             // Prüfe Content-Type
             const contentType = response.headers.get('content-type');
@@ -201,6 +216,34 @@ class TOM3API {
         return this.request(endpoint);
     }
     
+    async addOrgAddress(orgUuid, data) {
+        return this.request(`/orgs/${orgUuid}/addresses`, {
+            method: 'POST',
+            body: data
+        });
+    }
+    
+    async updateOrgAddress(orgUuid, addressUuid, data) {
+        return this.request(`/orgs/${orgUuid}/addresses/${addressUuid}`, {
+            method: 'PUT',
+            body: data
+        });
+    }
+    
+    async deleteOrgAddress(orgUuid, addressUuid) {
+        return this.request(`/orgs/${orgUuid}/addresses/${addressUuid}`, {
+            method: 'DELETE'
+        });
+    }
+    
+    async lookupPlz(plz) {
+        return this.request(`/plz-lookup?plz=${encodeURIComponent(plz)}`);
+    }
+    
+    async getAddressTypes() {
+        return this.request('/address-types');
+    }
+    
     // Communication Channels
     async getOrgChannels(orgUuid, type = null) {
         const endpoint = type ? `/orgs/${orgUuid}/channels?type=${type}` : `/orgs/${orgUuid}/channels`;
@@ -223,6 +266,40 @@ class TOM3API {
     
     async deleteOrgChannel(orgUuid, channelUuid) {
         return this.request(`/orgs/${orgUuid}/channels/${channelUuid}`, {
+            method: 'DELETE'
+        });
+    }
+    
+    // Relations
+    async getOrgRelations(orgUuid, direction = null) {
+        const endpoint = direction ? `/orgs/${orgUuid}/relations?direction=${direction}` : `/orgs/${orgUuid}/relations`;
+        return this.request(endpoint);
+    }
+    
+    async getOrgRelation(relationUuid) {
+        // Relation über beide möglichen Endpunkte abrufen (parent oder child)
+        // Wir müssen die Relation über eine Org finden
+        // Für jetzt: Verwende einen direkten Endpunkt oder suche über alle Orgs
+        // TODO: API-Endpunkt für direkten Relation-Abruf hinzufügen
+        throw new Error('Direct relation lookup not yet implemented. Use getOrgRelations instead.');
+    }
+    
+    async addOrgRelation(orgUuid, data) {
+        return this.request(`/orgs/${orgUuid}/relations`, {
+            method: 'POST',
+            body: data
+        });
+    }
+    
+    async updateOrgRelation(orgUuid, relationUuid, data) {
+        return this.request(`/orgs/${orgUuid}/relations/${relationUuid}`, {
+            method: 'PUT',
+            body: data
+        });
+    }
+    
+    async deleteOrgRelation(orgUuid, relationUuid) {
+        return this.request(`/orgs/${orgUuid}/relations/${relationUuid}`, {
             method: 'DELETE'
         });
     }
@@ -277,12 +354,21 @@ class TOM3API {
         
         // Track Zugriff beim Bearbeiten
         try {
-            await this.trackOrgAccess(orgUuid, 'default_user', 'recent');
+            const user = await this.getCurrentUser();
+            if (user && user.user_id) {
+                await this.trackOrgAccess(orgUuid, user.user_id, 'recent');
+            }
         } catch (error) {
             console.warn('Could not track org access:', error);
         }
         
         return result;
+    }
+    
+    async trackOrgAccess(orgUuid, userId, accessType = 'recent') {
+        return this.request(`/orgs/${orgUuid}/track-access?user_id=${userId}&access_type=${accessType}`, {
+            method: 'POST'
+        });
     }
     
     async getRecentOrgs(userId = 'default_user', limit = 10) {
@@ -309,8 +395,39 @@ class TOM3API {
         return this.request(`/orgs/${orgUuid}/health`);
     }
     
-    async getAvailableAccountOwners() {
-        return this.request('/orgs/owners');
+    async getAvailableAccountOwners(withNames = true) {
+        const endpoint = withNames ? '/orgs/owners?with_names=true' : '/orgs/owners';
+        return this.request(endpoint);
+    }
+    
+    // Admin - User Management
+    async getAllUsers(includeInactive = false) {
+        const endpoint = includeInactive ? '/users?include_inactive=true' : '/users';
+        return this.request(endpoint);
+    }
+    
+    async deactivateUser(userId) {
+        return this.request(`/users/${userId}/deactivate`, {
+            method: 'PUT'
+        });
+    }
+    
+    async activateUser(userId) {
+        return this.request(`/users/${userId}/activate`, {
+            method: 'PUT'
+        });
+    }
+    
+    async updateUser(userId, data) {
+        return this.request(`/users/${userId}`, {
+            method: 'PUT',
+            body: data
+        });
+    }
+    
+    async getUser(userId, includeInactive = true) {
+        const endpoint = includeInactive ? `/users/${userId}?include_inactive=true` : `/users/${userId}`;
+        return this.request(endpoint);
     }
     
     async trackOrgAccess(orgUuid, userId = 'default_user', accessType = 'recent') {
@@ -328,6 +445,28 @@ class TOM3API {
         return this.request('/orgs', {
             method: 'POST',
             body: data
+        });
+    }
+
+    async getNextCustomerNumber() {
+        return this.request('/orgs/next-customer-number');
+    }
+
+    // Auth
+    async getCurrentUser() {
+        return this.request('/auth/current');
+    }
+
+    async login(userId) {
+        return this.request('/auth/login', {
+            method: 'POST',
+            body: { user_id: userId }
+        });
+    }
+
+    async logout() {
+        return this.request('/auth/logout', {
+            method: 'POST'
         });
     }
 
