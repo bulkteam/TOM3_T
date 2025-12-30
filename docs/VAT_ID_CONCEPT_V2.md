@@ -89,3 +89,4 @@ USt-Registrierungen:
 ✅ **Erweiterbar:** Später für Organisationsstrukturen nutzbar
 
 
+

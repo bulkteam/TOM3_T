@@ -77,3 +77,4 @@ Copy-Item C:\xampp\mysql\data\my.ini.backup C:\xampp\mysql\data\my.ini -Force
 
 **Viel Erfolg! 🚀**
 
+

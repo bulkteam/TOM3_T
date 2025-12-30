@@ -126,3 +126,4 @@ default-character-set=utf8mb4
 2. Erstelle einen Windows Scheduled Task, der das Skript vor dem MySQL-Start ausführt
 3. Oder füge es zu XAMPP Startup hinzu
 
+

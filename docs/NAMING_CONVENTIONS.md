@@ -157,3 +157,4 @@ Bei der Erstellung neuer Tabellen:
 - `org.industry_main_uuid` (direktes Feld für 1:1-Beziehung)
 
 
+

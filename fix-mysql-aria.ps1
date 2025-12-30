@@ -68,3 +68,4 @@ Write-Host "   - Check Windows Event Viewer for more details" -ForegroundColor Y
 Write-Host "   - Verify MySQL data directory permissions" -ForegroundColor Yellow
 Write-Host "   - Consider backing up and recreating the database" -ForegroundColor Yellow
 
+

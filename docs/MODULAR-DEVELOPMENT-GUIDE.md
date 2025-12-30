@@ -490,3 +490,4 @@ Wenn 2+ Fragen mit "Nein" beantwortet werden → Neue Datei erstellen!
 *Erstellt: 2025-01-28*
 *Nächste Überprüfung: Nach jedem größeren Feature*
 
+
