@@ -11,6 +11,7 @@ export class OrgDetailEditModule {
     }
     
     async toggleOrgEditMode(orgUuid) {
+        console.log('[OrgDetailEdit] ===== toggleOrgEditMode called =====', orgUuid);
         // Zeige Eingabefelder, verstecke Werte
         document.querySelectorAll(`[data-org-uuid="${orgUuid}"] .org-detail-value`).forEach(el => {
             el.style.display = 'none';
@@ -34,38 +35,54 @@ export class OrgDetailEditModule {
         const industryValue = document.getElementById('org-field-industry');
         const industryMainInput = document.getElementById('org-input-industry_main');
         const industrySubInput = document.getElementById('org-input-industry_sub');
+        console.log('[OrgDetailEdit] Industry inputs found:', {
+            value: industryValue,
+            main: industryMainInput,
+            sub: industrySubInput,
+            mainId: industryMainInput?.id,
+            subId: industrySubInput?.id
+        });
+        
         if (industryValue && industryMainInput && industrySubInput) {
+            console.log('[OrgDetailEdit] All industry elements found, setting up...');
             industryValue.style.display = 'none';
             const industryInputContainer = industryMainInput.parentElement;
             if (industryInputContainer) {
                 industryInputContainer.style.display = 'block';
             }
             
-            // Lade Hauptbranchen
-            await this.loadIndustryMainClasses(industryMainInput);
+            // Setze Abhängigkeit (ohne Klonen, da Element nur einmal erstellt wird)
+            console.log('[OrgDetailEdit] Setting up dependency...');
+            const mainInput = Utils.setupIndustryDependency(industryMainInput, industrySubInput, false);
+            console.log('[OrgDetailEdit] Dependency setup completed, mainInput:', mainInput);
             
-            // Setze aktuelle Werte
-            const currentMainUuid = industryMainInput.dataset.currentMainUuid;
-            const currentSubUuid = industrySubInput.dataset.currentSubUuid;
-            if (currentMainUuid) {
-                industryMainInput.value = currentMainUuid;
+            // Lade Hauptbranchen
+            if (mainInput) {
+                console.log('[OrgDetailEdit] Loading main classes...');
+                await Utils.loadIndustryMainClasses(mainInput);
+                console.log('[OrgDetailEdit] Main classes loaded');
+                
+                // Setze aktuelle Werte
+                const currentMainUuid = industryMainInput.dataset.currentMainUuid;
+                const currentSubUuid = industrySubInput.dataset.currentSubUuid;
+                console.log('[OrgDetailEdit] Current values:', { currentMainUuid, currentSubUuid });
                 if (currentMainUuid) {
-                    await this.loadIndustrySubClasses(currentMainUuid, industrySubInput);
-                    if (currentSubUuid) {
-                        industrySubInput.value = currentSubUuid;
+                    mainInput.value = currentMainUuid;
+                    if (currentMainUuid) {
+                        await Utils.loadIndustrySubClasses(currentMainUuid, industrySubInput);
+                        if (currentSubUuid) {
+                            industrySubInput.value = currentSubUuid;
+                        }
                     }
                 }
+            } else {
+                console.error('[OrgDetailEdit] mainInput is null!');
             }
-            
-            // Event-Listener für Hauptbranche-Änderung
-            industryMainInput.addEventListener('change', async (e) => {
-                const selectedMainUuid = e.target.value;
-                if (selectedMainUuid) {
-                    await this.loadIndustrySubClasses(selectedMainUuid, industrySubInput);
-                } else {
-                    industrySubInput.innerHTML = '<option value="">-- Zuerst Hauptbranche wählen --</option>';
-                    industrySubInput.disabled = true;
-                }
+        } else {
+            console.error('[OrgDetailEdit] Industry elements not found!', {
+                value: industryValue,
+                main: industryMainInput,
+                sub: industrySubInput
             });
         }
         
@@ -81,37 +98,6 @@ export class OrgDetailEditModule {
         }
     }
     
-    async loadIndustryMainClasses(selectElement) {
-        try {
-            const industries = await window.API.getIndustries(null, true);
-            selectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            industries.forEach(industry => {
-                const option = document.createElement('option');
-                option.value = industry.industry_uuid;
-                option.textContent = industry.name;
-                selectElement.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading industry main classes:', error);
-        }
-    }
-    
-    async loadIndustrySubClasses(parentUuid, selectElement) {
-        try {
-            const industries = await window.API.getIndustries(parentUuid, false);
-            selectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            selectElement.disabled = false;
-            industries.forEach(industry => {
-                const option = document.createElement('option');
-                option.value = industry.industry_uuid;
-                option.textContent = industry.name;
-                selectElement.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading industry sub classes:', error);
-            selectElement.innerHTML = '<option value="">Fehler beim Laden</option>';
-        }
-    }
     
     cancelOrgEdit(orgUuid) {
         // Verstecke Eingabefelder, zeige Werte

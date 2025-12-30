@@ -11,12 +11,19 @@ export class OrgSearchModule {
     }
     
     init() {
+        console.log('[OrgSearch] ===== init() called =====');
         const searchInput = document.getElementById('org-search-input');
         const resultsContainer = document.getElementById('org-search-results');
         const filtersContainer = document.getElementById('org-filters-panel');
         
+        console.log('[OrgSearch] Elements found:', {
+            searchInput: !!searchInput,
+            resultsContainer: !!resultsContainer,
+            filtersContainer: !!filtersContainer
+        });
+        
         if (!searchInput) {
-            console.warn('Org search input not found');
+            console.warn('[OrgSearch] Org search input not found');
             return;
         }
         
@@ -25,6 +32,28 @@ export class OrgSearchModule {
         const newSearchInput = searchInput.cloneNode(true);
         newSearchInput.value = currentValue; // Stelle Wert wieder her
         searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+        
+        // Setze Fokus nur, wenn kein anderes Element bereits fokussiert ist
+        // (verhindert Autofocus-Warnung)
+        setTimeout(() => {
+            const activeElement = document.activeElement;
+            const isInputFocused = activeElement && (
+                activeElement.tagName === 'INPUT' || 
+                activeElement.tagName === 'TEXTAREA' || 
+                activeElement.tagName === 'SELECT' ||
+                activeElement.isContentEditable
+            );
+            const isModalOpen = document.querySelector('.modal.active');
+            
+            // Nur fokussieren, wenn kein Input fokussiert ist und kein Modal offen ist
+            if (!isInputFocused && !isModalOpen && newSearchInput) {
+                try {
+                    newSearchInput.focus();
+                } catch (e) {
+                    // Ignoriere Fokus-Fehler (z.B. wenn Element nicht sichtbar ist)
+                }
+            }
+        }, 100);
         
         // Lade "Zuletzt verwendet"
         this.loadRecentOrgs();
@@ -93,16 +122,59 @@ export class OrgSearchModule {
         }
         
         // Create-Org-Button
+        console.log('[OrgSearch] Looking for create org button...');
         const createOrgButton = document.getElementById('btn-create-org');
+        console.log('[OrgSearch] Create org button found:', !!createOrgButton, createOrgButton);
         if (createOrgButton) {
+            console.log('[OrgSearch] Setting up create button event listener...');
             const newCreateBtn = createOrgButton.cloneNode(true);
             createOrgButton.parentNode.replaceChild(newCreateBtn, createOrgButton);
-            newCreateBtn.addEventListener('click', () => {
-                if (window.app.orgForms) {
+            
+            // Test: Direkter onclick Handler zusätzlich
+            const handler = (e) => {
+                console.log('[OrgSearch] ===== Create button clicked! =====');
+                console.log('[OrgSearch] Event:', e);
+                console.log('[OrgSearch] window.app:', window.app);
+                console.log('[OrgSearch] window.app.orgForms:', window.app?.orgForms);
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.app && window.app.orgForms) {
+                    console.log('[OrgSearch] Calling showCreateOrgModal...');
                     window.app.orgForms.showCreateOrgModal();
+                } else {
+                    console.error('[OrgSearch] orgForms not available!', {
+                        app: window.app,
+                        orgForms: window.app?.orgForms
+                    });
                 }
+                return false;
+            };
+            
+            newCreateBtn.addEventListener('click', handler, true); // useCapture = true für frühere Erfassung
+            // Zusätzlich: Direkter onclick Handler (als Fallback)
+            newCreateBtn.onclick = handler;
+            
+            // Test: Prüfe ob Button noch existiert nach kurzer Zeit
+            setTimeout(() => {
+                const buttonAfterDelay = document.getElementById('btn-create-org');
+                console.log('[OrgSearch] Button check after 1s:', {
+                    exists: !!buttonAfterDelay,
+                    isSame: buttonAfterDelay === newCreateBtn,
+                    hasOnclick: buttonAfterDelay?.onclick !== null,
+                    button: buttonAfterDelay
+                });
+            }, 1000);
+            
+            console.log('[OrgSearch] Create button event listener attached', {
+                button: newCreateBtn,
+                hasOnclick: !!newCreateBtn.onclick,
+                hasEventListener: true,
+                buttonId: newCreateBtn.id
             });
+        } else {
+            console.error('[OrgSearch] Create org button NOT FOUND!');
         }
+        console.log('[OrgSearch] ===== init() completed =====');
     }
     
     async loadRecentOrgs() {
@@ -253,5 +325,6 @@ export class OrgSearchModule {
         `;
     }
 }
+
 
 

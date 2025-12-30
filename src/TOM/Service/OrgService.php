@@ -38,12 +38,14 @@ class OrgService
         $stmt = $this->db->prepare("
             INSERT INTO org (
                 org_uuid, name, org_kind, external_ref, 
-                industry, revenue_range, employee_count, website, notes, status,
+                industry, industry_main_uuid, industry_sub_uuid,
+                revenue_range, employee_count, website, notes, status,
                 account_owner_user_id, account_owner_since
             )
             VALUES (
                 :org_uuid, :name, :org_kind, :external_ref,
-                :industry, :revenue_range, :employee_count, :website, :notes, :status,
+                :industry, :industry_main_uuid, :industry_sub_uuid,
+                :revenue_range, :employee_count, :website, :notes, :status,
                 :account_owner_user_id, :account_owner_since
             )
         ");
@@ -60,6 +62,8 @@ class OrgService
             'org_kind' => $data['org_kind'] ?? 'other',
             'external_ref' => $data['external_ref'] ?? null,
             'industry' => $data['industry'] ?? null,
+            'industry_main_uuid' => $data['industry_main_uuid'] ?? null,
+            'industry_sub_uuid' => $data['industry_sub_uuid'] ?? null,
             'revenue_range' => $data['revenue_range'] ?? null,
             'employee_count' => $data['employee_count'] ?? null,
             'website' => $data['website'] ?? null,
@@ -733,9 +737,10 @@ class OrgService
     // ADDRESS MANAGEMENT
     // ============================================================================
     
-    public function addAddress(string $orgUuid, array $data): array
+    public function addAddress(string $orgUuid, array $data, ?string $userId = null): array
     {
         $uuid = UuidHelper::generate($this->db);
+        $userId = $userId ?? 'default_user';
         
         $stmt = $this->db->prepare("
             INSERT INTO org_address (
@@ -771,6 +776,27 @@ class OrgService
         ]);
         
         $address = $this->getAddress($uuid);
+        
+        // Protokolliere im Audit-Trail
+        if ($address) {
+            $this->insertAuditEntry(
+                $orgUuid,
+                $userId,
+                'create',
+                null,
+                null,
+                'address_added',
+                [
+                    'address_uuid' => $uuid,
+                    'address_type' => $address['address_type'],
+                    'city' => $address['city'],
+                    'postal_code' => $address['postal_code'],
+                    'country' => $address['country']
+                ],
+                $address
+            );
+        }
+        
         $this->eventPublisher->publish('org', $orgUuid, 'OrgAddressAdded', $address);
         
         return $address;
@@ -800,8 +826,15 @@ class OrgService
         return $stmt->fetchAll();
     }
     
-    public function updateAddress(string $addressUuid, array $data): array
+    public function updateAddress(string $addressUuid, array $data, ?string $userId = null): array
     {
+        $userId = $userId ?? 'default_user';
+        $oldAddress = $this->getAddress($addressUuid);
+        
+        if (!$oldAddress) {
+            throw new \Exception("Adresse nicht gefunden");
+        }
+        
         $allowed = ['address_type', 'street', 'address_additional', 'city', 'postal_code', 'country', 'state', 'latitude', 'longitude', 'is_default', 'notes'];
         $updates = [];
         $params = ['uuid' => $addressUuid];
@@ -819,16 +852,13 @@ class OrgService
         }
         
         if (empty($updates)) {
-            return $this->getAddress($addressUuid);
+            return $oldAddress;
         }
         
         // Wenn diese Adresse als default markiert wird, entferne Default von anderen
         if (isset($data['is_default']) && $data['is_default']) {
-            $address = $this->getAddress($addressUuid);
-            if ($address) {
-                $this->db->prepare("UPDATE org_address SET is_default = 0 WHERE org_uuid = :org_uuid AND address_uuid != :address_uuid")
-                    ->execute(['org_uuid' => $address['org_uuid'], 'address_uuid' => $addressUuid]);
-            }
+            $this->db->prepare("UPDATE org_address SET is_default = 0 WHERE org_uuid = :org_uuid AND address_uuid != :address_uuid")
+                ->execute(['org_uuid' => $oldAddress['org_uuid'], 'address_uuid' => $addressUuid]);
         }
         
         $sql = "UPDATE org_address SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE address_uuid = :uuid";
@@ -836,24 +866,90 @@ class OrgService
         $stmt->execute($params);
         
         $address = $this->getAddress($addressUuid);
+        
+        // Protokolliere Änderungen im Audit-Trail (ein Eintrag pro geändertem Feld, wie bei Stammdaten)
         if ($address) {
+            $fieldLabels = [
+                'address_type' => 'Adresstyp',
+                'street' => 'Straße',
+                'address_additional' => 'Adresszusatz',
+                'city' => 'Stadt',
+                'postal_code' => 'PLZ',
+                'country' => 'Land',
+                'state' => 'Bundesland',
+                'latitude' => 'Breitengrad',
+                'longitude' => 'Längengrad',
+                'is_default' => 'Standardadresse',
+                'notes' => 'Notizen'
+            ];
+            
+            foreach ($allowed as $field) {
+                $oldValue = $oldAddress[$field] ?? null;
+                $newValue = $address[$field] ?? null;
+                
+                // Nur protokollieren, wenn sich der Wert geändert hat
+                if ($oldValue !== $newValue) {
+                    // Formatiere Werte für Anzeige
+                    $oldValueStr = $this->formatAddressFieldValue($field, $oldValue);
+                    $newValueStr = $this->formatAddressFieldValue($field, $newValue);
+                    
+                    // Erstelle einen Eintrag pro geändertem Feld (wie bei Stammdaten)
+                    $this->insertAuditEntry(
+                        $address['org_uuid'],
+                        $userId,
+                        'update',
+                        'address_' . $field, // Feldname mit Präfix für eindeutige Identifikation
+                        $oldValueStr,
+                        'field_change',
+                        [
+                            'address_uuid' => $addressUuid,
+                            'address_type' => $address['address_type'],
+                            'city' => $address['city'] ?? '',
+                            'postal_code' => $address['postal_code'] ?? ''
+                        ],
+                        ['old' => $oldValueStr, 'new' => $newValueStr]
+                    );
+                }
+            }
+            
             $this->eventPublisher->publish('org', $address['org_uuid'], 'OrgAddressUpdated', $address);
         }
         
         return $address;
     }
     
-    public function deleteAddress(string $addressUuid): bool
+    public function deleteAddress(string $addressUuid, ?string $userId = null): bool
     {
+        $userId = $userId ?? 'default_user';
         $address = $this->getAddress($addressUuid);
         if (!$address) {
             return false;
         }
         
+        $orgUuid = $address['org_uuid'];
+        
         $stmt = $this->db->prepare("DELETE FROM org_address WHERE address_uuid = :uuid");
         $stmt->execute(['uuid' => $addressUuid]);
         
-        $this->eventPublisher->publish('org', $address['org_uuid'], 'OrgAddressDeleted', ['address_uuid' => $addressUuid]);
+        // Protokolliere im Audit-Trail
+        $this->insertAuditEntry(
+            $orgUuid,
+            $userId,
+            'delete',
+            null,
+            null,
+            'address_removed',
+            [
+                'address_uuid' => $addressUuid,
+                'address_type' => $address['address_type'],
+                'city' => $address['city'],
+                'postal_code' => $address['postal_code'],
+                'country' => $address['country']
+            ],
+            $address
+        );
+        
+        $this->eventPublisher->publish('org', $orgUuid, 'OrgAddressDeleted', ['address_uuid' => $addressUuid]);
         
         return true;
     }
@@ -866,7 +962,7 @@ class OrgService
      * Fügt eine USt-ID-Registrierung für eine Organisation hinzu
      * address_uuid ist optional (nur für Kontext)
      */
-    public function addVatRegistration(string $orgUuid, array $data): array
+    public function addVatRegistration(string $orgUuid, array $data, ?string $userId = null): array
     {
         $uuid = UuidHelper::generate($this->db);
         
@@ -896,20 +992,61 @@ class OrgService
             )
         ");
         
+        // Konvertiere leere Strings zu null
+        $validFrom = $data['valid_from'] ?? null;
+        if ($validFrom === '') {
+            $validFrom = date('Y-m-d'); // Default auf heutiges Datum wenn leer
+        }
+        
+        $validTo = $data['valid_to'] ?? null;
+        if ($validTo === '') {
+            $validTo = null;
+        }
+        
+        $locationType = $data['location_type'] ?? null;
+        if ($locationType === '') {
+            $locationType = null;
+        }
+        
+        $notes = $data['notes'] ?? null;
+        if ($notes === '') {
+            $notes = null;
+        }
+        
         $stmt->execute([
             'vat_registration_uuid' => $uuid,
             'org_uuid' => $orgUuid,
             'address_uuid' => $data['address_uuid'] ?? null,
             'vat_id' => $data['vat_id'],
             'country_code' => $data['country_code'],
-            'valid_from' => $data['valid_from'] ?? date('Y-m-d'),
-            'valid_to' => $data['valid_to'] ?? null,
+            'valid_from' => $validFrom,
+            'valid_to' => $validTo,
             'is_primary_for_country' => $data['is_primary_for_country'] ?? 0,
-            'location_type' => $data['location_type'] ?? null,
-            'notes' => $data['notes'] ?? null
+            'location_type' => $locationType,
+            'notes' => $notes
         ]);
         
         $vatReg = $this->getVatRegistration($uuid);
+        
+        // Protokolliere im Audit-Trail
+        if ($vatReg) {
+            $userId = $userId ?? 'default_user';
+            $this->insertAuditEntry(
+                $orgUuid,
+                $userId,
+                'create',
+                null,
+                null,
+                'vat_added',
+                [
+                    'vat_registration_uuid' => $uuid,
+                    'vat_id' => $vatReg['vat_id'],
+                    'country_code' => $vatReg['country_code']
+                ],
+                $vatReg
+            );
+        }
+        
         $this->eventPublisher->publish('org', $orgUuid, 'OrgVatRegistrationAdded', $vatReg);
         
         return $vatReg;
@@ -976,8 +1113,15 @@ class OrgService
     /**
      * Aktualisiert eine USt-ID-Registrierung
      */
-    public function updateVatRegistration(string $vatRegistrationUuid, array $data): array
+    public function updateVatRegistration(string $vatRegistrationUuid, array $data, ?string $userId = null): array
     {
+        $userId = $userId ?? 'default_user';
+        $oldVatReg = $this->getVatRegistration($vatRegistrationUuid);
+        
+        if (!$oldVatReg) {
+            throw new \Exception("USt-ID-Registrierung nicht gefunden");
+        }
+        
         $allowed = ['vat_id', 'country_code', 'valid_from', 'valid_to', 'is_primary_for_country', 'location_type', 'notes'];
         $updates = [];
         $params = ['uuid' => $vatRegistrationUuid];
@@ -1064,6 +1208,47 @@ class OrgService
             $vatReg['country'] = null;
         }
         
+        // Protokolliere Änderungen im Audit-Trail (ein Eintrag pro geändertem Feld, wie bei Stammdaten)
+        if ($vatReg && $oldVatReg) {
+            $fieldLabels = [
+                'vat_id' => 'USt-ID',
+                'country_code' => 'Länderkennzeichen',
+                'valid_from' => 'Gültig ab',
+                'valid_to' => 'Gültig bis',
+                'is_primary_for_country' => 'Primär für Land',
+                'location_type' => 'Standorttyp',
+                'notes' => 'Notizen'
+            ];
+            
+            foreach ($allowed as $field) {
+                $oldValue = $oldVatReg[$field] ?? null;
+                $newValue = $vatReg[$field] ?? null;
+                
+                // Nur protokollieren, wenn sich der Wert geändert hat
+                if ($oldValue !== $newValue) {
+                    // Formatiere Werte für Anzeige
+                    $oldValueStr = $this->formatVatFieldValue($field, $oldValue);
+                    $newValueStr = $this->formatVatFieldValue($field, $newValue);
+                    
+                    // Erstelle einen Eintrag pro geändertem Feld (wie bei Stammdaten)
+                    $this->insertAuditEntry(
+                        $vatReg['org_uuid'],
+                        $userId,
+                        'update',
+                        'vat_' . $field, // Feldname mit Präfix
+                        $oldValueStr,
+                        'field_change',
+                        [
+                            'vat_registration_uuid' => $vatRegistrationUuid,
+                            'vat_id' => $vatReg['vat_id'] ?? '',
+                            'country_code' => $vatReg['country_code'] ?? ''
+                        ],
+                        ['old' => $oldValueStr, 'new' => $newValueStr]
+                    );
+                }
+            }
+        }
+        
         $this->eventPublisher->publish('org', $vatReg['org_uuid'], 'OrgVatRegistrationUpdated', $vatReg);
         
         return $vatReg;
@@ -1072,17 +1257,36 @@ class OrgService
     /**
      * Löscht eine USt-ID-Registrierung
      */
-    public function deleteVatRegistration(string $vatRegistrationUuid): bool
+    public function deleteVatRegistration(string $vatRegistrationUuid, ?string $userId = null): bool
     {
+        $userId = $userId ?? 'default_user';
         $vatReg = $this->getVatRegistration($vatRegistrationUuid);
         if (!$vatReg) {
             return false;
         }
         
+        $orgUuid = $vatReg['org_uuid'];
+        
         $stmt = $this->db->prepare("DELETE FROM org_vat_registration WHERE vat_registration_uuid = :uuid");
         $stmt->execute(['uuid' => $vatRegistrationUuid]);
         
-        $this->eventPublisher->publish('org', $vatReg['org_uuid'], 'OrgVatRegistrationDeleted', ['vat_registration_uuid' => $vatRegistrationUuid]);
+        // Protokolliere im Audit-Trail
+        $this->insertAuditEntry(
+            $orgUuid,
+            $userId,
+            'delete',
+            null,
+            null,
+            'vat_removed',
+            [
+                'vat_registration_uuid' => $vatRegistrationUuid,
+                'vat_id' => $vatReg['vat_id'],
+                'country_code' => $vatReg['country_code']
+            ],
+            $vatReg
+        );
+        
+        $this->eventPublisher->publish('org', $orgUuid, 'OrgVatRegistrationDeleted', ['vat_registration_uuid' => $vatRegistrationUuid]);
         
         return true;
     }
@@ -1422,7 +1626,7 @@ class OrgService
     // COMMUNICATION CHANNEL MANAGEMENT
     // ============================================================================
     
-    public function addCommunicationChannel(string $orgUuid, array $data): array
+    public function addCommunicationChannel(string $orgUuid, array $data, ?string $userId = null): array
     {
         $uuid = UuidHelper::generate($this->db);
         
@@ -1465,6 +1669,26 @@ class OrgService
         ]);
         
         $channel = $this->getCommunicationChannel($uuid);
+        
+        // Protokolliere im Audit-Trail
+        if ($channel) {
+            $userId = $userId ?? 'default_user';
+            $this->insertAuditEntry(
+                $orgUuid,
+                $userId,
+                'create',
+                null,
+                null,
+                'channel_added',
+                [
+                    'channel_uuid' => $uuid,
+                    'channel_type' => $channel['channel_type'],
+                    'label' => $channel['label']
+                ],
+                $channel
+            );
+        }
+        
         $this->eventPublisher->publish('org', $orgUuid, 'OrgCommunicationChannelAdded', $channel);
         
         return $channel;
@@ -1494,8 +1718,15 @@ class OrgService
         return $stmt->fetchAll();
     }
     
-    public function updateCommunicationChannel(string $channelUuid, array $data): array
+    public function updateCommunicationChannel(string $channelUuid, array $data, ?string $userId = null): array
     {
+        $userId = $userId ?? 'default_user';
+        $oldChannel = $this->getCommunicationChannel($channelUuid);
+        
+        if (!$oldChannel) {
+            throw new \Exception("Kommunikationskanal nicht gefunden");
+        }
+        
         $allowed = ['channel_type', 'country_code', 'area_code', 'number', 'extension', 
                    'email_address', 'label', 'is_primary', 'is_public', 'notes'];
         $updates = [];
@@ -1504,7 +1735,13 @@ class OrgService
         foreach ($allowed as $field) {
             if (isset($data[$field])) {
                 $updates[] = "$field = :$field";
-                $params[$field] = $data[$field];
+                // Konvertiere leere Strings zu null für optionale Felder
+                $value = $data[$field];
+                if ($value === '' && in_array($field, ['country_code', 'area_code', 'extension', 'label', 'notes'])) {
+                    $params[$field] = null;
+                } else {
+                    $params[$field] = $value;
+                }
             }
         }
         
@@ -1535,24 +1772,73 @@ class OrgService
         $stmt->execute($params);
         
         $channel = $this->getCommunicationChannel($channelUuid);
-        if ($channel) {
+        
+        // Protokolliere Änderungen im Audit-Trail (ein Eintrag pro geändertem Feld, wie bei Stammdaten)
+        if ($channel && $oldChannel) {
+            foreach ($allowed as $field) {
+                $oldValue = $oldChannel[$field] ?? null;
+                $newValue = $channel[$field] ?? null;
+                
+                // Nur protokollieren, wenn sich der Wert geändert hat
+                if ($oldValue !== $newValue) {
+                    // Formatiere Werte für Anzeige
+                    $oldValueStr = $this->formatChannelFieldValue($field, $oldValue);
+                    $newValueStr = $this->formatChannelFieldValue($field, $newValue);
+                    
+                    // Erstelle einen Eintrag pro geändertem Feld (wie bei Stammdaten)
+                    $this->insertAuditEntry(
+                        $channel['org_uuid'],
+                        $userId,
+                        'update',
+                        'channel_' . $field, // Feldname mit Präfix
+                        $oldValueStr,
+                        'field_change',
+                        [
+                            'channel_uuid' => $channelUuid,
+                            'channel_type' => $channel['channel_type'] ?? '',
+                            'label' => $channel['label'] ?? ''
+                        ],
+                        ['old' => $oldValueStr, 'new' => $newValueStr]
+                    );
+                }
+            }
+            
             $this->eventPublisher->publish('org', $channel['org_uuid'], 'OrgCommunicationChannelUpdated', $channel);
         }
         
         return $channel;
     }
     
-    public function deleteCommunicationChannel(string $channelUuid): bool
+    public function deleteCommunicationChannel(string $channelUuid, ?string $userId = null): bool
     {
+        $userId = $userId ?? 'default_user';
         $channel = $this->getCommunicationChannel($channelUuid);
         if (!$channel) {
             return false;
         }
         
+        $orgUuid = $channel['org_uuid'];
+        
         $stmt = $this->db->prepare("DELETE FROM org_communication_channel WHERE channel_uuid = :uuid");
         $stmt->execute(['uuid' => $channelUuid]);
         
-        $this->eventPublisher->publish('org', $channel['org_uuid'], 'OrgCommunicationChannelDeleted', ['channel_uuid' => $channelUuid]);
+        // Protokolliere im Audit-Trail
+        $this->insertAuditEntry(
+            $orgUuid,
+            $userId,
+            'delete',
+            null,
+            null,
+            'channel_removed',
+            [
+                'channel_uuid' => $channelUuid,
+                'channel_type' => $channel['channel_type'],
+                'label' => $channel['label']
+            ],
+            $channel
+        );
+        
+        $this->eventPublisher->publish('org', $orgUuid, 'OrgCommunicationChannelDeleted', ['channel_uuid' => $channelUuid]);
         
         return true;
     }
@@ -1609,6 +1895,144 @@ class OrgService
                 }
             }
         }
+    }
+    
+    /**
+     * Formatiert einen Adressfeldwert für die Anzeige
+     */
+    private function formatAddressFieldValue(string $field, $value): string
+    {
+        if ($value === null || $value === '') {
+            return '(leer)';
+        }
+        
+        // Spezielle Formatierung für bestimmte Felder
+        if ($field === 'is_default') {
+            return $value ? 'Ja' : 'Nein';
+        }
+        
+        if ($field === 'address_type') {
+            $types = [
+                'headquarters' => 'Hauptsitz',
+                'delivery' => 'Lieferadresse',
+                'billing' => 'Rechnungsadresse',
+                'other' => 'Sonstiges'
+            ];
+            return $types[$value] ?? $value;
+        }
+        
+        if ($field === 'country') {
+            $countries = [
+                'DE' => 'Deutschland',
+                'AT' => 'Österreich',
+                'CH' => 'Schweiz',
+                'FR' => 'Frankreich',
+                'IT' => 'Italien',
+                'NL' => 'Niederlande',
+                'BE' => 'Belgien',
+                'PL' => 'Polen',
+                'CZ' => 'Tschechien',
+                'UK' => 'Vereinigtes Königreich'
+            ];
+            return $countries[$value] ?? $value;
+        }
+        
+        return (string)$value;
+    }
+    
+    /**
+     * Formatiert einen USt-ID-Feldwert für die Anzeige
+     */
+    private function formatVatFieldValue(string $field, $value): string
+    {
+        if ($value === null || $value === '') {
+            return '(leer)';
+        }
+        
+        // Spezielle Formatierung für bestimmte Felder
+        if ($field === 'is_primary_for_country') {
+            return $value ? 'Ja' : 'Nein';
+        }
+        
+        if ($field === 'country_code') {
+            $countries = [
+                'DE' => 'Deutschland',
+                'AT' => 'Österreich',
+                'CH' => 'Schweiz',
+                'FR' => 'Frankreich',
+                'IT' => 'Italien',
+                'NL' => 'Niederlande',
+                'BE' => 'Belgien',
+                'PL' => 'Polen',
+                'CZ' => 'Tschechien',
+                'UK' => 'Vereinigtes Königreich'
+            ];
+            return $countries[$value] ?? $value;
+        }
+        
+        if ($field === 'location_type') {
+            $types = [
+                'HQ' => 'Hauptsitz',
+                'Branch' => 'Niederlassung',
+                'Subsidiary' => 'Tochtergesellschaft',
+                'SalesOffice' => 'Verkaufsbüro',
+                'Plant' => 'Produktionsstätte',
+                'Warehouse' => 'Lager',
+                'Other' => 'Sonstiges'
+            ];
+            return $types[$value] ?? $value;
+        }
+        
+        return (string)$value;
+    }
+    
+    /**
+     * Formatiert einen Kommunikationskanal-Feldwert für die Anzeige
+     */
+    private function formatChannelFieldValue(string $field, $value): string
+    {
+        if ($value === null || $value === '') {
+            return '(leer)';
+        }
+        
+        // Spezielle Formatierung für bestimmte Felder
+        if ($field === 'is_primary') {
+            return $value ? 'Ja' : 'Nein';
+        }
+        
+        if ($field === 'is_public') {
+            return $value ? 'Ja' : 'Nein';
+        }
+        
+        if ($field === 'channel_type') {
+            $types = [
+                'email' => 'E-Mail',
+                'phone' => 'Telefon',
+                'mobile' => 'Mobil',
+                'fax' => 'Fax',
+                'website' => 'Website',
+                'other' => 'Sonstiges'
+            ];
+            return $types[$value] ?? $value;
+        }
+        
+        if ($field === 'country_code') {
+            $countries = [
+                'DE' => 'Deutschland',
+                'AT' => 'Österreich',
+                'CH' => 'Schweiz',
+                'FR' => 'Frankreich',
+                'IT' => 'Italien',
+                'NL' => 'Niederlande',
+                'BE' => 'Belgien',
+                'PL' => 'Polen',
+                'CZ' => 'Tschechien',
+                'UK' => 'Vereinigtes Königreich'
+            ];
+            return $countries[$value] ?? $value;
+        }
+        
+        return (string)$value;
     }
     
     /**
@@ -1713,19 +2137,21 @@ class OrgService
     {
         $stmt = $this->db->prepare("
             SELECT 
-                audit_id,
-                org_uuid,
-                user_id,
-                action,
-                field_name,
-                old_value,
-                new_value,
-                change_type,
-                metadata,
-                created_at
-            FROM org_audit_trail
-            WHERE org_uuid = :org_uuid
-            ORDER BY created_at DESC
+                a.audit_id,
+                a.org_uuid,
+                a.user_id,
+                a.action,
+                a.field_name,
+                a.old_value,
+                a.new_value,
+                a.change_type,
+                a.metadata,
+                a.created_at,
+                u.name as user_name
+            FROM org_audit_trail a
+            LEFT JOIN users u ON a.user_id = u.user_id
+            WHERE a.org_uuid = :org_uuid
+            ORDER BY a.created_at DESC
             LIMIT :limit
         ");
         
@@ -1766,7 +2192,19 @@ class OrgService
         
         // Protokolliere im Audit-Trail
         if ($org) {
-            $this->logAuditTrail($orgUuid, $userId, 'update', ['archived_at' => null], ['archived_at' => $org['archived_at']], ['archived_at' => $org['archived_at']]);
+            $this->insertAuditEntry(
+                $orgUuid,
+                $userId,
+                'update',
+                'archived_at',
+                '(nicht archiviert)',
+                'org_archived',
+                [
+                    'archived_at' => $org['archived_at'],
+                    'archived_by_user_id' => $userId
+                ],
+                ['old' => '(nicht archiviert)', 'new' => 'Archiviert am ' . date('d.m.Y H:i', strtotime($org['archived_at']))]
+            );
             $this->eventPublisher->publish('org', $org['org_uuid'], 'OrgArchived', $org);
         }
         
@@ -1788,6 +2226,7 @@ class OrgService
         }
         
         $oldArchivedAt = $org['archived_at'];
+        $oldArchivedAtFormatted = 'Archiviert am ' . date('d.m.Y H:i', strtotime($oldArchivedAt));
         
         $stmt = $this->db->prepare("
             UPDATE org 
@@ -1802,7 +2241,19 @@ class OrgService
         
         // Protokolliere im Audit-Trail
         if ($org) {
-            $this->logAuditTrail($orgUuid, $userId, 'update', ['archived_at' => $oldArchivedAt], ['archived_at' => null], ['archived_at' => null]);
+            $this->insertAuditEntry(
+                $orgUuid,
+                $userId,
+                'update',
+                'archived_at',
+                $oldArchivedAtFormatted,
+                'org_unarchived',
+                [
+                    'archived_at' => $oldArchivedAt,
+                    'archived_by_user_id' => null
+                ],
+                ['old' => $oldArchivedAtFormatted, 'new' => '(nicht archiviert)']
+            );
             $this->eventPublisher->publish('org', $org['org_uuid'], 'OrgUnarchived', $org);
         }
         

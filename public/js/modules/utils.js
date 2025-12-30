@@ -20,7 +20,11 @@ export const Utils = {
      * Schließt alle aktiven Modals
      */
     closeModal() {
-        document.querySelectorAll('.modal.active').forEach(modal => {
+        console.log('[Utils] closeModal() aufgerufen - schließe ALLE Modals');
+        const activeModals = document.querySelectorAll('.modal.active');
+        console.log('[Utils] Aktive Modals gefunden:', activeModals.length);
+        activeModals.forEach((modal, index) => {
+            console.log(`[Utils] Schließe Modal ${index + 1}:`, modal.id || 'ohne ID');
             modal.classList.remove('active');
         });
     },
@@ -29,9 +33,22 @@ export const Utils = {
      * Schließt ein spezifisches Modal anhand seiner ID
      */
     closeSpecificModal(modalId) {
+        console.log('[Utils] closeSpecificModal() aufgerufen für:', modalId);
         const modal = document.getElementById(modalId);
         if (modal) {
+            console.log('[Utils] Modal gefunden, schließe es:', modalId);
+            const wasActive = modal.classList.contains('active');
             modal.classList.remove('active');
+            console.log('[Utils] Modal war aktiv:', wasActive, 'jetzt aktiv:', modal.classList.contains('active'));
+            
+            // Prüfe alle anderen Modals
+            const allModals = document.querySelectorAll('.modal');
+            console.log('[Utils] Alle Modals Status:');
+            allModals.forEach(m => {
+                console.log(`  - ${m.id || 'ohne ID'}: ${m.classList.contains('active') ? 'AKTIV' : 'inaktiv'}`);
+            });
+        } else {
+            console.warn('[Utils] Modal nicht gefunden:', modalId);
         }
     },
     
@@ -142,6 +159,129 @@ export const Utils = {
     showSuccess(message) {
         console.log(message);
         // TODO: Toast-Notification implementieren
+    },
+    
+    /**
+     * Lädt Hauptbranchen in ein Select-Element
+     */
+    async loadIndustryMainClasses(mainSelectElement) {
+        try {
+            const industries = await window.API.getIndustries(null, true);
+            if (!mainSelectElement) {
+                console.error('Main select element not provided');
+                return;
+            }
+            
+            mainSelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            industries.forEach(industry => {
+                const option = document.createElement('option');
+                option.value = industry.industry_uuid;
+                option.textContent = industry.name;
+                mainSelectElement.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading industry main classes:', error);
+        }
+    },
+    
+    /**
+     * Lädt Unterbranchen in ein Select-Element basierend auf der Hauptbranche
+     */
+    async loadIndustrySubClasses(parentUuid, subSelectElement) {
+        try {
+            if (!parentUuid) {
+                if (subSelectElement) {
+                    subSelectElement.innerHTML = '<option value="">-- Zuerst Hauptbranche wählen --</option>';
+                    subSelectElement.disabled = true;
+                }
+                return;
+            }
+            
+            const industries = await window.API.getIndustries(parentUuid, false);
+            if (!subSelectElement) {
+                console.error('Sub select element not provided');
+                return;
+            }
+            
+            subSelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            subSelectElement.disabled = false;
+            
+            if (industries && industries.length > 0) {
+                industries.forEach(industry => {
+                    const option = document.createElement('option');
+                    option.value = industry.industry_uuid;
+                    option.textContent = industry.name;
+                    subSelectElement.appendChild(option);
+                });
+            } else {
+                subSelectElement.innerHTML = '<option value="">Keine Unterklassen verfügbar</option>';
+            }
+        } catch (error) {
+            console.error('Error loading industry sub classes:', error);
+            if (subSelectElement) {
+                subSelectElement.innerHTML = '<option value="">Fehler beim Laden</option>';
+                subSelectElement.disabled = true;
+            }
+        }
+    },
+    
+    /**
+     * Setzt die Branchen-Abhängigkeit zwischen Haupt- und Unterbranche
+     * @param {HTMLElement} mainSelectElement - Das Select-Element für Hauptbranchen
+     * @param {HTMLElement} subSelectElement - Das Select-Element für Unterbranchen
+     * @param {boolean} cloneElement - Ob das Element geklont werden soll (verhindert mehrfache Listener)
+     */
+    setupIndustryDependency(mainSelectElement, subSelectElement, cloneElement = false) {
+        if (!mainSelectElement || !subSelectElement) {
+            console.error('[Utils] Both select elements must be provided');
+            return null;
+        }
+        
+        console.log('[Utils] setupIndustryDependency called', {
+            mainId: mainSelectElement.id,
+            subId: subSelectElement.id,
+            cloneElement: cloneElement,
+            mainElement: mainSelectElement,
+            subElement: subSelectElement
+        });
+        
+        // Stelle sicher, dass das Sub-Select initial deaktiviert ist
+        subSelectElement.disabled = true;
+        subSelectElement.innerHTML = '<option value="">-- Zuerst Hauptbranche wählen --</option>';
+        
+        let targetElement = mainSelectElement;
+        
+        // Entferne alte Event-Listener durch Klonen, wenn gewünscht (verhindert mehrfache Listener)
+        if (cloneElement) {
+            console.log('[Utils] Cloning main select element');
+            const newMainSelect = mainSelectElement.cloneNode(true);
+            mainSelectElement.parentNode.replaceChild(newMainSelect, mainSelectElement);
+            targetElement = newMainSelect;
+            console.log('[Utils] Element cloned and replaced', {
+                oldId: mainSelectElement.id,
+                newId: targetElement.id,
+                newElement: targetElement
+            });
+        }
+        
+        // Event-Listener für Hauptbranche-Änderung
+        const handler = async (e) => {
+            console.log('[Utils] ===== Industry main changed event triggered! =====', e.target.value);
+            const parentUuid = e.target.value;
+            const currentSubSelect = document.getElementById(subSelectElement.id);
+            console.log('[Utils] Sub select element:', currentSubSelect);
+            if (currentSubSelect) {
+                await Utils.loadIndustrySubClasses(parentUuid, currentSubSelect);
+            } else {
+                console.error('[Utils] Sub select element not found after change event!');
+            }
+        };
+        
+        targetElement.addEventListener('change', handler);
+        console.log('[Utils] Event listener attached to:', targetElement.id, targetElement);
+        
+        // Gib das Element zurück (geklont oder original)
+        return targetElement;
     }
 };
 

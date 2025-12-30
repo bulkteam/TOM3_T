@@ -8,69 +8,71 @@ import { Utils } from './utils.js';
 export class OrgFormsModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen, damit wir Listener sauber entfernen können (ohne cloneNode)
+        this._createSubmitHandler = null;
+        this._createCancelHandler = null;
+        this._createWebsiteBlurHandler = null;
     }
     
     async showCreateOrgModal() {
+        // Log sofort am Anfang - vor allem anderen Code
+        console.log('========================================');
+        console.log('[OrgForms] ===== showCreateOrgModal called =====');
+        console.log('[OrgForms] This:', this);
+        console.log('[OrgForms] window.app:', window.app);
+        console.log('[OrgForms] window.app.orgForms:', window.app?.orgForms);
+        console.log('========================================');
+        
         const modal = document.getElementById('modal-create-org');
         if (!modal) {
-            console.error('Create org modal not found');
+            console.error('[OrgForms] Create org modal not found');
             return;
         }
         
+        console.log('[OrgForms] Modal found, activating...');
         modal.classList.add('active');
+        
+        // Lade nächste Kundennummer
+        console.log('[OrgForms] Loading next customer number...');
+        await this.loadNextCustomerNumber();
         
         // Formular zurücksetzen
         const form = document.getElementById('form-create-org');
         if (form) {
+            console.log('[OrgForms] Resetting form...');
             form.reset();
         }
         
-        // Lade nächste Kundennummer
-        await this.loadNextCustomerNumber();
-        
-        // Lade Hauptbranchen
-        await this.loadIndustryMainClasses();
-        
-        // Setup Branchen-Abhängigkeit
-        const industryMainSelect = document.getElementById('org-create-industry-main');
-        const industrySubSelect = document.getElementById('org-create-industry-sub');
-        
-        if (industryMainSelect && industrySubSelect) {
-            // Entferne alte Event-Listener
-            const newMainSelect = industryMainSelect.cloneNode(true);
-            industryMainSelect.parentNode.replaceChild(newMainSelect, industryMainSelect);
-            
-            newMainSelect.addEventListener('change', async (e) => {
-                const parentUuid = e.target.value;
-                const subSelect = document.getElementById('org-create-industry-sub');
-                if (!subSelect) return;
-                
-                if (parentUuid) {
-                    subSelect.disabled = false;
-                    subSelect.innerHTML = '<option value="">Lade Unterklassen...</option>';
-                    try {
-                        await this.loadIndustrySubClasses(parentUuid);
-                    } catch (error) {
-                        console.error('Error loading sub classes:', error);
-                        subSelect.innerHTML = '<option value="">Fehler beim Laden</option>';
-                    }
-                } else {
-                    subSelect.disabled = true;
-                    subSelect.innerHTML = '<option value="">-- Zuerst Hauptklasse wählen --</option>';
-                }
-            });
-        }
-        
-        // Setup Form-Submit
+        // Setup Form-Submit (ohne cloneNode, damit Event-Listener erhalten bleiben)
         this.setupCreateOrgForm();
+        
+        // Setup Branchen-Auswahl (NACH setupCreateOrgForm, damit keine Listener verloren gehen)
+        const mainSelect = document.getElementById('org-create-industry-main');
+        const subSelect = document.getElementById('org-create-industry-sub');
+        
+        if (mainSelect && subSelect) {
+            // Wie im Edit-Modus: Abhängigkeit setzen und Hauptbranchen laden
+            console.log('[OrgForms] Setting up industry dependency (like edit mode)...');
+            Utils.setupIndustryDependency(mainSelect, subSelect, false); // false = kein Klonen (wie im Edit-Modus)
+            await Utils.loadIndustryMainClasses(mainSelect);
+            console.log('[OrgForms] Industry setup completed');
+        } else {
+            console.error('[OrgForms] Industry selects not found!', { mainSelect, subSelect });
+        }
         
         // Website-URL-Normalisierung
         const websiteInput = document.getElementById('org-create-website');
         if (websiteInput) {
-            websiteInput.addEventListener('blur', () => {
-                Utils.normalizeUrl(websiteInput);
-            });
+            // Entferne alten Handler, falls vorhanden
+            if (this._createWebsiteBlurHandler) {
+                websiteInput.removeEventListener('blur', this._createWebsiteBlurHandler);
+            }
+            // Setze neuen Handler
+            this._createWebsiteBlurHandler = () => Utils.normalizeUrl(websiteInput);
+            websiteInput.addEventListener('blur', this._createWebsiteBlurHandler);
         }
+        
+        console.log('[OrgForms] ===== showCreateOrgModal completed =====');
     }
     
     async loadNextCustomerNumber() {
@@ -85,61 +87,31 @@ export class OrgFormsModule {
         }
     }
     
-    async loadIndustryMainClasses() {
-        try {
-            const industries = await window.API.getIndustries(null, true);
-            const select = document.getElementById('org-create-industry-main');
-            if (!select) return;
-            
-            select.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            industries.forEach(industry => {
-                const option = document.createElement('option');
-                option.value = industry.industry_uuid;
-                option.textContent = industry.name;
-                select.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading industry main classes:', error);
-        }
-    }
-    
-    async loadIndustrySubClasses(parentUuid) {
-        try {
-            const industries = await window.API.getIndustries(parentUuid, false);
-            const select = document.getElementById('org-create-industry-sub');
-            if (!select) return;
-            
-            select.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            industries.forEach(industry => {
-                const option = document.createElement('option');
-                option.value = industry.industry_uuid;
-                option.textContent = industry.name;
-                select.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading industry sub classes:', error);
-        }
-    }
     
     setupCreateOrgForm() {
         const form = document.getElementById('form-create-org');
         if (!form) return;
         
-        // Entferne alte Event-Listener
-        const newForm = form.cloneNode(true);
-        form.parentNode.replaceChild(newForm, form);
-        
-        newForm.addEventListener('submit', async (e) => {
+        // Submit-Handler sauber ersetzen (ohne cloneNode)
+        if (this._createSubmitHandler) {
+            form.removeEventListener('submit', this._createSubmitHandler);
+        }
+        this._createSubmitHandler = async (e) => {
             e.preventDefault();
             await this.submitCreateOrg();
-        });
+        };
+        form.addEventListener('submit', this._createSubmitHandler);
         
         // Cancel-Button
         const cancelBtn = document.getElementById('btn-cancel-create-org');
         if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => {
-                Utils.closeModal();
-            });
+            // Entferne alten Handler, falls vorhanden
+            if (this._createCancelHandler) {
+                cancelBtn.removeEventListener('click', this._createCancelHandler);
+            }
+            // Setze neuen Handler
+            this._createCancelHandler = () => Utils.closeModal();
+            cancelBtn.addEventListener('click', this._createCancelHandler);
         }
     }
     
@@ -156,6 +128,15 @@ export class OrgFormsModule {
                 data[key] = value;
             }
         }
+        
+        // Debug: Prüfe Branchen-Felder
+        console.log('[OrgForms] Form data before submit:', data);
+        console.log('[OrgForms] Industry fields:', {
+            industry_main_uuid: data.industry_main_uuid,
+            industry_sub_uuid: data.industry_sub_uuid,
+            mainSelect: document.getElementById('org-create-industry-main')?.value,
+            subSelect: document.getElementById('org-create-industry-sub')?.value
+        });
         
         // Normalisiere Website-URL
         if (data.website) {
@@ -181,5 +162,6 @@ export class OrgFormsModule {
         }
     }
 }
+
 
 
