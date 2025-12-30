@@ -30,3 +30,4 @@ echo Starte MySQL jetzt ueber XAMPP Control Panel.
 echo.
 pause
 
+

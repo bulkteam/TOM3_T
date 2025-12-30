@@ -33,3 +33,4 @@ echo "  CSV direkt: " . ($csvPath . (file_exists($csvPath) ? ' (existiert)' : ' 
 echo "  Definitions: " . ($definitionsPath . (file_exists($definitionsPath) ? ' (existiert)' : ' (existiert NICHT)')) . "\n";
 
 
+
