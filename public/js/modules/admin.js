@@ -31,7 +31,6 @@ export class AdminModule {
             // Setup Event-Handler
             this.setupAdminHandlers();
         } catch (error) {
-            console.error('Error loading admin:', error);
             Utils.showError('Fehler beim Laden des Admin-Bereichs');
         }
     }
@@ -52,7 +51,6 @@ export class AdminModule {
             // Re-attach Event-Handler nach Rendering
             this.setupAdminUserHandlers();
         } catch (error) {
-            console.error('Error loading users:', error);
             Utils.showError('Fehler beim Laden der User');
         }
     }
@@ -220,7 +218,6 @@ export class AdminModule {
             
             // Falls die API ein Array zurückgibt (was nicht sein sollte), nimm das erste Element
             if (Array.isArray(user)) {
-                console.warn('API returned array instead of single user! Taking first element.');
                 user = user.length > 0 ? user[0] : null;
             }
             
@@ -238,7 +235,6 @@ export class AdminModule {
             const modalBody = document.getElementById('modal-edit-user-body');
             
             if (!modalBody) {
-                console.error('Modal body not found!');
                 Utils.showError('Fehler beim Öffnen des Bearbeitungsdialogs');
                 return;
             }
@@ -335,7 +331,7 @@ export class AdminModule {
             // Event-Handler für Form-Submit
             const form = document.getElementById('edit-user-form');
             if (!form) {
-                console.error('Form not found after setting innerHTML!');
+                Utils.showError('Fehler beim Laden des Formulars');
                 return;
             }
             
@@ -378,7 +374,6 @@ export class AdminModule {
             // Zeige Modal
             modal.classList.add('active');
         } catch (error) {
-            console.error('Error loading user for edit:', error);
             Utils.showError('Fehler beim Laden der User-Daten');
         }
     }
