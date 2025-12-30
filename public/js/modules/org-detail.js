@@ -53,8 +53,31 @@ export class OrgDetailModule {
                     // Event-Handler für Close-Button im Sticky Header
                     const closeBtn = modalBody.querySelector('.org-detail-close');
                     if (closeBtn) {
-                        closeBtn.addEventListener('click', () => {
-                            Utils.closeModal();
+                        // Entferne alle vorhandenen Event-Listener durch Klonen
+                        const newCloseBtn = closeBtn.cloneNode(true);
+                        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                        newCloseBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            // Schließe nur das Stammdaten-Modal, gehe zurück zur Suche
+                            Utils.closeSpecificModal('modal-org-detail');
+                            return false;
+                        });
+                    }
+                    
+                    // Event-Handler für Close-Button im Modal-Header (falls vorhanden)
+                    const modalCloseBtn = modal.querySelector('.modal-close');
+                    if (modalCloseBtn) {
+                        const newModalCloseBtn = modalCloseBtn.cloneNode(true);
+                        modalCloseBtn.parentNode.replaceChild(newModalCloseBtn, modalCloseBtn);
+                        newModalCloseBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            // Schließe nur das Stammdaten-Modal, gehe zurück zur Suche
+                            Utils.closeSpecificModal('modal-org-detail');
+                            return false;
                         });
                     }
                     

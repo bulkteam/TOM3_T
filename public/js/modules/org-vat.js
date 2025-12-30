@@ -17,9 +17,52 @@ export class OrgVatModule {
             this.setupVatForm(form, orgUuid);
         });
         
-        form.reset();
-        form.dataset.orgUuid = orgUuid;
-        form.dataset.vatUuid = '';
+        // Stelle sicher, dass setupVatForm aufgerufen wird (auch wenn Formular bereits existiert)
+        if (form) {
+            form.reset();
+            form.dataset.orgUuid = orgUuid;
+            form.dataset.vatUuid = '';
+            // Setze setupVatForm erneut auf, um Event-Listener zu aktualisieren
+            this.setupVatForm(form, orgUuid);
+        }
+        
+        // Setze Close-Button-Handler für dieses Modal
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            newCloseBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-vat');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            };
+        }
+        
+        // Setze Overlay-Click-Handler
+        modal.removeEventListener('click', modal._overlayClickHandler);
+        modal._overlayClickHandler = (e) => {
+            if (e.target === modal) {
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-vat');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            }
+        };
+        modal.addEventListener('click', modal._overlayClickHandler);
         
         modal.classList.add('active');
     }
@@ -51,6 +94,44 @@ export class OrgVatModule {
             form.querySelector('#vat-is-primary').checked = vat.is_primary_for_country === 1;
             form.querySelector('#vat-location-type').value = vat.location_type || '';
             form.querySelector('#vat-notes').value = vat.notes || '';
+            
+            // Setze Close-Button-Handler für dieses Modal
+            const closeBtn = modal.querySelector('.modal-close');
+            if (closeBtn) {
+                const newCloseBtn = closeBtn.cloneNode(true);
+                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                newCloseBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-vat');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
+                };
+            }
+            
+            // Setze Overlay-Click-Handler
+            modal.removeEventListener('click', modal._overlayClickHandler);
+            modal._overlayClickHandler = (e) => {
+                if (e.target === modal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-vat');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
+                }
+            };
+            modal.addEventListener('click', modal._overlayClickHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -89,18 +170,19 @@ export class OrgVatModule {
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="vat-valid-from">Gültig ab</label>
+                        <label for="vat-valid-from">Gültig ab (optional)</label>
                         <input type="date" id="vat-valid-from" name="valid_from">
+                        <small class="form-hint">Standard: Heute</small>
                     </div>
                     <div class="form-group">
-                        <label for="vat-valid-to">Gültig bis</label>
+                        <label for="vat-valid-to">Gültig bis (optional)</label>
                         <input type="date" id="vat-valid-to" name="valid_to">
                         <small class="form-hint">Leer lassen für aktuell gültig</small>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="vat-location-type">Standorttyp</label>
+                    <label for="vat-location-type">Standorttyp (optional)</label>
                     <select id="vat-location-type" name="location_type">
                         <option value="">-- Keine Angabe --</option>
                         <option value="HQ">Hauptsitz</option>
@@ -111,12 +193,13 @@ export class OrgVatModule {
                         <option value="Warehouse">Lager</option>
                         <option value="Other">Sonstiges</option>
                     </select>
+                    <small class="form-hint">Nur für Kontext bei mehreren USt-IDs (z.B. Betriebsstätte)</small>
                 </div>
                 
                 <div class="form-group">
-                    <label>
+                    <label class="checkbox-inline">
                         <input type="checkbox" id="vat-is-primary" name="is_primary_for_country" value="1">
-                        Als primäre USt-ID für dieses Land markieren
+                        <span>Als primäre USt-ID für dieses Land markieren</span>
                     </label>
                 </div>
                 
@@ -126,7 +209,7 @@ export class OrgVatModule {
                 </div>
                 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Abbrechen</button>
+                    <button type="button" class="btn btn-secondary" id="vat-form-cancel">Abbrechen</button>
                     <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
@@ -138,31 +221,103 @@ export class OrgVatModule {
         
         const orgDetailModule = this.app.orgDetail;
         
+        // Abbrechen-Button Handler
+        // Suche nach Button mit ID oder nach Button mit Text "Abbrechen" im form-actions Bereich
+        let cancelBtn = form.querySelector('#vat-form-cancel');
+        if (!cancelBtn) {
+            // Fallback: Suche nach Button mit Text "Abbrechen" in form-actions
+            const formActions = form.querySelector('.form-actions');
+            if (formActions) {
+                const buttons = formActions.querySelectorAll('button.btn-secondary');
+                for (const btn of buttons) {
+                    if (btn.textContent.trim() === 'Abbrechen') {
+                        cancelBtn = btn;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (cancelBtn) {
+            console.log('[VAT Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
+            // Entferne alle vorhandenen Event-Listener durch Klonen
+            const newCancelBtn = cancelBtn.cloneNode(true);
+            // Entferne onclick Attribut falls vorhanden
+            newCancelBtn.removeAttribute('onclick');
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+            newCancelBtn.onclick = (e) => {
+                console.log('[VAT Modal] Abbrechen-Button geklickt');
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-vat');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (orgDetailModule && orgDetailModule.showOrgDetail) {
+                        orgDetailModule.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            };
+        } else {
+            console.warn('[VAT Modal] Abbrechen-Button NICHT gefunden!');
+        }
+        
         form.onsubmit = async (e) => {
             e.preventDefault();
             const vatUuid = form.dataset.vatUuid;
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
             
+            // Konvertiere Checkbox-Wert
             data.is_primary_for_country = data.is_primary_for_country === '1' ? 1 : 0;
             
+            // Konvertiere leere Strings zu null für optionale Felder
+            if (data.valid_from === '') {
+                data.valid_from = null;
+            }
+            if (data.valid_to === '') {
+                data.valid_to = null;
+            }
+            if (data.location_type === '') {
+                data.location_type = null;
+            }
+            if (data.notes === '') {
+                data.notes = null;
+            }
+            
+            console.log('[VAT Form] Submitting data:', data);
+            console.log('[VAT Form] VAT UUID:', vatUuid, 'Is new:', !vatUuid || vatUuid === '');
+            
             try {
-                if (vatUuid) {
+                if (vatUuid && vatUuid !== '') {
+                    console.log('[VAT Form] Updating existing VAT registration');
                     await window.API.updateOrgVatRegistration(orgUuid, vatUuid, data);
                     Utils.showSuccess('USt-ID erfolgreich aktualisiert');
                 } else {
-                    await window.API.addOrgVatRegistration(orgUuid, data);
+                    console.log('[VAT Form] Creating new VAT registration');
+                    const result = await window.API.addOrgVatRegistration(orgUuid, data);
+                    console.log('[VAT Form] VAT registration created:', result);
                     Utils.showSuccess('USt-ID erfolgreich hinzugefügt');
                 }
-                Utils.closeModal();
+                Utils.closeSpecificModal('modal-vat');
                 if (orgDetailModule && orgDetailModule.showOrgDetail) {
                     await orgDetailModule.showOrgDetail(orgUuid);
                 }
             } catch (error) {
                 console.error('Error saving VAT registration:', error);
-                Utils.showError('Fehler beim Speichern: ' + (error.message || 'Unbekannter Fehler'));
+                let errorMessage = 'Fehler beim Speichern';
+                if (error.message) {
+                    errorMessage += ': ' + error.message;
+                } else if (error.error) {
+                    errorMessage += ': ' + error.error;
+                } else if (typeof error === 'string') {
+                    errorMessage += ': ' + error;
+                }
+                Utils.showError(errorMessage);
             }
         };
     }
 }
+
 

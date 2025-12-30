@@ -49,10 +49,58 @@ export class OrgRelationModule {
         if (cancelBtn) {
             const newCancelBtn = cancelBtn.cloneNode(true);
             cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-            newCancelBtn.addEventListener('click', () => {
-                Utils.closeModal();
+            newCancelBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-relation');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                    }
+                }
+                return false;
             });
         }
+        
+        // Setze Close-Button-Handler für dieses Modal
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            newCloseBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-relation');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                    }
+                }
+                return false;
+            };
+        }
+        
+        // Setze Overlay-Click-Handler
+        modal.removeEventListener('click', modal._overlayClickHandler);
+        modal._overlayClickHandler = (e) => {
+            if (e.target === modal) {
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-relation');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                    }
+                }
+                return false;
+            }
+        };
+        modal.addEventListener('click', modal._overlayClickHandler);
         
         // Setup org search
         this.setupRelationOrgSearch();
@@ -144,10 +192,58 @@ export class OrgRelationModule {
             if (cancelBtn) {
                 const newCancelBtn = cancelBtn.cloneNode(true);
                 cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-                newCancelBtn.addEventListener('click', () => {
-                    Utils.closeModal();
+                newCancelBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-relation');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                        }
+                    }
+                    return false;
                 });
             }
+            
+            // Setze Close-Button-Handler für dieses Modal
+            const closeBtn = modal.querySelector('.modal-close');
+            if (closeBtn) {
+                const newCloseBtn = closeBtn.cloneNode(true);
+                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                newCloseBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-relation');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                        }
+                    }
+                    return false;
+                };
+            }
+            
+            // Setze Overlay-Click-Handler
+            modal.removeEventListener('click', modal._overlayClickHandler);
+            modal._overlayClickHandler = (e) => {
+                if (e.target === modal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-relation');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                        }
+                    }
+                    return false;
+                }
+            };
+            modal.addEventListener('click', modal._overlayClickHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -245,7 +341,7 @@ export class OrgRelationModule {
                 Utils.showSuccess('Relation wurde hinzugefügt');
             }
             
-            Utils.closeModal();
+            Utils.closeSpecificModal('modal-relation');
             // Reload org detail to show updated relations
             if (orgDetailModule && orgDetailModule.showOrgDetail) {
                 await orgDetailModule.showOrgDetail(parentOrgUuid);
@@ -256,4 +352,5 @@ export class OrgRelationModule {
         }
     }
 }
+
 

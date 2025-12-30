@@ -21,6 +21,44 @@ export class OrgChannelModule {
         form.dataset.orgUuid = orgUuid;
         form.dataset.channelUuid = '';
         
+        // Setze Close-Button-Handler für dieses Modal
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            newCloseBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-channel');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            };
+        }
+        
+        // Setze Overlay-Click-Handler
+        modal.removeEventListener('click', modal._overlayClickHandler);
+        modal._overlayClickHandler = (e) => {
+            if (e.target === modal) {
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-channel');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            }
+        };
+        modal.addEventListener('click', modal._overlayClickHandler);
+        
         modal.classList.add('active');
     }
     
@@ -50,6 +88,44 @@ export class OrgChannelModule {
             form.querySelector('#channel-is-primary').checked = channel.is_primary === 1;
             form.querySelector('#channel-is-public').checked = channel.is_public === 1;
             form.querySelector('#channel-notes').value = channel.notes || '';
+            
+            // Setze Close-Button-Handler für dieses Modal
+            const closeBtn = modal.querySelector('.modal-close');
+            if (closeBtn) {
+                const newCloseBtn = closeBtn.cloneNode(true);
+                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                newCloseBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-channel');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
+                };
+            }
+            
+            // Setze Overlay-Click-Handler
+            modal.removeEventListener('click', modal._overlayClickHandler);
+            modal._overlayClickHandler = (e) => {
+                if (e.target === modal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-channel');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
+                }
+            };
+            modal.addEventListener('click', modal._overlayClickHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -87,16 +163,16 @@ export class OrgChannelModule {
                 </div>
                 
                 <div class="form-group">
-                    <label>
+                    <label class="checkbox-inline">
                         <input type="checkbox" id="channel-is-primary" name="is_primary" value="1">
-                        Als primären Kanal markieren
+                        <span>Als primären Kanal markieren</span>
                     </label>
                 </div>
                 
                 <div class="form-group">
-                    <label>
+                    <label class="checkbox-inline">
                         <input type="checkbox" id="channel-is-public" name="is_public" value="1">
-                        Öffentlich sichtbar
+                        <span>Öffentlich sichtbar</span>
                     </label>
                 </div>
                 
@@ -106,7 +182,7 @@ export class OrgChannelModule {
                 </div>
                 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="Utils.closeModal()">Abbrechen</button>
+                    <button type="button" class="btn btn-secondary" id="channel-form-cancel">Abbrechen</button>
                     <button type="submit" class="btn btn-primary">Speichern</button>
                 </div>
             </form>
@@ -117,6 +193,48 @@ export class OrgChannelModule {
         if (!form) return;
         
         const orgDetailModule = this.app.orgDetail;
+        
+        // Abbrechen-Button Handler
+        // Suche nach Button mit ID oder nach Button mit Text "Abbrechen" im form-actions Bereich
+        let cancelBtn = form.querySelector('#channel-form-cancel');
+        if (!cancelBtn) {
+            // Fallback: Suche nach Button mit Text "Abbrechen" in form-actions
+            const formActions = form.querySelector('.form-actions');
+            if (formActions) {
+                const buttons = formActions.querySelectorAll('button.btn-secondary');
+                for (const btn of buttons) {
+                    if (btn.textContent.trim() === 'Abbrechen') {
+                        cancelBtn = btn;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (cancelBtn) {
+            console.log('[Channel Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
+            // Entferne alle vorhandenen Event-Listener durch Klonen
+            const newCancelBtn = cancelBtn.cloneNode(true);
+            // Entferne onclick Attribut falls vorhanden
+            newCancelBtn.removeAttribute('onclick');
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+            newCancelBtn.onclick = (e) => {
+                console.log('[Channel Modal] Abbrechen-Button geklickt');
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-channel');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (orgDetailModule && orgDetailModule.showOrgDetail) {
+                        orgDetailModule.showOrgDetail(orgUuid);
+                    }
+                }
+                return false;
+            };
+        } else {
+            console.warn('[Channel Modal] Abbrechen-Button NICHT gefunden!');
+        }
         
         form.onsubmit = async (e) => {
             e.preventDefault();
@@ -131,6 +249,10 @@ export class OrgChannelModule {
                 data.number = data.value;
             }
             
+            // Entferne value, da es nicht im Backend erwartet wird
+            delete data.value;
+            
+            // Konvertiere Checkbox-Werte (wenn nicht gesetzt, dann 0)
             data.is_primary = data.is_primary === '1' ? 1 : 0;
             data.is_public = data.is_public === '1' ? 1 : 0;
             
@@ -142,15 +264,24 @@ export class OrgChannelModule {
                     await window.API.addOrgChannel(orgUuid, data);
                     Utils.showSuccess('Kommunikationskanal erfolgreich hinzugefügt');
                 }
-                Utils.closeModal();
+                Utils.closeSpecificModal('modal-channel');
                 if (orgDetailModule && orgDetailModule.showOrgDetail) {
                     await orgDetailModule.showOrgDetail(orgUuid);
                 }
             } catch (error) {
                 console.error('Error saving channel:', error);
-                Utils.showError('Fehler beim Speichern: ' + (error.message || 'Unbekannter Fehler'));
+                let errorMessage = 'Fehler beim Speichern';
+                if (error.message) {
+                    errorMessage += ': ' + error.message;
+                } else if (error.error) {
+                    errorMessage += ': ' + error.error;
+                } else if (typeof error === 'string') {
+                    errorMessage += ': ' + error;
+                }
+                Utils.showError(errorMessage);
             }
         };
     }
 }
+
 

@@ -32,6 +32,44 @@ export class OrgDetailViewModule {
         return translations[status] || status || '-';
     }
     
+    translateRelationType(relationType) {
+        const relationTypeMap = {
+            // Konzern & Struktur
+            'parent_of': 'Muttergesellschaft von',
+            'subsidiary_of': 'Tochtergesellschaft von',
+            'sister_company': 'Schwestergesellschaft',
+            'holding_of': 'Holding von',
+            'operating_company_of': 'Operative Gesellschaft von',
+            'branch_of': 'Niederlassung von',
+            'location_of': 'Standort von',
+            'division_of': 'Zweigstelle von',
+            // Beteiligungen
+            'owns_stake_in': 'Beteiligung an',
+            'joint_venture_with': 'Joint Venture mit',
+            'ubo_of': 'Ultimate Beneficial Owner von',
+            // Transaktionen
+            'acquired_from': 'Übernommen von',
+            'merged_with': 'Fusioniert mit',
+            'spun_off_from': 'Abgespalten von',
+            'legal_successor_of': 'Rechtsnachfolger von',
+            'in_liquidation_by': 'In Liquidation durch',
+            // Geschäftliche Beziehungen
+            'customer_of': 'Kunde von',
+            'supplier_of': 'Lieferant von',
+            'distributor_of': 'Distributor von',
+            'reseller_of': 'Reseller von',
+            'partner_of': 'Partner von',
+            'service_provider_of': 'Service Provider von',
+            'logistics_partner_of': 'Logistikpartner von',
+            'franchise_giver_of': 'Franchisegeber von',
+            'franchise_taker_of': 'Franchisenehmer von',
+            'contract_partner_of': 'Vertragspartner von',
+            'framework_contract_for': 'Rahmenvertrag für',
+            'implementation_partner_for': 'Implementierungspartner für'
+        };
+        return relationTypeMap[relationType] || relationType || '-';
+    }
+    
     renderOrgDetail(org) {
         try {
             const orgUuid = org.org_uuid || org.uuid;
@@ -202,8 +240,15 @@ export class OrgDetailViewModule {
                         ` : ''}
                     </div>
                     
-                    <!-- Speichern/Abbrechen Buttons direkt nach Grunddaten -->
-                    <div class="org-detail-actions" id="org-edit-actions" style="display: none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+                    <!-- Notizen in Grunddaten-Sektion (vor Adressen, im Edit-Modus oberhalb der Buttons) -->
+                    <div class="org-detail-item" style="grid-column: 1 / -1; margin-top: 1rem;">
+                        <strong>Notizen:</strong>
+                        <div class="org-detail-value" id="org-field-notes">${org.notes ? Utils.escapeHtml(org.notes) : '<span class="org-detail-empty">Keine Notizen</span>'}</div>
+                        <textarea class="org-detail-input" id="org-input-notes" rows="4" style="display: none; width: 100%;">${Utils.escapeHtml(org.notes || '')}</textarea>
+                    </div>
+                    
+                    <!-- Speichern/Abbrechen Buttons nach Notizen -->
+                    <div class="org-detail-actions" id="org-edit-actions" style="display: none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); grid-column: 1 / -1;">
                         <button class="org-detail-save-btn" onclick="app.orgDetail.editModule.saveOrgChanges('${orgUuid}')">Speichern</button>
                         <button class="org-detail-cancel-btn" onclick="app.orgDetail.editModule.cancelOrgEdit('${orgUuid}')">Abbrechen</button>
                     </div>
@@ -317,27 +362,24 @@ export class OrgDetailViewModule {
                     </div>
                     ${relations.length > 0 ? `
                         <div class="org-detail-list">
-                            ${relations.map(rel => `
+                            ${relations.map(rel => {
+                                const relationTypeLabel = this.translateRelationType(rel.relation_type || '');
+                                return `
                                 <div class="org-detail-item">
                                     <div style="display: flex; justify-content: space-between; align-items: start;">
                                         <div>
-                                            <strong>${Utils.escapeHtml(rel.relation_type || '')}:</strong> ${Utils.escapeHtml(rel.child_org_name || rel.parent_org_name || 'Unbekannt')}
+                                            <strong>${Utils.escapeHtml(relationTypeLabel)}:</strong> ${Utils.escapeHtml(rel.child_org_name || rel.parent_org_name || 'Unbekannt')}
                                             ${rel.percentage ? ` (${Utils.escapeHtml(String(rel.percentage))}%)` : ''}
                                         </div>
                                         <button class="btn btn-sm btn-secondary" onclick="app.orgDetail.relationModule.editRelation('${orgUuid}', '${rel.relation_uuid}')">Bearbeiten</button>
                                     </div>
                                 </div>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </div>
                     ` : `
                         <div class="org-detail-empty">Keine Relationen vorhanden</div>
                     `}
-                </div>
-                
-                <div class="org-detail-section">
-                    <h4>Notizen</h4>
-                    <div class="org-detail-value" id="org-field-notes">${org.notes ? Utils.escapeHtml(org.notes) : '<span class="org-detail-empty">Keine Notizen</span>'}</div>
-                    <textarea class="org-detail-input" id="org-input-notes" rows="4" style="display: none;">${Utils.escapeHtml(org.notes || '')}</textarea>
                 </div>
                 
                 <div class="org-detail-actions" style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border);">

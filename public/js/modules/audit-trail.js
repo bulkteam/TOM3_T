@@ -29,20 +29,41 @@ export class AuditTrailModule {
             // Überschreibe Close-Button-Handler, damit nur dieses Modal geschlossen wird
             const closeBtn = modal.querySelector('.modal-close');
             if (closeBtn) {
-                // Entferne alten Handler und füge neuen hinzu
-                closeBtn.onclick = (e) => {
+                const newCloseBtn = closeBtn.cloneNode(true);
+                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                newCloseBtn.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
+                    // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
                 };
             }
             
             // Überschreibe Overlay-Click-Handler, damit nur dieses Modal geschlossen wird
-            // Entferne alte Event-Listener (kann nicht direkt entfernt werden, daher neu hinzufügen)
             modal.removeEventListener('click', modal._overlayClickHandler);
             modal._overlayClickHandler = (e) => {
                 if (e.target === modal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
+                    // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(orgUuid);
+                        }
+                    }
+                    return false;
                 }
             };
             modal.addEventListener('click', modal._overlayClickHandler);
@@ -91,8 +112,9 @@ export class AuditTrailModule {
     renderAuditEntry(entry) {
         const actionLabel = this.getActionLabel(entry.action);
         const changeTypeLabel = this.getChangeTypeLabel(entry.change_type);
+        const date = this.formatEntryDate(entry.created_at);
         const time = this.formatTime(entry.created_at);
-        const user = entry.user_id || 'Unbekannt';
+        const user = entry.user_name || entry.user_id || 'Unbekannt';
         
         let changeDetails = '';
         
@@ -108,6 +130,14 @@ export class AuditTrailModule {
             `;
         } else if (entry.change_type === 'org_created') {
             changeDetails = '<div class="audit-trail-change">Organisation erstellt</div>';
+        } else if (entry.change_type === 'org_archived') {
+            const metadata = entry.metadata ? JSON.parse(entry.metadata) : {};
+            const archivedAt = metadata.archived_at ? new Date(metadata.archived_at).toLocaleString('de-DE') : '';
+            changeDetails = `<div class="audit-trail-change">Organisation archiviert${archivedAt ? ` am ${archivedAt}` : ''}</div>`;
+        } else if (entry.change_type === 'org_unarchived') {
+            const metadata = entry.metadata ? JSON.parse(entry.metadata) : {};
+            const oldArchivedAt = metadata.archived_at ? new Date(metadata.archived_at).toLocaleString('de-DE') : '';
+            changeDetails = `<div class="audit-trail-change">Organisation reaktiviert${oldArchivedAt ? ` (war archiviert am ${oldArchivedAt})` : ''}</div>`;
         } else if (entry.metadata) {
             try {
                 const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
@@ -125,6 +155,7 @@ export class AuditTrailModule {
                         <span class="audit-trail-change-type">${Utils.escapeHtml(changeTypeLabel)}</span>
                     </div>
                     <div class="audit-trail-entry-right">
+                        <span class="audit-trail-date">${Utils.escapeHtml(date)}</span>
                         <span class="audit-trail-time">${time}</span>
                         <span class="audit-trail-user">${Utils.escapeHtml(user)}</span>
                     </div>
@@ -198,6 +229,20 @@ export class AuditTrailModule {
         }
     }
     
+    formatEntryDate(dateTimeStr) {
+        if (!dateTimeStr) return '';
+        try {
+            const date = new Date(dateTimeStr);
+            return date.toLocaleDateString('de-DE', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit' 
+            });
+        } catch (e) {
+            return dateTimeStr.split(' ')[0] || '';
+        }
+    }
+    
     getActionLabel(action) {
         const labels = {
             'create': 'Erstellt',
@@ -210,6 +255,8 @@ export class AuditTrailModule {
     getChangeTypeLabel(changeType) {
         const labels = {
             'org_created': 'Organisation erstellt',
+            'org_archived': 'Organisation archiviert',
+            'org_unarchived': 'Organisation reaktiviert',
             'field_change': 'Feld geändert',
             'relation_added': 'Beziehung hinzugefügt',
             'relation_removed': 'Beziehung entfernt',
@@ -228,6 +275,7 @@ export class AuditTrailModule {
     
     getFieldLabel(fieldName) {
         const labels = {
+            // Stammdaten
             'name': 'Name',
             'org_kind': 'Organisationsart',
             'external_ref': 'Externe Referenz',
@@ -241,7 +289,38 @@ export class AuditTrailModule {
             'status': 'Status',
             'account_owner_user_id': 'Account-Verantwortung',
             'account_owner_since': 'Account-Verantwortung seit',
-            'archived_at': 'Archiviert'
+            'archived_at': 'Archiviert',
+            // Adressfelder
+            'address_address_type': 'Adresstyp',
+            'address_street': 'Straße',
+            'address_address_additional': 'Adresszusatz',
+            'address_city': 'Stadt',
+            'address_postal_code': 'PLZ',
+            'address_country': 'Land',
+            'address_state': 'Bundesland',
+            'address_latitude': 'Breitengrad',
+            'address_longitude': 'Längengrad',
+            'address_is_default': 'Standardadresse',
+            'address_notes': 'Notizen',
+            // USt-ID-Felder
+            'vat_vat_id': 'USt-ID',
+            'vat_country_code': 'Länderkennzeichen',
+            'vat_valid_from': 'Gültig ab',
+            'vat_valid_to': 'Gültig bis',
+            'vat_is_primary_for_country': 'Primär für Land',
+            'vat_location_type': 'Standorttyp',
+            'vat_notes': 'Notizen',
+            // Kommunikationskanal-Felder
+            'channel_channel_type': 'Kanaltyp',
+            'channel_country_code': 'Länderkennzeichen',
+            'channel_area_code': 'Vorwahl',
+            'channel_number': 'Nummer',
+            'channel_extension': 'Durchwahl',
+            'channel_email_address': 'E-Mail-Adresse',
+            'channel_label': 'Bezeichnung',
+            'channel_is_primary': 'Primär',
+            'channel_is_public': 'Öffentlich',
+            'channel_notes': 'Notizen'
         };
         return labels[fieldName] || fieldName;
     }

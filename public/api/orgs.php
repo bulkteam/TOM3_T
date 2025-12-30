@@ -185,10 +185,10 @@ switch ($method) {
         if ($orgUuid && $action === 'addresses') {
             // POST /api/orgs/{uuid}/addresses
             $data = json_decode(file_get_contents('php://input'), true);
-            $result = $orgService->addAddress($orgUuid, $data);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->addAddress($orgUuid, $data, $userId);
             
             // Track Zugriff beim Hinzufügen einer Adresse
-                $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -217,10 +217,10 @@ switch ($method) {
         } elseif ($orgUuid && $action === 'channels') {
             // POST /api/orgs/{uuid}/channels
             $data = json_decode(file_get_contents('php://input'), true);
-            $result = $orgService->addCommunicationChannel($orgUuid, $data);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->addCommunicationChannel($orgUuid, $data, $userId);
             
             // Track Zugriff beim Hinzufügen eines Kanals
-            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -230,23 +230,40 @@ switch ($method) {
             echo json_encode($result);
         } elseif ($orgUuid && $action === 'vat-registrations') {
             // POST /api/orgs/{uuid}/vat-registrations
-            $data = json_decode(file_get_contents('php://input'), true);
+            $rawInput = file_get_contents('php://input');
+            $data = json_decode($rawInput, true);
+            
+            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid JSON data', 'json_error' => json_last_error_msg()]);
+                exit;
+            }
+            
             if (empty($data['vat_id']) || empty($data['country_code'])) {
                 http_response_code(400);
                 echo json_encode(['error' => 'vat_id and country_code required']);
                 exit;
             }
-            $result = $orgService->addVatRegistration($orgUuid, $data);
             
-            // Track Zugriff beim Hinzufügen einer USt-ID
-            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $userId = $_GET['user_id'] ?? $currentUserId;
+                $result = $orgService->addVatRegistration($orgUuid, $data, $userId);
+                
+                // Track Zugriff beim Hinzufügen einer USt-ID
+                try {
+                    $orgService->trackAccess($userId, $orgUuid, 'recent');
+                } catch (Exception $e) {
+                    // Tracking-Fehler sollten die Antwort nicht beeinflussen
+                    error_log("Tracking error (non-fatal): " . $e->getMessage());
+                }
+                
+                echo json_encode($result);
             } catch (Exception $e) {
-                // Tracking-Fehler sollten die Antwort nicht beeinflussen
+                http_response_code(500);
+                error_log('Error adding VAT registration: ' . $e->getMessage());
+                error_log('Stack trace: ' . $e->getTraceAsString());
+                echo json_encode(['error' => $e->getMessage()]);
             }
-            
-            echo json_encode($result);
         } elseif ($orgUuid && $action === 'archive') {
             // POST /api/orgs/{uuid}/archive
             $userId = $_GET['user_id'] ?? $currentUserId;
@@ -313,10 +330,10 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $result = $orgService->updateAddress($addressUuid, $data);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->updateAddress($addressUuid, $data, $userId);
             
             // Track Zugriff beim Bearbeiten einer Adresse
-            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
                 $orgService->trackAccess($userId, $orgUuid, 'recent');
             } catch (Exception $e) {
@@ -353,17 +370,25 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $result = $orgService->updateCommunicationChannel($channelUuid, $data);
-            
-            // Track Zugriff beim Bearbeiten eines Kanals
             $userId = $_GET['user_id'] ?? $currentUserId;
-            try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
-            } catch (Exception $e) {
-                // Tracking-Fehler sollten die Antwort nicht beeinflussen
-            }
             
-            echo json_encode($result);
+            try {
+                $result = $orgService->updateCommunicationChannel($channelUuid, $data, $userId);
+                
+                // Track Zugriff beim Bearbeiten eines Kanals
+                try {
+                    $orgService->trackAccess($userId, $orgUuid, 'recent');
+                } catch (Exception $e) {
+                    // Tracking-Fehler sollten die Antwort nicht beeinflussen
+                }
+                
+                echo json_encode($result);
+            } catch (Exception $e) {
+                http_response_code(500);
+                error_log('Error updating communication channel: ' . $e->getMessage());
+                error_log('Stack trace: ' . $e->getTraceAsString());
+                echo json_encode(['error' => $e->getMessage()]);
+            }
         } elseif ($orgUuid && $action === 'vat-registrations') {
             // PUT /api/orgs/{uuid}/vat-registrations/{vat_registration_uuid}
             $vatUuid = $pathParts[2] ?? null;
@@ -386,7 +411,8 @@ switch ($method) {
                 error_log("VAT Update - Received data: " . json_encode($data));
                 error_log("VAT Update - VAT UUID: " . $vatUuid);
                 
-                $result = $orgService->updateVatRegistration($vatUuid, $data);
+                $userId = $_GET['user_id'] ?? $currentUserId;
+                $result = $orgService->updateVatRegistration($vatUuid, $data, $userId);
                 
                 if (!$result) {
                     http_response_code(404);
@@ -395,7 +421,6 @@ switch ($method) {
                 }
                 
                 // Track Zugriff beim Bearbeiten einer USt-ID
-                $userId = $_GET['user_id'] ?? $currentUserId;
                 try {
                     $orgService->trackAccess($userId, $orgUuid, 'recent');
                 } catch (Exception $e) {
@@ -464,7 +489,8 @@ switch ($method) {
                 echo json_encode(['error' => 'address_uuid required']);
                 exit;
             }
-            $result = $orgService->deleteAddress($addressUuid);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->deleteAddress($addressUuid, $userId);
             echo json_encode(['success' => $result]);
         } elseif ($orgUuid && $action === 'relations') {
             // DELETE /api/orgs/{uuid}/relations/{relation_uuid}
@@ -535,7 +561,8 @@ switch ($method) {
                 exit;
             }
             
-            $result = $orgService->deleteVatRegistration($vatUuid);
+            $userId = $_GET['user_id'] ?? $currentUserId;
+            $result = $orgService->deleteVatRegistration($vatUuid, $userId);
             
             if (!$result) {
                 http_response_code(404);
