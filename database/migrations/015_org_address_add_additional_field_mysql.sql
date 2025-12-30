@@ -5,3 +5,4 @@ ALTER TABLE org_address
 ADD COLUMN address_additional VARCHAR(255) NULL COMMENT 'Adresszusatz (z.B. "Gebäude 5", "Eingang B", "3. Stock")' AFTER street;
 
 
+

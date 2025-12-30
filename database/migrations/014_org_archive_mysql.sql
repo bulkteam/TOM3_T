@@ -12,3 +12,4 @@ CREATE INDEX idx_org_archived ON org(archived_at);
 -- Standard: Alle bestehenden Organisationen sind aktiv (archived_at IS NULL)
 
 
+

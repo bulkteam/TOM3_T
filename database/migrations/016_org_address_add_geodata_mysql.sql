@@ -8,3 +8,4 @@ ADD COLUMN longitude DECIMAL(11, 8) NULL COMMENT 'Längengrad (Longitude) für K
 CREATE INDEX idx_org_address_geodata ON org_address(latitude, longitude);
 
 
+

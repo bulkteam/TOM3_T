@@ -49,3 +49,4 @@ CREATE INDEX idx_org_relation_current ON org_relation(is_current);
 CREATE INDEX idx_org_relation_confidence ON org_relation(confidence);
 
 
+

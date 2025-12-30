@@ -76,3 +76,4 @@ WHERE u.email = 'dev-admin@tom.local' AND r.role_code = 'admin'
    OR u.email = 'dev-manager@tom.local' AND r.role_code = 'manager';
 
 
+

@@ -328,3 +328,4 @@ SELECT REPLACE(UUID(), '-', ''), 'N82 - Erbringung von wirtschaftlichen Dienstle
 FROM industry WHERE code = 'N' AND parent_industry_uuid IS NULL LIMIT 1;
 
 
+
