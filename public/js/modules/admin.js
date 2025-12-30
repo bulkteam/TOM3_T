@@ -8,6 +8,10 @@ import { Utils } from './utils.js';
 export class AdminModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._adminTabHandler = null;
+        this._adminUserClickHandler = null;
+        this._showInactiveHandler = null;
     }
     
     async load() {
@@ -86,7 +90,7 @@ export class AdminModule {
                         ${showActivateButton ? 
                             `<button class="btn btn-sm btn-success btn-activate-user" data-user-id="${user.user_id}">Aktivieren</button>` : ''
                         }
-                        <button class="btn btn-sm btn-secondary btn-edit-user" data-user-id="${user.user_id}">Bearbeiten</button>
+                        <button class="btn btn-sm btn-primary btn-edit-user" data-user-id="${user.user_id}">Bearbeiten</button>
                     </div>
                 </div>
                 <div class="admin-user-details">
@@ -119,44 +123,64 @@ export class AdminModule {
     }
     
     setupAdminHandlers() {
-        // Tab-Wechsel
-        document.querySelectorAll('.admin-tab').forEach(tab => {
-            const newTab = tab.cloneNode(true);
-            tab.parentNode.replaceChild(newTab, tab);
+        // Tab-Wechsel - Event-Delegation verwenden
+        const adminContainer = document.getElementById('admin-users-list')?.closest('.page') || document.getElementById('page-admin');
+        if (adminContainer) {
+            // Entferne alten Handler, falls vorhanden
+            if (this._adminTabHandler) {
+                adminContainer.removeEventListener('click', this._adminTabHandler);
+            }
             
-            newTab.addEventListener('click', (e) => {
-                const targetTab = e.target.dataset.tab;
-                
-                // Update Tabs
-                document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-                e.target.classList.add('active');
-                
-                // Update Content
-                document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
-                const content = document.getElementById(`admin-tab-${targetTab}`);
-                if (content) {
-                    content.classList.add('active');
+            this._adminTabHandler = (e) => {
+                const tab = e.target.closest('.admin-tab');
+                if (tab) {
+                    const targetTab = tab.dataset.tab;
+                    
+                    // Update Tabs
+                    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    
+                    // Update Content
+                    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+                    const content = document.getElementById(`admin-tab-${targetTab}`);
+                    if (content) {
+                        content.classList.add('active');
+                    }
+                    
+                    if (targetTab === 'users') {
+                        this.loadAdminUsers();
+                    } else if (targetTab === 'roles') {
+                        this.loadAdminRoles();
+                    }
                 }
-                
-                if (targetTab === 'users') {
-                    this.loadAdminUsers();
-                } else if (targetTab === 'roles') {
-                    this.loadAdminRoles();
-                }
-            });
-        });
+            };
+            
+            adminContainer.addEventListener('click', this._adminTabHandler);
+        }
         
         // User-Handler werden in setupAdminUserHandlers() gesetzt
         this.setupAdminUserHandlers();
     }
     
     setupAdminUserHandlers() {
-        // User deaktivieren
-        document.querySelectorAll('.btn-deactivate-user').forEach(btn => {
-            const newBtn = btn.cloneNode(true);
-            btn.parentNode.replaceChild(newBtn, btn);
-            newBtn.addEventListener('click', async (e) => {
-                const userId = e.target.dataset.userId;
+        // Event-Delegation für dynamisch generierte Buttons
+        const usersContainer = document.getElementById('admin-users-list')?.closest('.page') || document.getElementById('page-admin');
+        if (!usersContainer) return;
+        
+        // Entferne alte Handler, falls vorhanden
+        if (this._adminUserClickHandler) {
+            usersContainer.removeEventListener('click', this._adminUserClickHandler);
+        }
+        
+        // Ein Handler für alle User-Aktionen
+        this._adminUserClickHandler = async (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            
+            const userId = btn.dataset.userId;
+            if (!userId) return;
+            
+            if (btn.classList.contains('btn-deactivate-user')) {
                 if (!confirm(`Möchten Sie diesen User wirklich deaktivieren?\n\nDer User kann nicht mehr auf das System zugreifen, aber alle zugeordneten Daten bleiben erhalten.`)) return;
                 
                 try {
@@ -166,16 +190,7 @@ export class AdminModule {
                 } catch (error) {
                     Utils.showError('Fehler beim Deaktivieren: ' + (error.message || 'Unbekannter Fehler'));
                 }
-            });
-        });
-        
-        // User aktivieren
-        document.querySelectorAll('.btn-activate-user').forEach(btn => {
-            const newBtn = btn.cloneNode(true);
-            btn.parentNode.replaceChild(newBtn, btn);
-            newBtn.addEventListener('click', async (e) => {
-                const userId = e.target.dataset.userId;
-                
+            } else if (btn.classList.contains('btn-activate-user')) {
                 try {
                     await window.API.activateUser(userId);
                     Utils.showSuccess('User wurde aktiviert');
@@ -183,31 +198,28 @@ export class AdminModule {
                 } catch (error) {
                     Utils.showError('Fehler beim Aktivieren: ' + (error.message || 'Unbekannter Fehler'));
                 }
-            });
-        });
-        
-        // User bearbeiten
-        document.querySelectorAll('.btn-edit-user').forEach(btn => {
-            const newBtn = btn.cloneNode(true);
-            btn.parentNode.replaceChild(newBtn, btn);
-            newBtn.addEventListener('click', async (e) => {
-                const userId = e.target.dataset.userId;
+            } else if (btn.classList.contains('btn-edit-user')) {
                 await this.editUser(userId);
-            });
-        });
+            }
+        };
+        
+        usersContainer.addEventListener('click', this._adminUserClickHandler);
         
         // Inaktive User anzeigen
         const btnShowInactive = document.getElementById('btn-show-inactive');
         if (btnShowInactive) {
-            let showInactive = false;
-            const newBtn = btnShowInactive.cloneNode(true);
-            btnShowInactive.parentNode.replaceChild(newBtn, btnShowInactive);
+            if (this._showInactiveHandler) {
+                btnShowInactive.removeEventListener('click', this._showInactiveHandler);
+            }
             
-            newBtn.addEventListener('click', async () => {
+            let showInactive = false;
+            this._showInactiveHandler = async () => {
                 showInactive = !showInactive;
-                newBtn.textContent = showInactive ? 'Nur aktive User' : 'Inaktive User anzeigen';
+                btnShowInactive.textContent = showInactive ? 'Nur aktive User' : 'Inaktive User anzeigen';
                 await this.loadAdminUsers(showInactive);
-            });
+            };
+            
+            btnShowInactive.addEventListener('click', this._showInactiveHandler);
         }
     }
     
@@ -306,7 +318,7 @@ export class AdminModule {
                     </div>
                     
                     <div class="modal-actions">
-                        <button type="submit" class="btn btn-primary">Speichern</button>
+                        <button type="submit" class="btn btn-success">Speichern</button>
                         <button type="button" class="btn btn-secondary btn-cancel-edit-user">Abbrechen</button>
                     </div>
                 </form>

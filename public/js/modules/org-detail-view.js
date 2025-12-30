@@ -271,7 +271,7 @@ export class OrgDetailViewModule {
                                             ${addr.country_code ? `<br>${Utils.escapeHtml(addr.country_code)}` : ''}
                                             ${addr.vat_id ? `<br><small>USt-ID: ${Utils.escapeHtml(addr.vat_id)}</small>` : ''}
                                         </div>
-                                        <button class="btn btn-sm btn-secondary" onclick="app.orgDetail.addressModule.editAddress('${orgUuid}', '${addr.address_uuid}')">Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.orgDetail.addressModule.editAddress('${orgUuid}', '${addr.address_uuid}')">Bearbeiten</button>
                                     </div>
                                 </div>
                             `).join('')}
@@ -313,7 +313,7 @@ export class OrgDetailViewModule {
                                             ${Utils.escapeHtml(channelValue)}
                                             ${channel.is_primary ? '<span class="org-detail-badge org-detail-badge-primary">Primär</span>' : ''}
                                         </div>
-                                        <button class="btn btn-sm btn-secondary" onclick="app.orgDetail.channelModule.editChannel('${orgUuid}', '${channel.channel_uuid}')">Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.orgDetail.channelModule.editChannel('${orgUuid}', '${channel.channel_uuid}')">Bearbeiten</button>
                                     </div>
                                 </div>
                             `;
@@ -344,7 +344,7 @@ export class OrgDetailViewModule {
                                             ${vat.is_primary_for_country === 1 ? '<span class="org-detail-badge org-detail-badge-primary">Primär</span>' : ''}
                                             ${vat.notes ? `<br><small style="color: var(--text-light);">${Utils.escapeHtml(vat.notes)}</small>` : ''}
                                         </div>
-                                        <button class="btn btn-sm btn-secondary" onclick="app.orgDetail.vatModule.editVatRegistration('${orgUuid}', '${vat.vat_registration_uuid}')">Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.orgDetail.vatModule.editVatRegistration('${orgUuid}', '${vat.vat_registration_uuid}')">Bearbeiten</button>
                                     </div>
                                 </div>
                             `;
@@ -371,7 +371,7 @@ export class OrgDetailViewModule {
                                             <strong>${Utils.escapeHtml(relationTypeLabel)}:</strong> ${Utils.escapeHtml(rel.child_org_name || rel.parent_org_name || 'Unbekannt')}
                                             ${rel.percentage ? ` (${Utils.escapeHtml(String(rel.percentage))}%)` : ''}
                                         </div>
-                                        <button class="btn btn-sm btn-secondary" onclick="app.orgDetail.relationModule.editRelation('${orgUuid}', '${rel.relation_uuid}')">Bearbeiten</button>
+                                        <button class="btn btn-sm btn-primary" onclick="app.orgDetail.relationModule.editRelation('${orgUuid}', '${rel.relation_uuid}')">Bearbeiten</button>
                                     </div>
                                 </div>
                             `;

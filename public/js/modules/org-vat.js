@@ -8,6 +8,10 @@ import { Utils } from './utils.js';
 export class OrgVatModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._vatCloseHandlers = new Map(); // modalId -> handler
+        this._vatCancelHandlers = new Map(); // formId -> handler
+        this._vatOverlayHandlers = new Map(); // modalId -> handler
     }
     
     async showAddVatRegistrationModal(orgUuid) {
@@ -29,9 +33,12 @@ export class OrgVatModule {
         // Setze Close-Button-Handler für dieses Modal
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) {
-            const newCloseBtn = closeBtn.cloneNode(true);
-            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-            newCloseBtn.onclick = (e) => {
+            const oldHandler = this._vatCloseHandlers.get('modal-vat');
+            if (oldHandler) {
+                closeBtn.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -44,11 +51,18 @@ export class OrgVatModule {
                 }
                 return false;
             };
+            
+            this._vatCloseHandlers.set('modal-vat', handler);
+            closeBtn.addEventListener('click', handler);
         }
         
         // Setze Overlay-Click-Handler
-        modal.removeEventListener('click', modal._overlayClickHandler);
-        modal._overlayClickHandler = (e) => {
+        const oldOverlayHandler = this._vatOverlayHandlers.get('modal-vat');
+        if (oldOverlayHandler) {
+            modal.removeEventListener('click', oldOverlayHandler);
+        }
+        
+        const overlayHandler = (e) => {
             if (e.target === modal) {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -62,7 +76,9 @@ export class OrgVatModule {
                 return false;
             }
         };
-        modal.addEventListener('click', modal._overlayClickHandler);
+        
+        this._vatOverlayHandlers.set('modal-vat', overlayHandler);
+        modal.addEventListener('click', overlayHandler);
         
         modal.classList.add('active');
     }
@@ -98,9 +114,12 @@ export class OrgVatModule {
             // Setze Close-Button-Handler für dieses Modal
             const closeBtn = modal.querySelector('.modal-close');
             if (closeBtn) {
-                const newCloseBtn = closeBtn.cloneNode(true);
-                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                newCloseBtn.onclick = (e) => {
+                const oldHandler = this._vatCloseHandlers.get('modal-vat');
+                if (oldHandler) {
+                    closeBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -113,11 +132,18 @@ export class OrgVatModule {
                     }
                     return false;
                 };
+                
+                this._vatCloseHandlers.set('modal-vat', handler);
+                closeBtn.addEventListener('click', handler);
             }
             
             // Setze Overlay-Click-Handler
-            modal.removeEventListener('click', modal._overlayClickHandler);
-            modal._overlayClickHandler = (e) => {
+            const oldOverlayHandler = this._vatOverlayHandlers.get('modal-vat');
+            if (oldOverlayHandler) {
+                modal.removeEventListener('click', oldOverlayHandler);
+            }
+            
+            const overlayHandler = (e) => {
                 if (e.target === modal) {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -131,7 +157,9 @@ export class OrgVatModule {
                     return false;
                 }
             };
-            modal.addEventListener('click', modal._overlayClickHandler);
+            
+            this._vatOverlayHandlers.set('modal-vat', overlayHandler);
+            modal.addEventListener('click', overlayHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -197,9 +225,9 @@ export class OrgVatModule {
                 </div>
                 
                 <div class="form-group">
-                    <label class="checkbox-inline">
+                    <label class="checkbox-row" for="vat-is-primary">
                         <input type="checkbox" id="vat-is-primary" name="is_primary_for_country" value="1">
-                        <span>Als primäre USt-ID für dieses Land markieren</span>
+                        <span class="checkbox-text">Als primäre USt-ID für dieses Land markieren</span>
                     </label>
                 </div>
                 
@@ -210,7 +238,7 @@ export class OrgVatModule {
                 
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" id="vat-form-cancel">Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="submit" class="btn btn-success">Speichern</button>
                 </div>
             </form>
         `;
@@ -240,12 +268,15 @@ export class OrgVatModule {
         
         if (cancelBtn) {
             console.log('[VAT Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
-            // Entferne alle vorhandenen Event-Listener durch Klonen
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            // Entferne onclick Attribut falls vorhanden
-            newCancelBtn.removeAttribute('onclick');
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-            newCancelBtn.onclick = (e) => {
+            // Entferne alten Handler, falls vorhanden
+            const formId = form.id || 'form-vat';
+            const oldHandler = this._vatCancelHandlers.get(formId);
+            if (oldHandler) {
+                cancelBtn.removeEventListener('click', oldHandler);
+            }
+            
+            // Erstelle neuen Handler
+            const handler = (e) => {
                 console.log('[VAT Modal] Abbrechen-Button geklickt');
                 e.preventDefault();
                 e.stopPropagation();
@@ -259,6 +290,13 @@ export class OrgVatModule {
                 }
                 return false;
             };
+            
+            // Entferne onclick Attribut falls vorhanden
+            cancelBtn.removeAttribute('onclick');
+            
+            // Speichere Handler-Referenz und füge Listener hinzu
+            this._vatCancelHandlers.set(formId, handler);
+            cancelBtn.addEventListener('click', handler);
         } else {
             console.warn('[VAT Modal] Abbrechen-Button NICHT gefunden!');
         }
@@ -266,25 +304,10 @@ export class OrgVatModule {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const vatUuid = form.dataset.vatUuid;
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            
-            // Konvertiere Checkbox-Wert
-            data.is_primary_for_country = data.is_primary_for_country === '1' ? 1 : 0;
-            
-            // Konvertiere leere Strings zu null für optionale Felder
-            if (data.valid_from === '') {
-                data.valid_from = null;
-            }
-            if (data.valid_to === '') {
-                data.valid_to = null;
-            }
-            if (data.location_type === '') {
-                data.location_type = null;
-            }
-            if (data.notes === '') {
-                data.notes = null;
-            }
+            const data = Utils.processFormData(form, {
+                checkboxFields: ['is_primary_for_country'],
+                nullFields: ['valid_from', 'valid_to', 'location_type', 'notes']
+            });
             
             console.log('[VAT Form] Submitting data:', data);
             console.log('[VAT Form] VAT UUID:', vatUuid, 'Is new:', !vatUuid || vatUuid === '');

@@ -8,6 +8,12 @@ import { Utils } from './utils.js';
 export class OrgRelationModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._relationCloseHandlers = new Map(); // modalId -> handler
+        this._relationCancelHandlers = new Map(); // buttonId -> handler
+        this._relationSubmitHandlers = new Map(); // buttonId -> handler
+        this._relationOverlayHandlers = new Map(); // modalId -> handler
+        this._relationTypeChangeHandlers = new Map(); // selectId -> handler
     }
     
     showAddRelationDialog(parentOrgUuid) {
@@ -36,40 +42,29 @@ export class OrgRelationModule {
         // Setup form submit
         const submitBtn = document.getElementById('btn-submit-relation');
         if (submitBtn) {
-            const newSubmitBtn = submitBtn.cloneNode(true);
-            submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
-            newSubmitBtn.addEventListener('click', async (e) => {
+            const oldHandler = this._relationSubmitHandlers.get('btn-submit-relation');
+            if (oldHandler) {
+                submitBtn.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = async (e) => {
                 e.preventDefault();
                 await this.submitRelationForm(parentOrgUuid);
-            });
+            };
+            
+            this._relationSubmitHandlers.set('btn-submit-relation', handler);
+            submitBtn.addEventListener('click', handler);
         }
         
         // Setup cancel button
         const cancelBtn = document.getElementById('btn-cancel-relation');
         if (cancelBtn) {
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-            newCancelBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                Utils.closeSpecificModal('modal-relation');
-                const orgDetailModal = document.getElementById('modal-org-detail');
-                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                        this.app.orgDetail.showOrgDetail(parentOrgUuid);
-                    }
-                }
-                return false;
-            });
-        }
-        
-        // Setze Close-Button-Handler für dieses Modal
-        const closeBtn = modal.querySelector('.modal-close');
-        if (closeBtn) {
-            const newCloseBtn = closeBtn.cloneNode(true);
-            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-            newCloseBtn.onclick = (e) => {
+            const oldHandler = this._relationCancelHandlers.get('btn-cancel-relation');
+            if (oldHandler) {
+                cancelBtn.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -82,11 +77,44 @@ export class OrgRelationModule {
                 }
                 return false;
             };
+            
+            this._relationCancelHandlers.set('btn-cancel-relation', handler);
+            cancelBtn.addEventListener('click', handler);
+        }
+        
+        // Setze Close-Button-Handler für dieses Modal
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) {
+            const oldHandler = this._relationCloseHandlers.get('modal-relation');
+            if (oldHandler) {
+                closeBtn.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                Utils.closeSpecificModal('modal-relation');
+                const orgDetailModal = document.getElementById('modal-org-detail');
+                if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                    if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                        this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                    }
+                }
+                return false;
+            };
+            
+            this._relationCloseHandlers.set('modal-relation', handler);
+            closeBtn.addEventListener('click', handler);
         }
         
         // Setze Overlay-Click-Handler
-        modal.removeEventListener('click', modal._overlayClickHandler);
-        modal._overlayClickHandler = (e) => {
+        const oldOverlayHandler = this._relationOverlayHandlers.get('modal-relation');
+        if (oldOverlayHandler) {
+            modal.removeEventListener('click', oldOverlayHandler);
+        }
+        
+        const overlayHandler = (e) => {
             if (e.target === modal) {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -100,7 +128,9 @@ export class OrgRelationModule {
                 return false;
             }
         };
-        modal.addEventListener('click', modal._overlayClickHandler);
+        
+        this._relationOverlayHandlers.set('modal-relation', overlayHandler);
+        modal.addEventListener('click', overlayHandler);
         
         // Setup org search
         this.setupRelationOrgSearch();
@@ -108,15 +138,21 @@ export class OrgRelationModule {
         // Show ownership fields for ownership relation types
         const relationTypeSelect = document.getElementById('relation-type');
         if (relationTypeSelect) {
-            const newSelect = relationTypeSelect.cloneNode(true);
-            relationTypeSelect.parentNode.replaceChild(newSelect, relationTypeSelect);
-            newSelect.addEventListener('change', () => {
+            const oldHandler = this._relationTypeChangeHandlers.get('relation-type');
+            if (oldHandler) {
+                relationTypeSelect.removeEventListener('change', oldHandler);
+            }
+            
+            const handler = () => {
                 const ownershipTypes = ['owns_stake_in', 'ubo_of'];
                 const ownershipFields = document.getElementById('relation-ownership-fields');
                 if (ownershipFields) {
-                    ownershipFields.style.display = ownershipTypes.includes(newSelect.value) ? 'block' : 'none';
+                    ownershipFields.style.display = ownershipTypes.includes(relationTypeSelect.value) ? 'block' : 'none';
                 }
-            });
+            };
+            
+            this._relationTypeChangeHandlers.set('relation-type', handler);
+            relationTypeSelect.addEventListener('change', handler);
         }
         
         modal.classList.add('active');
@@ -179,40 +215,29 @@ export class OrgRelationModule {
             // Setup form submit
             const submitBtn = document.getElementById('btn-submit-relation');
             if (submitBtn) {
-                const newSubmitBtn = submitBtn.cloneNode(true);
-                submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
-                newSubmitBtn.addEventListener('click', async (e) => {
+                const oldHandler = this._relationSubmitHandlers.get('btn-submit-relation');
+                if (oldHandler) {
+                    submitBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = async (e) => {
                     e.preventDefault();
                     await this.submitRelationForm(parentOrgUuid, relationUuid);
-                });
+                };
+                
+                this._relationSubmitHandlers.set('btn-submit-relation', handler);
+                submitBtn.addEventListener('click', handler);
             }
             
             // Setup cancel button
             const cancelBtn = document.getElementById('btn-cancel-relation');
             if (cancelBtn) {
-                const newCancelBtn = cancelBtn.cloneNode(true);
-                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-                newCancelBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                    Utils.closeSpecificModal('modal-relation');
-                    const orgDetailModal = document.getElementById('modal-org-detail');
-                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                            this.app.orgDetail.showOrgDetail(parentOrgUuid);
-                        }
-                    }
-                    return false;
-                });
-            }
-            
-            // Setze Close-Button-Handler für dieses Modal
-            const closeBtn = modal.querySelector('.modal-close');
-            if (closeBtn) {
-                const newCloseBtn = closeBtn.cloneNode(true);
-                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                newCloseBtn.onclick = (e) => {
+                const oldHandler = this._relationCancelHandlers.get('btn-cancel-relation');
+                if (oldHandler) {
+                    cancelBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -225,11 +250,44 @@ export class OrgRelationModule {
                     }
                     return false;
                 };
+                
+                this._relationCancelHandlers.set('btn-cancel-relation', handler);
+                cancelBtn.addEventListener('click', handler);
+            }
+            
+            // Setze Close-Button-Handler für dieses Modal
+            const closeBtn = modal.querySelector('.modal-close');
+            if (closeBtn) {
+                const oldHandler = this._relationCloseHandlers.get('modal-relation');
+                if (oldHandler) {
+                    closeBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-relation');
+                    const orgDetailModal = document.getElementById('modal-org-detail');
+                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(parentOrgUuid);
+                        }
+                    }
+                    return false;
+                };
+                
+                this._relationCloseHandlers.set('modal-relation', handler);
+                closeBtn.addEventListener('click', handler);
             }
             
             // Setze Overlay-Click-Handler
-            modal.removeEventListener('click', modal._overlayClickHandler);
-            modal._overlayClickHandler = (e) => {
+            const oldOverlayHandler = this._relationOverlayHandlers.get('modal-relation');
+            if (oldOverlayHandler) {
+                modal.removeEventListener('click', oldOverlayHandler);
+            }
+            
+            const overlayHandler = (e) => {
                 if (e.target === modal) {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -243,7 +301,9 @@ export class OrgRelationModule {
                     return false;
                 }
             };
-            modal.addEventListener('click', modal._overlayClickHandler);
+            
+            this._relationOverlayHandlers.set('modal-relation', overlayHandler);
+            modal.addEventListener('click', overlayHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -308,24 +368,29 @@ export class OrgRelationModule {
         
         const orgDetailModule = this.app.orgDetail;
         
-        const formData = new FormData(form);
-        const data = {
-            parent_org_uuid: parentOrgUuid,
-            child_org_uuid: formData.get('child_org_uuid'),
-            relation_type: formData.get('relation_type'),
-            since_date: formData.get('since_date') || null,
-            until_date: formData.get('until_date') || null,
-            ownership_percent: formData.get('ownership_percent') ? parseFloat(formData.get('ownership_percent')) : null,
-            has_voting_rights: formData.get('has_voting_rights') === '1' ? 1 : 0,
-            is_direct: formData.get('is_direct') === '1' ? 1 : 0,
-            confidence: formData.get('confidence') || 'high',
-            is_current: formData.get('is_current') === '1' ? 1 : 0,
-            tags: formData.get('tags') || null,
-            source: formData.get('source') || null,
-            notes: formData.get('notes') || null
-        };
+        // Verwende Utils.processFormData für konsistente Datenverarbeitung
+        let data = Utils.processFormData(form, {
+            filterEmpty: false, // Wir wollen alle Felder, auch leere
+            checkboxFields: ['has_voting_rights', 'is_direct', 'is_current'],
+            nullFields: ['since_date', 'until_date', 'tags', 'source', 'notes']
+        });
         
-        // Remove null values
+        // Setze parent_org_uuid (wird nicht aus Formular gelesen)
+        data.parent_org_uuid = parentOrgUuid;
+        
+        // Spezielle Verarbeitung für ownership_percent (kann leer sein)
+        if (data.ownership_percent) {
+            data.ownership_percent = parseFloat(data.ownership_percent);
+        } else {
+            data.ownership_percent = null;
+        }
+        
+        // Confidence default
+        if (!data.confidence) {
+            data.confidence = 'high';
+        }
+        
+        // Remove null/empty values
         Object.keys(data).forEach(key => {
             if (data[key] === null || data[key] === '') {
                 delete data[key];

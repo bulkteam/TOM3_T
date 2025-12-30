@@ -22,6 +22,8 @@ export class OrgDetailModule {
         this.relationModule = new OrgRelationModule(app);
         this.viewModule = new OrgDetailViewModule(app);
         this.editModule = new OrgDetailEditModule(app);
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._detailCloseHandlers = new Map(); // buttonId -> handler
     }
     
     async showOrgDetail(orgUuid) {
@@ -53,32 +55,43 @@ export class OrgDetailModule {
                     // Event-Handler für Close-Button im Sticky Header
                     const closeBtn = modalBody.querySelector('.org-detail-close');
                     if (closeBtn) {
-                        // Entferne alle vorhandenen Event-Listener durch Klonen
-                        const newCloseBtn = closeBtn.cloneNode(true);
-                        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                        newCloseBtn.addEventListener('click', (e) => {
+                        const oldHandler = this._detailCloseHandlers.get('org-detail-close');
+                        if (oldHandler) {
+                            closeBtn.removeEventListener('click', oldHandler);
+                        }
+                        
+                        const handler = (e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             e.stopImmediatePropagation();
                             // Schließe nur das Stammdaten-Modal, gehe zurück zur Suche
                             Utils.closeSpecificModal('modal-org-detail');
                             return false;
-                        });
+                        };
+                        
+                        this._detailCloseHandlers.set('org-detail-close', handler);
+                        closeBtn.addEventListener('click', handler);
                     }
                     
                     // Event-Handler für Close-Button im Modal-Header (falls vorhanden)
                     const modalCloseBtn = modal.querySelector('.modal-close');
                     if (modalCloseBtn) {
-                        const newModalCloseBtn = modalCloseBtn.cloneNode(true);
-                        modalCloseBtn.parentNode.replaceChild(newModalCloseBtn, modalCloseBtn);
-                        newModalCloseBtn.addEventListener('click', (e) => {
+                        const oldHandler = this._detailCloseHandlers.get('modal-org-detail-close');
+                        if (oldHandler) {
+                            modalCloseBtn.removeEventListener('click', oldHandler);
+                        }
+                        
+                        const handler = (e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             e.stopImmediatePropagation();
                             // Schließe nur das Stammdaten-Modal, gehe zurück zur Suche
                             Utils.closeSpecificModal('modal-org-detail');
                             return false;
-                        });
+                        };
+                        
+                        this._detailCloseHandlers.set('modal-org-detail-close', handler);
+                        modalCloseBtn.addEventListener('click', handler);
                     }
                     
                     // Event-Handler für Drei-Punkte-Menü

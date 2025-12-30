@@ -8,6 +8,12 @@ import { Utils } from './utils.js';
 export class OrgSearchModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._searchInputHandlers = new Map(); // eventType -> handler
+        this._filterToggleHandler = null;
+        this._applyFiltersHandler = null;
+        this._resetFiltersHandler = null;
+        this._createOrgHandler = null;
     }
     
     init() {
@@ -27,11 +33,15 @@ export class OrgSearchModule {
             return;
         }
         
-        // Entferne alte Event-Listener, falls vorhanden (durch Klonen des Inputs)
-        const currentValue = searchInput.value; // Speichere aktuellen Wert
-        const newSearchInput = searchInput.cloneNode(true);
-        newSearchInput.value = currentValue; // Stelle Wert wieder her
-        searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+        // Entferne alte Event-Listener, falls vorhanden
+        const oldKeypressHandler = this._searchInputHandlers.get('keypress');
+        const oldInputHandler = this._searchInputHandlers.get('input');
+        if (oldKeypressHandler) {
+            searchInput.removeEventListener('keypress', oldKeypressHandler);
+        }
+        if (oldInputHandler) {
+            searchInput.removeEventListener('input', oldInputHandler);
+        }
         
         // Setze Fokus nur, wenn kein anderes Element bereits fokussiert ist
         // (verhindert Autofocus-Warnung)
@@ -46,9 +56,9 @@ export class OrgSearchModule {
             const isModalOpen = document.querySelector('.modal.active');
             
             // Nur fokussieren, wenn kein Input fokussiert ist und kein Modal offen ist
-            if (!isInputFocused && !isModalOpen && newSearchInput) {
+            if (!isInputFocused && !isModalOpen && searchInput) {
                 try {
-                    newSearchInput.focus();
+                    searchInput.focus();
                 } catch (e) {
                     // Ignoriere Fokus-Fehler (z.B. wenn Element nicht sichtbar ist)
                 }
@@ -59,55 +69,67 @@ export class OrgSearchModule {
         this.loadRecentOrgs();
         
         // Such-Event-Listener für Enter-Taste
-        newSearchInput.addEventListener('keypress', (e) => {
+        const keypressHandler = (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 this.performOrgSearch();
             }
-        });
+        };
+        this._searchInputHandlers.set('keypress', keypressHandler);
+        searchInput.addEventListener('keypress', keypressHandler);
         
         // Live-Suche während der Eingabe (mit Debounce)
         let searchTimeout;
-        newSearchInput.addEventListener('input', (e) => {
+        const inputHandler = (e) => {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => {
                 this.performOrgSearch();
             }, 300);
-        });
+        };
+        this._searchInputHandlers.set('input', inputHandler);
+        searchInput.addEventListener('input', inputHandler);
         
         // Filter-Toggle-Button
         const filterToggle = document.getElementById('btn-toggle-filters');
         if (filterToggle && filtersContainer) {
-            // Entferne alte Event-Listener
-            const newFilterToggle = filterToggle.cloneNode(true);
-            filterToggle.parentNode.replaceChild(newFilterToggle, filterToggle);
+            if (this._filterToggleHandler) {
+                filterToggle.removeEventListener('click', this._filterToggleHandler);
+            }
             
-            newFilterToggle.addEventListener('click', () => {
+            this._filterToggleHandler = () => {
                 const isVisible = filtersContainer.style.display !== 'none';
                 filtersContainer.style.display = isVisible ? 'none' : 'block';
-                const arrow = newFilterToggle.querySelector('.filter-arrow');
+                const arrow = filterToggle.querySelector('.filter-arrow');
                 if (arrow) {
                     arrow.textContent = isVisible ? '▾' : '▴';
                 }
-            });
+            };
+            
+            filterToggle.addEventListener('click', this._filterToggleHandler);
         }
         
         // Filter-Apply-Button
         const applyFiltersBtn = document.getElementById('btn-apply-filters');
         if (applyFiltersBtn) {
-            const newApplyBtn = applyFiltersBtn.cloneNode(true);
-            applyFiltersBtn.parentNode.replaceChild(newApplyBtn, applyFiltersBtn);
-            newApplyBtn.addEventListener('click', () => {
+            if (this._applyFiltersHandler) {
+                applyFiltersBtn.removeEventListener('click', this._applyFiltersHandler);
+            }
+            
+            this._applyFiltersHandler = () => {
                 this.performOrgSearch();
-            });
+            };
+            
+            applyFiltersBtn.addEventListener('click', this._applyFiltersHandler);
         }
         
         // Filter-Reset-Button
         const resetFiltersBtn = document.getElementById('btn-reset-filters');
         if (resetFiltersBtn) {
-            const newResetBtn = resetFiltersBtn.cloneNode(true);
-            resetFiltersBtn.parentNode.replaceChild(newResetBtn, resetFiltersBtn);
-            newResetBtn.addEventListener('click', () => {
+            if (this._resetFiltersHandler) {
+                resetFiltersBtn.removeEventListener('click', this._resetFiltersHandler);
+            }
+            
+            this._resetFiltersHandler = () => {
                 if (filtersContainer) {
                     filtersContainer.querySelectorAll('input, select').forEach(el => {
                         if (el.type === 'checkbox') {
@@ -118,7 +140,9 @@ export class OrgSearchModule {
                     });
                 }
                 this.performOrgSearch();
-            });
+            };
+            
+            resetFiltersBtn.addEventListener('click', this._resetFiltersHandler);
         }
         
         // Create-Org-Button
@@ -127,11 +151,11 @@ export class OrgSearchModule {
         console.log('[OrgSearch] Create org button found:', !!createOrgButton, createOrgButton);
         if (createOrgButton) {
             console.log('[OrgSearch] Setting up create button event listener...');
-            const newCreateBtn = createOrgButton.cloneNode(true);
-            createOrgButton.parentNode.replaceChild(newCreateBtn, createOrgButton);
+            if (this._createOrgHandler) {
+                createOrgButton.removeEventListener('click', this._createOrgHandler);
+            }
             
-            // Test: Direkter onclick Handler zusätzlich
-            const handler = (e) => {
+            this._createOrgHandler = (e) => {
                 console.log('[OrgSearch] ===== Create button clicked! =====');
                 console.log('[OrgSearch] Event:', e);
                 console.log('[OrgSearch] window.app:', window.app);
@@ -150,26 +174,12 @@ export class OrgSearchModule {
                 return false;
             };
             
-            newCreateBtn.addEventListener('click', handler, true); // useCapture = true für frühere Erfassung
-            // Zusätzlich: Direkter onclick Handler (als Fallback)
-            newCreateBtn.onclick = handler;
-            
-            // Test: Prüfe ob Button noch existiert nach kurzer Zeit
-            setTimeout(() => {
-                const buttonAfterDelay = document.getElementById('btn-create-org');
-                console.log('[OrgSearch] Button check after 1s:', {
-                    exists: !!buttonAfterDelay,
-                    isSame: buttonAfterDelay === newCreateBtn,
-                    hasOnclick: buttonAfterDelay?.onclick !== null,
-                    button: buttonAfterDelay
-                });
-            }, 1000);
+            createOrgButton.addEventListener('click', this._createOrgHandler, true); // useCapture = true für frühere Erfassung
             
             console.log('[OrgSearch] Create button event listener attached', {
-                button: newCreateBtn,
-                hasOnclick: !!newCreateBtn.onclick,
+                button: createOrgButton,
                 hasEventListener: true,
-                buttonId: newCreateBtn.id
+                buttonId: createOrgButton.id
             });
         } else {
             console.error('[OrgSearch] Create org button NOT FOUND!');

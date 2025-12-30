@@ -8,6 +8,10 @@ import { Utils } from './utils.js';
 export class OrgChannelModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._channelCloseHandlers = new Map(); // modalId -> handler
+        this._channelCancelHandlers = new Map(); // formId -> handler
+        this._channelOverlayHandlers = new Map(); // modalId -> handler
     }
     
     async showAddChannelModal(orgUuid) {
@@ -24,9 +28,12 @@ export class OrgChannelModule {
         // Setze Close-Button-Handler für dieses Modal
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) {
-            const newCloseBtn = closeBtn.cloneNode(true);
-            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-            newCloseBtn.onclick = (e) => {
+            const oldHandler = this._channelCloseHandlers.get('modal-channel');
+            if (oldHandler) {
+                closeBtn.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -39,11 +46,18 @@ export class OrgChannelModule {
                 }
                 return false;
             };
+            
+            this._channelCloseHandlers.set('modal-channel', handler);
+            closeBtn.addEventListener('click', handler);
         }
         
         // Setze Overlay-Click-Handler
-        modal.removeEventListener('click', modal._overlayClickHandler);
-        modal._overlayClickHandler = (e) => {
+        const oldOverlayHandler = this._channelOverlayHandlers.get('modal-channel');
+        if (oldOverlayHandler) {
+            modal.removeEventListener('click', oldOverlayHandler);
+        }
+        
+        const overlayHandler = (e) => {
             if (e.target === modal) {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -57,7 +71,9 @@ export class OrgChannelModule {
                 return false;
             }
         };
-        modal.addEventListener('click', modal._overlayClickHandler);
+        
+        this._channelOverlayHandlers.set('modal-channel', overlayHandler);
+        modal.addEventListener('click', overlayHandler);
         
         modal.classList.add('active');
     }
@@ -92,9 +108,12 @@ export class OrgChannelModule {
             // Setze Close-Button-Handler für dieses Modal
             const closeBtn = modal.querySelector('.modal-close');
             if (closeBtn) {
-                const newCloseBtn = closeBtn.cloneNode(true);
-                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                newCloseBtn.onclick = (e) => {
+                const oldHandler = this._channelCloseHandlers.get('modal-channel');
+                if (oldHandler) {
+                    closeBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -107,11 +126,18 @@ export class OrgChannelModule {
                     }
                     return false;
                 };
+                
+                this._channelCloseHandlers.set('modal-channel', handler);
+                closeBtn.addEventListener('click', handler);
             }
             
             // Setze Overlay-Click-Handler
-            modal.removeEventListener('click', modal._overlayClickHandler);
-            modal._overlayClickHandler = (e) => {
+            const oldOverlayHandler = this._channelOverlayHandlers.get('modal-channel');
+            if (oldOverlayHandler) {
+                modal.removeEventListener('click', oldOverlayHandler);
+            }
+            
+            const overlayHandler = (e) => {
                 if (e.target === modal) {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -125,7 +151,9 @@ export class OrgChannelModule {
                     return false;
                 }
             };
-            modal.addEventListener('click', modal._overlayClickHandler);
+            
+            this._channelOverlayHandlers.set('modal-channel', overlayHandler);
+            modal.addEventListener('click', overlayHandler);
             
             modal.classList.add('active');
         } catch (error) {
@@ -163,16 +191,16 @@ export class OrgChannelModule {
                 </div>
                 
                 <div class="form-group">
-                    <label class="checkbox-inline">
+                    <label class="checkbox-row" for="channel-is-primary">
                         <input type="checkbox" id="channel-is-primary" name="is_primary" value="1">
-                        <span>Als primären Kanal markieren</span>
+                        <span class="checkbox-text">Als primären Kanal markieren</span>
                     </label>
                 </div>
                 
                 <div class="form-group">
-                    <label class="checkbox-inline">
+                    <label class="checkbox-row" for="channel-is-public">
                         <input type="checkbox" id="channel-is-public" name="is_public" value="1">
-                        <span>Öffentlich sichtbar</span>
+                        <span class="checkbox-text">Öffentlich sichtbar</span>
                     </label>
                 </div>
                 
@@ -183,7 +211,7 @@ export class OrgChannelModule {
                 
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" id="channel-form-cancel">Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="submit" class="btn btn-success">Speichern</button>
                 </div>
             </form>
         `;
@@ -213,12 +241,15 @@ export class OrgChannelModule {
         
         if (cancelBtn) {
             console.log('[Channel Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
-            // Entferne alle vorhandenen Event-Listener durch Klonen
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            // Entferne onclick Attribut falls vorhanden
-            newCancelBtn.removeAttribute('onclick');
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-            newCancelBtn.onclick = (e) => {
+            // Entferne alten Handler, falls vorhanden
+            const formId = form.id || 'form-channel';
+            const oldHandler = this._channelCancelHandlers.get(formId);
+            if (oldHandler) {
+                cancelBtn.removeEventListener('click', oldHandler);
+            }
+            
+            // Erstelle neuen Handler
+            const handler = (e) => {
                 console.log('[Channel Modal] Abbrechen-Button geklickt');
                 e.preventDefault();
                 e.stopPropagation();
@@ -232,6 +263,13 @@ export class OrgChannelModule {
                 }
                 return false;
             };
+            
+            // Entferne onclick Attribut falls vorhanden
+            cancelBtn.removeAttribute('onclick');
+            
+            // Speichere Handler-Referenz und füge Listener hinzu
+            this._channelCancelHandlers.set(formId, handler);
+            cancelBtn.addEventListener('click', handler);
         } else {
             console.warn('[Channel Modal] Abbrechen-Button NICHT gefunden!');
         }
@@ -239,8 +277,9 @@ export class OrgChannelModule {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const channelUuid = form.dataset.channelUuid;
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
+            const data = Utils.processFormData(form, {
+                checkboxFields: ['is_primary', 'is_public']
+            });
             
             // Konvertiere value zu email_address oder number je nach Typ
             if (data.channel_type === 'email') {
@@ -251,10 +290,6 @@ export class OrgChannelModule {
             
             // Entferne value, da es nicht im Backend erwartet wird
             delete data.value;
-            
-            // Konvertiere Checkbox-Werte (wenn nicht gesetzt, dann 0)
-            data.is_primary = data.is_primary === '1' ? 1 : 0;
-            data.is_public = data.is_public === '1' ? 1 : 0;
             
             try {
                 if (channelUuid) {

@@ -119,15 +119,9 @@ export class OrgFormsModule {
         const form = document.getElementById('form-create-org');
         if (!form) return;
         
-        const formData = new FormData(form);
-        const data = {};
-        
-        // Konvertiere FormData zu Objekt
-        for (const [key, value] of formData.entries()) {
-            if (value) {
-                data[key] = value;
-            }
-        }
+        const data = Utils.formDataToObject(form, {
+            filterEmpty: true
+        });
         
         // Debug: Prüfe Branchen-Felder
         console.log('[OrgForms] Form data before submit:', data);

@@ -282,6 +282,112 @@ export const Utils = {
         
         // Gib das Element zurück (geklont oder original)
         return targetElement;
+    },
+    
+    /**
+     * Konvertiert FormData zu einem Objekt
+     * @param {HTMLFormElement} form - Das Formular-Element
+     * @param {Object} options - Optionen für die Konvertierung
+     * @param {boolean} options.filterEmpty - Ob leere Werte gefiltert werden sollen (default: true)
+     * @param {string[]} options.excludeFields - Felder, die ausgeschlossen werden sollen
+     * @returns {Object} Das konvertierte Objekt
+     */
+    formDataToObject(form, options = {}) {
+        const formData = new FormData(form);
+        const data = {};
+        const filterEmpty = options.filterEmpty !== false; // default: true
+        const excludeFields = options.excludeFields || [];
+        
+        for (const [key, value] of formData.entries()) {
+            if (excludeFields.includes(key)) {
+                continue;
+            }
+            if (filterEmpty && !value) {
+                continue;
+            }
+            data[key] = value;
+        }
+        
+        return data;
+    },
+    
+    /**
+     * Konvertiert einen Checkbox-Wert (String '1' → Number 1, sonst 0)
+     * @param {string|number|boolean} value - Der zu konvertierende Wert
+     * @returns {number} 1 oder 0
+     */
+    convertCheckboxValue(value) {
+        if (value === '1' || value === 1 || value === true) {
+            return 1;
+        }
+        return 0;
+    },
+    
+    /**
+     * Konvertiert mehrere Checkbox-Felder in einem Objekt
+     * @param {Object} data - Das Datenobjekt
+     * @param {string[]} fieldNames - Die Feldnamen, die konvertiert werden sollen
+     * @returns {Object} Das modifizierte Datenobjekt
+     */
+    convertCheckboxes(data, fieldNames) {
+        if (!Array.isArray(fieldNames)) {
+            return data;
+        }
+        
+        fieldNames.forEach(fieldName => {
+            if (data.hasOwnProperty(fieldName)) {
+                data[fieldName] = Utils.convertCheckboxValue(data[fieldName]);
+            }
+        });
+        
+        return data;
+    },
+    
+    /**
+     * Konvertiert leere Strings zu null für angegebene Felder
+     * @param {Object} data - Das Datenobjekt
+     * @param {string[]} fieldNames - Die Feldnamen, die konvertiert werden sollen
+     * @returns {Object} Das modifizierte Datenobjekt
+     */
+    emptyStringToNull(data, fieldNames) {
+        if (!Array.isArray(fieldNames)) {
+            return data;
+        }
+        
+        fieldNames.forEach(fieldName => {
+            if (data.hasOwnProperty(fieldName) && data[fieldName] === '') {
+                data[fieldName] = null;
+            }
+        });
+        
+        return data;
+    },
+    
+    /**
+     * Kombinierte Funktion: FormData zu Objekt + Checkboxen konvertieren + leere Strings zu null
+     * @param {HTMLFormElement} form - Das Formular-Element
+     * @param {Object} options - Optionen
+     * @param {boolean} options.filterEmpty - Ob leere Werte gefiltert werden sollen
+     * @param {string[]} options.excludeFields - Felder, die ausgeschlossen werden sollen
+     * @param {string[]} options.checkboxFields - Checkbox-Felder, die konvertiert werden sollen
+     * @param {string[]} options.nullFields - Felder, deren leere Strings zu null konvertiert werden sollen
+     * @returns {Object} Das verarbeitete Datenobjekt
+     */
+    processFormData(form, options = {}) {
+        let data = Utils.formDataToObject(form, {
+            filterEmpty: options.filterEmpty,
+            excludeFields: options.excludeFields
+        });
+        
+        if (options.checkboxFields && options.checkboxFields.length > 0) {
+            data = Utils.convertCheckboxes(data, options.checkboxFields);
+        }
+        
+        if (options.nullFields && options.nullFields.length > 0) {
+            data = Utils.emptyStringToNull(data, options.nullFields);
+        }
+        
+        return data;
     }
 };
 

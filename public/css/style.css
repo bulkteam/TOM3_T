@@ -296,8 +296,39 @@ body {
     color: var(--text);
 }
 
-.form-group label.checkbox-inline {
+/* Einheitliche Checkbox-Zeile */
+.checkbox-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0.5rem;
+}
+
+/* Checkbox soll NICHT 100% Breite bekommen */
+.checkbox-row input[type="checkbox"],
+.checkbox-row input[type="radio"] {
+    width: auto !important;
+    margin: 0;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+/* Text sauber als Zeile */
+.checkbox-row .checkbox-text {
+    line-height: 1.2;
+}
+
+/* Optional: Klickfläche wirklich "überall" groß machen */
+.checkbox-row.block {
     display: flex;
+    width: 100%;
+}
+
+/* Legacy-Support: checkbox-inline als Alias für checkbox-row */
+.form-group label.checkbox-inline {
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
@@ -306,17 +337,17 @@ body {
 }
 
 .form-group label.checkbox-inline input[type="checkbox"] {
-    width: auto;
+    width: auto !important;
     margin: 0;
     cursor: pointer;
     flex-shrink: 0;
 }
 
 .form-group label.checkbox-inline span {
-    flex: 1;
+    line-height: 1.2;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]):not([type="radio"]),
 .form-group select,
 .form-group textarea {
     width: 100%;

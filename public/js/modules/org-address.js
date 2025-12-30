@@ -8,6 +8,10 @@ import { Utils } from './utils.js';
 export class OrgAddressModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._addressCloseHandlers = new Map(); // modalId -> handler
+        this._addressCancelHandlers = new Map(); // formId -> handler
+        this._addressOverlayHandlers = new Map(); // modalId -> handler
     }
     
     async showAddAddressModal(orgUuid) {
@@ -49,12 +53,14 @@ export class OrgAddressModule {
         // Setze Close-Button-Handler für dieses Modal
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) {
-            // Entferne alle vorhandenen Event-Listener durch Klonen
-            const newCloseBtn = closeBtn.cloneNode(true);
-            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            // Entferne alten Handler, falls vorhanden
+            const oldHandler = this._addressCloseHandlers.get('modal-address');
+            if (oldHandler) {
+                closeBtn.removeEventListener('click', oldHandler);
+            }
             
-            // Setze neuen Handler
-            newCloseBtn.onclick = (e) => {
+            // Erstelle neuen Handler
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -70,12 +76,19 @@ export class OrgAddressModule {
                 }
                 return false;
             };
+            
+            // Speichere Handler-Referenz und füge Listener hinzu
+            this._addressCloseHandlers.set('modal-address', handler);
+            closeBtn.addEventListener('click', handler);
         }
         
         // Setze Overlay-Click-Handler für dieses Modal
-        // Entferne alte Handler
-        modal.removeEventListener('click', modal._overlayClickHandler);
-        modal._overlayClickHandler = (e) => {
+        const oldOverlayHandler = this._addressOverlayHandlers.get('modal-address');
+        if (oldOverlayHandler) {
+            modal.removeEventListener('click', oldOverlayHandler, true);
+        }
+        
+        const overlayHandler = (e) => {
             if (e.target === modal) {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -92,7 +105,9 @@ export class OrgAddressModule {
                 return false;
             }
         };
-        modal.addEventListener('click', modal._overlayClickHandler);
+        
+        this._addressOverlayHandlers.set('modal-address', overlayHandler);
+        modal.addEventListener('click', overlayHandler, true);
         
         modal.classList.add('active');
     }
@@ -155,72 +170,63 @@ export class OrgAddressModule {
             // Setze Close-Button-Handler für dieses Modal
             const closeBtn = modal.querySelector('.modal-close');
             if (closeBtn) {
-                console.log('[Address Modal] Close-Button (X) gefunden, setze Handler');
-                // Entferne alle vorhandenen Event-Listener durch Klonen
-                const newCloseBtn = closeBtn.cloneNode(true);
-                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                // Entferne alten Handler, falls vorhanden
+                const oldHandler = this._addressCloseHandlers.get('modal-address');
+                if (oldHandler) {
+                    closeBtn.removeEventListener('click', oldHandler);
+                }
                 
-                // Setze neuen Handler
-                newCloseBtn.onclick = (e) => {
-                    console.log('[Address Modal] Close-Button (X) geklickt');
+                // Erstelle neuen Handler
+                const handler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     
                     // Schließe nur das Adress-Modal, lasse das Stammdaten-Modal offen
-                    console.log('[Address Modal] Schließe modal-address');
                     Utils.closeSpecificModal('modal-address');
                     
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
                     const orgDetailModal = document.getElementById('modal-org-detail');
-                    console.log('[Address Modal] Stammdaten-Modal Status:', orgDetailModal ? (orgDetailModal.classList.contains('active') ? 'AKTIV' : 'INAKTIV') : 'NICHT GEFUNDEN');
-                    
                     if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                        console.log('[Address Modal] Stammdaten-Modal wurde geschlossen, öffne es wieder');
                         // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
                         if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
                             this.app.orgDetail.showOrgDetail(orgUuid);
                         }
-                    } else {
-                        console.log('[Address Modal] Stammdaten-Modal ist noch aktiv, alles OK');
                     }
                     return false;
                 };
-            } else {
-                console.warn('[Address Modal] Close-Button (X) NICHT gefunden!');
+                
+                // Speichere Handler-Referenz und füge Listener hinzu
+                this._addressCloseHandlers.set('modal-address', handler);
+                closeBtn.addEventListener('click', handler);
             }
             
             // Setze Overlay-Click-Handler für dieses Modal
-            // Entferne alte Handler
-            modal.removeEventListener('click', modal._overlayClickHandler);
-            modal._overlayClickHandler = (e) => {
-                console.log('[Address Modal] Overlay-Click Handler ausgeführt, target:', e.target, 'currentTarget:', e.currentTarget);
+            const oldOverlayHandler = this._addressOverlayHandlers.get('modal-address');
+            if (oldOverlayHandler) {
+                modal.removeEventListener('click', oldOverlayHandler, true);
+            }
+            
+            const overlayHandler = (e) => {
                 if (e.target === modal) {
-                    console.log('[Address Modal] Overlay wurde geklickt (nicht Inhalt)');
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Schließe nur das Adress-Modal, lasse das Stammdaten-Modal offen
-                    console.log('[Address Modal] Schließe modal-address');
                     Utils.closeSpecificModal('modal-address');
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
                     const orgDetailModal = document.getElementById('modal-org-detail');
-                    console.log('[Address Modal] Stammdaten-Modal Status:', orgDetailModal ? (orgDetailModal.classList.contains('active') ? 'AKTIV' : 'INAKTIV') : 'NICHT GEFUNDEN');
                     if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                        console.log('[Address Modal] Stammdaten-Modal wurde geschlossen, öffne es wieder');
                         // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
                         if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
                             this.app.orgDetail.showOrgDetail(orgUuid);
                         }
-                    } else {
-                        console.log('[Address Modal] Stammdaten-Modal ist noch aktiv, alles OK');
                     }
                     return false;
-                } else {
-                    console.log('[Address Modal] Overlay-Click, aber target ist nicht das Modal selbst, ignoriere');
                 }
             };
-            modal.addEventListener('click', modal._overlayClickHandler, true); // useCapture = true für frühere Ausführung
-            console.log('[Address Modal] Overlay-Click-Handler registriert');
+            
+            this._addressOverlayHandlers.set('modal-address', overlayHandler);
+            modal.addEventListener('click', overlayHandler, true);
             
             modal.classList.add('active');
         } catch (error) {
@@ -288,9 +294,9 @@ export class OrgAddressModule {
                 </div>
                 
                 <div class="form-group">
-                    <label class="checkbox-inline">
+                    <label class="checkbox-row" for="address-is-default">
                         <input type="checkbox" id="address-is-default" name="is_default" value="1">
-                        <span>Als Standardadresse markieren</span>
+                        <span class="checkbox-text">Als Standardadresse markieren</span>
                     </label>
                 </div>
                 
@@ -301,7 +307,7 @@ export class OrgAddressModule {
                 
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" id="address-form-cancel">Abbrechen</button>
-                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="submit" class="btn btn-success">Speichern</button>
                 </div>
             </form>
         `;
@@ -380,7 +386,6 @@ export class OrgAddressModule {
                     }
                 } catch (error) {
                     // Fehler beim Lookup ignorieren (z.B. PLZ nicht gefunden)
-                    console.debug('PLZ lookup failed:', error);
                 }
             };
             
@@ -444,50 +449,47 @@ export class OrgAddressModule {
         }
         
         if (cancelBtn) {
-            console.log('[Address Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
-            // Entferne alle vorhandenen Event-Listener durch Klonen
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            // Entferne onclick Attribut falls vorhanden
-            newCancelBtn.removeAttribute('onclick');
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+            // Entferne alten Handler, falls vorhanden
+            const formId = form.id || 'form-address';
+            const oldHandler = this._addressCancelHandlers.get(formId);
+            if (oldHandler) {
+                cancelBtn.removeEventListener('click', oldHandler);
+            }
             
-            // Setze neuen Handler
-            newCancelBtn.onclick = (e) => {
-                console.log('[Address Modal] Abbrechen-Button geklickt');
+            // Erstelle neuen Handler
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 
                 // Schließe nur das Adress-Modal, lasse das Stammdaten-Modal offen
-                console.log('[Address Modal] Schließe modal-address');
                 Utils.closeSpecificModal('modal-address');
                 
                 // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
                 const orgDetailModal = document.getElementById('modal-org-detail');
-                console.log('[Address Modal] Stammdaten-Modal Status:', orgDetailModal ? (orgDetailModal.classList.contains('active') ? 'AKTIV' : 'INAKTIV') : 'NICHT GEFUNDEN');
-                
                 if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                    console.log('[Address Modal] Stammdaten-Modal wurde geschlossen, öffne es wieder');
                     // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
                     if (orgDetailModule && orgDetailModule.showOrgDetail) {
                         orgDetailModule.showOrgDetail(orgUuid);
                     }
-                } else {
-                    console.log('[Address Modal] Stammdaten-Modal ist noch aktiv, alles OK');
                 }
                 return false;
             };
-        } else {
-            console.warn('[Address Modal] Abbrechen-Button NICHT gefunden!');
+            
+            // Entferne onclick Attribut falls vorhanden
+            cancelBtn.removeAttribute('onclick');
+            
+            // Speichere Handler-Referenz und füge Listener hinzu
+            this._addressCancelHandlers.set(formId, handler);
+            cancelBtn.addEventListener('click', handler);
         }
         
         form.onsubmit = async (e) => {
             e.preventDefault();
             const addressUuid = form.dataset.addressUuid;
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            
-            data.is_default = data.is_default === '1' ? 1 : 0;
+            const data = Utils.processFormData(form, {
+                checkboxFields: ['is_default']
+            });
             
             try {
                 if (addressUuid) {

@@ -8,6 +8,8 @@ import { Utils } from './utils.js';
 export class AuditTrailModule {
     constructor(app) {
         this.app = app;
+        // Handler-Referenzen für sauberes Event-Listener-Management (ohne cloneNode)
+        this._auditTrailCloseHandler = null;
     }
     
     async showAuditTrail(orgUuid, orgName) {
@@ -29,9 +31,11 @@ export class AuditTrailModule {
             // Überschreibe Close-Button-Handler, damit nur dieses Modal geschlossen wird
             const closeBtn = modal.querySelector('.modal-close');
             if (closeBtn) {
-                const newCloseBtn = closeBtn.cloneNode(true);
-                closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                newCloseBtn.onclick = (e) => {
+                if (this._auditTrailCloseHandler) {
+                    closeBtn.removeEventListener('click', this._auditTrailCloseHandler);
+                }
+                
+                this._auditTrailCloseHandler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -46,6 +50,8 @@ export class AuditTrailModule {
                     }
                     return false;
                 };
+                
+                closeBtn.addEventListener('click', this._auditTrailCloseHandler);
             }
             
             // Überschreibe Overlay-Click-Handler, damit nur dieses Modal geschlossen wird
