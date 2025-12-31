@@ -35,9 +35,13 @@ export class OrgSearchModule {
         
         // Entferne alte Event-Listener, falls vorhanden
         const oldKeypressHandler = this._searchInputHandlers.get('keypress');
+        const oldKeydownHandler = this._searchInputHandlers.get('keydown');
         const oldInputHandler = this._searchInputHandlers.get('input');
         if (oldKeypressHandler) {
             searchInput.removeEventListener('keypress', oldKeypressHandler);
+        }
+        if (oldKeydownHandler) {
+            searchInput.removeEventListener('keydown', oldKeydownHandler);
         }
         if (oldInputHandler) {
             searchInput.removeEventListener('input', oldInputHandler);
@@ -68,11 +72,82 @@ export class OrgSearchModule {
         // Lade "Zuletzt verwendet"
         this.loadRecentOrgs();
         
-        // Such-Event-Listener für Enter-Taste
+        // Tastaturnavigation für Suchergebnisse
+        this.selectedIndex = -1; // Index des aktuell ausgewählten Ergebnisses
+        
+        const keydownHandler = (e) => {
+            const resultsContainer = document.getElementById('org-search-results');
+            if (!resultsContainer) return;
+            
+            const results = resultsContainer.querySelectorAll('.org-search-result');
+            if (results.length === 0) {
+                // Wenn keine Ergebnisse, Enter führt Suche aus
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.performOrgSearch();
+                }
+                return;
+            }
+            
+            // Pfeiltasten-Navigation
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1);
+                this.highlightResult(results, this.selectedIndex);
+                results[this.selectedIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (this.selectedIndex > 0) {
+                    this.selectedIndex--;
+                    this.highlightResult(results, this.selectedIndex);
+                    results[this.selectedIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                } else if (this.selectedIndex === 0) {
+                    // Zurück zum Input-Feld
+                    this.selectedIndex = -1;
+                    this.highlightResult(results, -1);
+                    searchInput.focus();
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (this.selectedIndex >= 0 && this.selectedIndex < results.length) {
+                    // Wähle das ausgewählte Ergebnis aus
+                    const selectedResult = results[this.selectedIndex];
+                    const orgUuid = selectedResult.dataset.orgUuid;
+                    if (orgUuid && window.app.orgDetail) {
+                        window.app.orgDetail.showOrgDetail(orgUuid);
+                        // Verstecke Ergebnisse nach Auswahl
+                        if (resultsContainer) {
+                            resultsContainer.innerHTML = '';
+                        }
+                        searchInput.value = '';
+                        this.selectedIndex = -1;
+                    }
+                } else {
+                    // Wenn nichts ausgewählt, führe Suche aus
+                    this.performOrgSearch();
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                // Verstecke Ergebnisse
+                if (resultsContainer) {
+                    resultsContainer.innerHTML = '';
+                }
+                this.selectedIndex = -1;
+            }
+        };
+        this._searchInputHandlers.set('keydown', keydownHandler);
+        searchInput.addEventListener('keydown', keydownHandler);
+        
+        // Enter-Taste für Suche (wenn keine Ergebnisse vorhanden)
         const keypressHandler = (e) => {
             if (e.key === 'Enter') {
-                e.preventDefault();
-                this.performOrgSearch();
+                const resultsContainer = document.getElementById('org-search-results');
+                const results = resultsContainer?.querySelectorAll('.org-search-result') || [];
+                // Nur Suche ausführen, wenn keine Ergebnisse vorhanden oder nichts ausgewählt
+                if (results.length === 0 || this.selectedIndex < 0) {
+                    e.preventDefault();
+                    this.performOrgSearch();
+                }
             }
         };
         this._searchInputHandlers.set('keypress', keypressHandler);
@@ -300,12 +375,21 @@ export class OrgSearchModule {
             
             resultsContainer.innerHTML = results.map(org => this.renderOrgSearchResult(org)).join('');
             
+            // Reset selected index bei neuen Ergebnissen
+            this.selectedIndex = -1;
+            
             // Event-Listener für Ergebnis-Klicks
             resultsContainer.querySelectorAll('.org-search-result').forEach(result => {
                 result.addEventListener('click', () => {
                     const orgUuid = result.dataset.orgUuid;
                     if (orgUuid && window.app.orgDetail) {
                         window.app.orgDetail.showOrgDetail(orgUuid);
+                        // Verstecke Ergebnisse nach Auswahl
+                        if (resultsContainer) {
+                            resultsContainer.innerHTML = '';
+                        }
+                        searchInput.value = '';
+                        this.selectedIndex = -1;
                     }
                 });
             });
@@ -317,11 +401,36 @@ export class OrgSearchModule {
         }
     }
     
+    highlightResult(results, index) {
+        if (!results) return;
+        results.forEach((result, i) => {
+            const isArchived = result.dataset.archived === 'true';
+            const h4 = result.querySelector('h4');
+            const p = result.querySelector('p');
+            
+            if (i === index) {
+                // Hervorhebung für ausgewähltes Element
+                result.style.background = 'var(--primary)';
+                result.style.borderColor = 'var(--primary)';
+                result.classList.add('keyboard-selected');
+                if (h4) h4.style.color = '#fff';
+                if (p) p.style.color = 'rgba(255, 255, 255, 0.9)';
+            } else {
+                // Zurücksetzen
+                result.style.background = isArchived ? '#f5f5f5' : 'transparent';
+                result.style.borderColor = 'var(--border)';
+                result.classList.remove('keyboard-selected');
+                if (h4) h4.style.color = isArchived ? '#999' : '';
+                if (p) p.style.color = '';
+            }
+        });
+    }
+    
     renderOrgSearchResult(org) {
         const isArchived = org.archived_at !== null && org.archived_at !== undefined;
         const archivedStyle = isArchived ? 'opacity: 0.6; background: #f5f5f5; border-left: 3px solid #999;' : '';
         return `
-            <div class="org-search-result" data-org-uuid="${org.org_uuid || org.uuid}" style="padding: 1rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; cursor: pointer; transition: background 0.2s; ${archivedStyle}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${isArchived ? '#f5f5f5' : 'transparent'}'">
+            <div class="org-search-result" data-org-uuid="${org.org_uuid || org.uuid}" data-archived="${isArchived}" style="padding: 1rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; cursor: pointer; transition: background 0.2s, border-color 0.2s; ${archivedStyle}" onmouseover="if (!this.classList.contains('keyboard-selected')) { this.style.background='var(--bg)'; this.style.borderColor='var(--primary)'; }" onmouseout="if (!this.classList.contains('keyboard-selected')) { this.style.background='${isArchived ? '#f5f5f5' : 'transparent'}'; this.style.borderColor='var(--border)'; }">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div style="flex: 1;">
                         <h4 style="margin: 0 0 0.5rem 0; color: ${isArchived ? '#999' : 'var(--text)'};">
