@@ -17,11 +17,29 @@ class Neo4jService
     public function __construct(?array $config = null)
     {
         if ($config === null) {
-            $dbConfig = require __DIR__ . '/../../../config/database.php';
+            // Versuche verschiedene Pfade für database.php
+            $possiblePaths = [
+                __DIR__ . '/../../../config/database.php',
+                dirname(__DIR__, 3) . '/config/database.php',
+                getcwd() . '/config/database.php'
+            ];
+            
+            $dbConfig = null;
+            foreach ($possiblePaths as $path) {
+                if (file_exists($path)) {
+                    $dbConfig = require $path;
+                    break;
+                }
+            }
+            
+            if (!$dbConfig) {
+                throw new \RuntimeException('Neo4j configuration not found. Tried: ' . implode(', ', $possiblePaths));
+            }
+            
             $config = $dbConfig['neo4j'] ?? null;
             
             if (!$config) {
-                throw new \RuntimeException('Neo4j configuration not found');
+                throw new \RuntimeException('Neo4j configuration not found in database.php');
             }
         }
         

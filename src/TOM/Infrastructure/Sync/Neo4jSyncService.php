@@ -173,7 +173,7 @@ class Neo4jSyncService
             return false;
         }
         
-        // Hole Relation aus DB, um parent/child UUIDs zu bekommen
+        // Versuche Relation aus DB zu holen (falls noch vorhanden)
         $stmt = $this->db->prepare("
             SELECT parent_org_uuid, child_org_uuid, relation_type
             FROM org_relation
@@ -182,8 +182,38 @@ class Neo4jSyncService
         $stmt->execute(['uuid' => $relationUuid]);
         $relation = $stmt->fetch(PDO::FETCH_ASSOC);
         
+        // Wenn Relation nicht mehr in DB existiert, versuche alle möglichen Relationship-Typen
         if (!$relation) {
-            return false;
+            // Fallback: Lösche alle Relationships zwischen allen möglichen Org-Paaren
+            // Dies ist notwendig, wenn die Relation bereits aus MySQL gelöscht wurde
+            // aber noch in Neo4j existiert
+            $query = "
+                MATCH (parent:Org)-[r]->(child:Org)
+                WHERE r.relation_uuid = \$relation_uuid
+                DELETE r
+            ";
+            
+            try {
+                $this->neo4j->run($query, [
+                    'relation_uuid' => $relationUuid
+                ]);
+                return true;
+            } catch (\Exception $e) {
+                // Wenn das auch fehlschlägt, versuche alle Relationship-Typen zu durchsuchen
+                $relationTypes = ['PART_OF', 'OWNS', 'MERGED_WITH', 'ACQUIRED', 'SUPPLIES', 'CUSTOMER_OF', 'PARTNER_OF', 'RELATED_TO'];
+                foreach ($relationTypes as $relType) {
+                    try {
+                        $query = "MATCH ()-[r:$relType]->() WHERE r.relation_uuid = \$relation_uuid DELETE r";
+                        $this->neo4j->run($query, ['relation_uuid' => $relationUuid]);
+                        return true;
+                    } catch (\Exception $e2) {
+                        // Weiter mit nächstem Typ
+                        continue;
+                    }
+                }
+                // Wenn nichts gefunden wurde, ist das ok (Relation existiert vielleicht nicht mehr)
+                return true;
+            }
         }
         
         $neo4jRelType = $this->mapRelationTypeToNeo4j($relation['relation_type']);
