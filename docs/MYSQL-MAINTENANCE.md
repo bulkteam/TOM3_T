@@ -85,7 +85,17 @@ Automatische Backups vor kritischen Operationen.
 
 ### 3. MySQL-Konfiguration verbessern
 
-Siehe `docs/MYSQL-IMPROVED-CONFIG.md` für optimierte Einstellungen.
+**WICHTIG: Die folgenden Einstellungen wurden bereits in `C:\xampp\mysql\bin\my.ini` angewendet:**
+
+- ✅ `key_buffer_size=16M` (statt veraltetem `key_buffer`)
+- ✅ `max_allowed_packet=16M` (für größere Datenpakete)
+- ✅ `internal_tmp_disk_storage_engine=InnoDB` (weniger Aria-Abhängigkeit)
+- ✅ `aria_recover_options=BACKUP,QUICK` (automatische Aria-Reparatur)
+- ✅ `myisam_recover_options=BACKUP,FORCE` (automatische MyISAM-Reparatur)
+
+Diese Einstellungen reduzieren Aria-Probleme erheblich und verbessern die Stabilität.
+
+Für weitere Optimierungen siehe `docs/MYSQL-IMPROVED-CONFIG.md`.
 
 ## Monitoring
 

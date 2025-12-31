@@ -6,9 +6,36 @@ Die aktuelle `my.ini` in `C:\xampp\mysql\data\my.ini` ist sehr minimal und kann 
 
 ## Empfohlene Verbesserungen
 
-### 1. Aria-Storage-Engine optimieren
+### 1. Kritische Fixes (WICHTIG - bereits implementiert)
 
-Füge folgende Zeilen zur `[mysqld]` Sektion hinzu:
+Diese Einstellungen wurden bereits in `C:\xampp\mysql\bin\my.ini` angewendet:
+
+```ini
+# Warnung fixen: key_buffer ist veraltet, verwende key_buffer_size
+key_buffer_size=16M     # statt key_buffer=16M
+
+# PHP-Apps brauchen oft mehr als 1M (sonst Fehler bei größeren Inserts/Blobs)
+max_allowed_packet=16M  # oder 64M, wenn du Uploads/Blobs hast
+
+# HINWEIS: internal_tmp_disk_storage_engine wird in MariaDB 10.4 nicht unterstützt
+# Diese Option ist nur in MySQL 8.0+ verfügbar und wurde daher nicht hinzugefügt
+
+# Aria/MyISAM: automatische Reparaturoptionen
+aria_sort_buffer_size=1M  # Größerer Buffer für Aria-Reparaturen (Standard 16KB war zu klein)
+aria_recover_options=BACKUP,QUICK
+myisam_recover_options=BACKUP,FORCE
+```
+
+**Warum diese Einstellungen wichtig sind:**
+- `key_buffer_size` statt `key_buffer`: Behebt MySQL-Warnungen und ist der moderne Standard
+- `max_allowed_packet=16M`: Erlaubt größere Datenpakete (wichtig für BLOBs, große Inserts)
+- `internal_tmp_disk_storage_engine=InnoDB`: Reduziert Aria-Abhängigkeit bei Temp-Tabellen
+- `aria_recover_options`: Automatische Aria-Reparatur beim Start (reduziert Aria-Fehler)
+- `myisam_recover_options`: Automatische MyISAM-Reparatur beim Start
+
+### 2. Aria-Storage-Engine optimieren (Optional)
+
+Füge folgende Zeilen zur `[mysqld]` Sektion hinzu für noch mehr Stabilität:
 
 ```ini
 # Aria Storage Engine - Verbesserte Stabilität
@@ -92,6 +119,13 @@ interactive_timeout=28800
 table_open_cache=2000
 thread_cache_size=50
 key_buffer_size=32M
+
+# Weniger Aria-Abhängigkeit für Disk-Temp-Tabellen
+internal_tmp_disk_storage_engine=InnoDB
+
+# Aria/MyISAM: automatische Reparaturoptionen
+aria_recover_options=BACKUP,QUICK
+myisam_recover_options=BACKUP,FORCE
 sort_buffer_size=2M
 read_buffer_size=2M
 read_rnd_buffer_size=4M

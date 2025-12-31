@@ -8,9 +8,15 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^api/(.*)$ api/index.php [QSA,L]
 
+# Umleitung von index.html zu index.php (für Auth-Prüfung)
+RewriteCond %{THE_REQUEST} \s/index\.html[\s?] [NC]
+RewriteRule ^index\.html$ index.php [R=301,L]
+
 # Frontend Routes (SPA)
+# Alle Routen zu index.php (für SPA-Routing und Auth-Prüfung)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ index.html [QSA,L]
+RewriteCond %{REQUEST_URI} !^/TOM3/public/api/
+RewriteRule ^(.*)$ index.php [QSA,L]
 
 
