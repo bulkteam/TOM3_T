@@ -14,6 +14,7 @@ import { PersonFormsModule } from './modules/person-forms.js';
 import { MonitoringModule } from './modules/monitoring.js';
 import { DocumentUploadModule } from './modules/document-upload.js';
 import { DocumentListModule } from './modules/document-list.js';
+import { DocumentSearchModule } from './modules/document-search.js';
 import { Utils } from './modules/utils.js';
 
 class TOM3App {
@@ -32,11 +33,13 @@ class TOM3App {
         this.monitoring = new MonitoringModule(this);
         this.documentUpload = new DocumentUploadModule(this);
         this.documentList = new DocumentListModule(this);
+        this.documentSearch = new DocumentSearchModule(this);
         
         // Module-Referenz für Zugriff von anderen Modulen
         this.modules = {
             documentUpload: this.documentUpload,
-            documentList: this.documentList
+            documentList: this.documentList,
+            documentSearch: this.documentSearch
         };
         
         this.init();
@@ -186,6 +189,11 @@ class TOM3App {
             case 'persons':
                 if (this.personSearch) {
                     this.personSearch.init();
+                }
+                break;
+            case 'documents':
+                if (this.documentSearch) {
+                    this.documentSearch.init();
                 }
                 break;
             case 'admin':

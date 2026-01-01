@@ -407,12 +407,10 @@ function handleSearchDocuments(DocumentService $service): void
 {
     $query = $_GET['q'] ?? '';
     
-    if (empty($query)) {
-        jsonResponse(['error' => 'Query parameter q is required'], 400);
-        return;
-    }
-    
+    // Query ist optional - wenn leer, werden alle Dokumente zurückgegeben (mit Filtern)
     $filters = [];
+    
+    // Suchfilter
     if (!empty($_GET['entity_type'])) {
         $filters['entity_type'] = $_GET['entity_type'];
     }
@@ -425,17 +423,51 @@ function handleSearchDocuments(DocumentService $service): void
     if (!empty($_GET['tags'])) {
         $filters['tags'] = is_array($_GET['tags']) ? $_GET['tags'] : explode(',', $_GET['tags']);
     }
+    if (!empty($_GET['status'])) {
+        $filters['status'] = $_GET['status'];
+    }
+    if (!empty($_GET['scan_status'])) {
+        $filters['scan_status'] = $_GET['scan_status'];
+    }
+    if (!empty($_GET['source_type'])) {
+        $filters['source_type'] = $_GET['source_type'];
+    }
+    if (!empty($_GET['role'])) {
+        $filters['role'] = $_GET['role'];
+    }
+    if (!empty($_GET['date_from'])) {
+        $filters['date_from'] = $_GET['date_from'];
+    }
+    if (!empty($_GET['date_to'])) {
+        $filters['date_to'] = $_GET['date_to'];
+    }
+    if (isset($_GET['orphaned_only']) && $_GET['orphaned_only'] === '1') {
+        $filters['orphaned_only'] = true;
+    }
     if (!empty($_GET['limit'])) {
         $filters['limit'] = (int)$_GET['limit'];
     }
     
     try {
-        // Suche in extracted_text (Hauptsuche)
-        $results = $service->searchDocuments($query, $filters);
+        $results = [];
         
-        // Falls keine Ergebnisse, auch in Titel suchen
-        if (empty($results)) {
-            $results = $service->searchDocumentsInTitle($query, $filters);
+        // Wenn Query leer, verwende searchDocumentsInTitle (unterstützt alle Filter ohne FULLTEXT)
+        if (empty($query)) {
+            $results = $service->searchDocumentsInTitle('*', $filters);
+        } else {
+            // Suche in extracted_text UND Titel (bereits kombiniert in searchDocuments)
+            $results = $service->searchDocuments($query, $filters);
+            
+            // Falls keine Ergebnisse, auch nur in Titel suchen
+            if (empty($results)) {
+                $results = $service->searchDocumentsInTitle($query, $filters);
+            }
+        }
+        
+        // Für jedes Dokument die Attachments laden (zeigt wo es hängt)
+        foreach ($results as &$doc) {
+            $attachments = $service->getDocumentAttachments($doc['document_uuid']);
+            $doc['attachments'] = $attachments;
         }
         
         jsonResponse($results);

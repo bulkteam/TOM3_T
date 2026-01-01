@@ -530,6 +530,29 @@ class DocumentService extends BaseEntityService
     }
     
     /**
+     * Alle Attachments eines Dokuments abrufen (zeigt wo das Dokument hängt)
+     * 
+     * @param string $documentUuid
+     * @return array
+     */
+    public function getDocumentAttachments(string $documentUuid): array
+    {
+        $sql = "
+            SELECT da.attachment_uuid, da.entity_type, da.entity_uuid, 
+                   da.role, da.description, da.created_at as attached_at,
+                   da.created_by_user_id
+            FROM document_attachments da
+            WHERE da.document_uuid = :document_uuid
+            ORDER BY da.created_at DESC
+        ";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(['document_uuid' => $documentUuid]);
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    /**
      * Attachment erstellen (verknüpft Document mit Entität)
      * 
      * @param string $documentUuid
@@ -696,28 +719,119 @@ class DocumentService extends BaseEntityService
      */
     public function searchDocuments(string $query, array $filters = []): array
     {
+        // Wenn Query leer oder '*', verwende searchDocumentsInTitle stattdessen
+        if (empty($query) || $query === '*') {
+            return $this->searchDocumentsInTitle($query, $filters);
+        }
+        
         $tenantId = 1; // TODO: Multi-Tenancy
         $limit = (int)($filters['limit'] ?? 50);
         
-        // Basis-Query mit FULLTEXT
-        $sql = "
-            SELECT d.*,
-                   b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
-                   b.file_extension, b.original_filename,
-                   MATCH(d.extracted_text) AGAINST(:query IN NATURAL LANGUAGE MODE) AS relevance_score
-            FROM documents d
-            JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
-            WHERE d.tenant_id = :tenant_id
-              AND d.status = 'active'
-              AND d.extraction_status = 'done'
-              AND b.scan_status = 'clean'
-              AND MATCH(d.extracted_text) AGAINST(:query IN NATURAL LANGUAGE MODE)
-        ";
+        // Normalisiere Query (trim)
+        $query = trim($query);
+        $queryLower = mb_strtolower($query);
         
-        $params = [
-            'tenant_id' => $tenantId,
-            'query' => $query
-        ];
+        // Für kurze Queries (<= 3 Zeichen) verwende LIKE (FULLTEXT hat minimale Wortlänge)
+        // Für längere Queries versuche zuerst FULLTEXT, dann LIKE als Fallback
+        $useLikeOnly = mb_strlen($query) <= 3;
+        
+        if ($useLikeOnly) {
+            // LIKE-basierte Suche (case-insensitive)
+            $sql = "
+                SELECT d.*,
+                       b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
+                       b.file_extension, b.original_filename,
+                       (CASE 
+                           WHEN LOWER(d.title) LIKE :query_like THEN 2.0
+                           WHEN LOWER(COALESCE(d.extracted_text, '')) LIKE :query_like THEN 1.0
+                           ELSE 0.5
+                       END) AS relevance_score
+                FROM documents d
+                JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+                WHERE d.tenant_id = :tenant_id
+                  AND (
+                    LOWER(d.title) LIKE :query_like
+                    OR LOWER(COALESCE(d.extracted_text, '')) LIKE :query_like
+                  )
+            ";
+            
+            $params = [
+                'tenant_id' => $tenantId,
+                'query_like' => '%' . $queryLower . '%'
+            ];
+        } else {
+            // FULLTEXT-basierte Suche (case-insensitive über Collation utf8mb4_unicode_ci)
+            // Kombiniere mit LIKE für bessere Trefferquote
+            $sql = "
+                SELECT d.*,
+                       b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
+                       b.file_extension, b.original_filename,
+                       GREATEST(
+                           COALESCE(
+                               CASE WHEN d.extracted_text IS NOT NULL AND d.extracted_text != '' 
+                               THEN MATCH(d.extracted_text) AGAINST(:query IN NATURAL LANGUAGE MODE) 
+                               ELSE 0 END, 0) * 1.0,
+                           CASE WHEN LOWER(COALESCE(d.extracted_text, '')) LIKE :query_like THEN 0.8 ELSE 0 END
+                       ) + 
+                       GREATEST(
+                           COALESCE(MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE), 0) * 1.5,
+                           CASE WHEN LOWER(d.title) LIKE :query_like THEN 1.2 ELSE 0 END
+                       ) AS relevance_score
+                FROM documents d
+                JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+                WHERE d.tenant_id = :tenant_id
+                  AND (
+                    (d.extracted_text IS NOT NULL AND d.extracted_text != '' AND MATCH(d.extracted_text) AGAINST(:query IN NATURAL LANGUAGE MODE))
+                    OR MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE)
+                    OR LOWER(d.title) LIKE :query_like
+                    OR LOWER(COALESCE(d.extracted_text, '')) LIKE :query_like
+                  )
+            ";
+            
+            $params = [
+                'tenant_id' => $tenantId,
+                'query' => $query,
+                'query_like' => '%' . $queryLower . '%'
+            ];
+        }
+        
+        // Filter: Status (default: active)
+        if (!empty($filters['status'])) {
+            $sql .= " AND d.status = :status";
+            $params['status'] = $filters['status'];
+        } else {
+            $sql .= " AND d.status = 'active'";
+        }
+        
+        // Filter: Scan-Status (default: clean)
+        if (!empty($filters['scan_status'])) {
+            $sql .= " AND b.scan_status = :scan_status";
+            $params['scan_status'] = $filters['scan_status'];
+        } else {
+            $sql .= " AND b.scan_status = 'clean'";
+        }
+        
+        // Filter: Extraction-Status (optional, standardmäßig auch pending erlauben)
+        if (isset($filters['extraction_status'])) {
+            $sql .= " AND d.extraction_status = :extraction_status";
+            $params['extraction_status'] = $filters['extraction_status'];
+        }
+        
+        // Filter: Zeitraum (created_at)
+        if (!empty($filters['date_from'])) {
+            $sql .= " AND d.created_at >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+        if (!empty($filters['date_to'])) {
+            $sql .= " AND d.created_at <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+        
+        // Filter: Quelle (source_type)
+        if (!empty($filters['source_type'])) {
+            $sql .= " AND d.source_type = :source_type";
+            $params['source_type'] = $filters['source_type'];
+        }
         
         // Filter: Entity-Type/ID
         if (!empty($filters['entity_type']) && !empty($filters['entity_uuid'])) {
@@ -729,6 +843,24 @@ class DocumentService extends BaseEntityService
             )";
             $params['entity_type'] = $filters['entity_type'];
             $params['entity_uuid'] = $filters['entity_uuid'];
+        }
+        
+        // Filter: Rolle (role aus attachments)
+        if (!empty($filters['role'])) {
+            $sql .= " AND EXISTS (
+                SELECT 1 FROM document_attachments da
+                WHERE da.document_uuid = d.document_uuid
+                  AND da.role = :role
+            )";
+            $params['role'] = $filters['role'];
+        }
+        
+        // Filter: Nur ohne Zuordnung (Waisen)
+        if (!empty($filters['orphaned_only']) && $filters['orphaned_only'] === true) {
+            $sql .= " AND NOT EXISTS (
+                SELECT 1 FROM document_attachments da
+                WHERE da.document_uuid = d.document_uuid
+            )";
         }
         
         // Filter: Klassifikation
@@ -783,7 +915,7 @@ class DocumentService extends BaseEntityService
     }
     
     /**
-     * Suche auch im Titel (falls extracted_text leer)
+     * Suche auch im Titel (falls extracted_text leer) oder für leere Queries
      * 
      * @param string $query
      * @param array $filters
@@ -794,25 +926,107 @@ class DocumentService extends BaseEntityService
         $tenantId = 1;
         $limit = (int)($filters['limit'] ?? 50);
         
-        $sql = "
-            SELECT d.*,
-                   b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
-                   b.file_extension, b.original_filename,
-                   MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE) AS relevance_score
-            FROM documents d
-            JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
-            WHERE d.tenant_id = :tenant_id
-              AND d.status = 'active'
-              AND b.scan_status = 'clean'
-              AND MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE)
-        ";
+        // Wenn Query leer oder '*', zeige alle Dokumente (nur mit Filtern)
+        $useFulltext = !empty($query) && $query !== '*';
+        $queryLower = $useFulltext ? mb_strtolower($query) : '';
         
-        $params = [
-            'tenant_id' => $tenantId,
-            'query' => $query
-        ];
+        if ($useFulltext) {
+            // Für kurze Queries (<= 3 Zeichen) verwende LIKE
+            $useLikeOnly = mb_strlen($query) <= 3;
+            
+            if ($useLikeOnly) {
+                $sql = "
+                    SELECT d.*,
+                           b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
+                           b.file_extension, b.original_filename,
+                           (CASE 
+                               WHEN LOWER(d.title) LIKE :query_like THEN 2.0
+                               ELSE 1.0
+                           END) AS relevance_score
+                    FROM documents d
+                    JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+                    WHERE d.tenant_id = :tenant_id
+                      AND LOWER(d.title) LIKE :query_like
+                ";
+                
+                $params = [
+                    'tenant_id' => $tenantId,
+                    'query_like' => '%' . $queryLower . '%'
+                ];
+            } else {
+                // FULLTEXT + LIKE Fallback
+                $sql = "
+                    SELECT d.*,
+                           b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
+                           b.file_extension, b.original_filename,
+                           GREATEST(
+                               COALESCE(MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE), 0) * 1.5,
+                               CASE WHEN LOWER(d.title) LIKE :query_like THEN 1.2 ELSE 0 END
+                           ) AS relevance_score
+                    FROM documents d
+                    JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+                    WHERE d.tenant_id = :tenant_id
+                      AND (
+                        MATCH(d.title) AGAINST(:query IN NATURAL LANGUAGE MODE)
+                        OR LOWER(d.title) LIKE :query_like
+                      )
+                ";
+                
+                $params = [
+                    'tenant_id' => $tenantId,
+                    'query' => $query,
+                    'query_like' => '%' . $queryLower . '%'
+                ];
+            }
+        } else {
+            $sql = "
+                SELECT d.*,
+                       b.sha256, b.size_bytes, b.mime_detected, b.scan_status,
+                       b.file_extension, b.original_filename,
+                       1.0 AS relevance_score
+                FROM documents d
+                JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+                WHERE d.tenant_id = :tenant_id
+            ";
+            
+            $params = [
+                'tenant_id' => $tenantId
+            ];
+        }
         
-        // Gleiche Filter wie searchDocuments
+        // Filter: Status (default: active)
+        if (!empty($filters['status'])) {
+            $sql .= " AND d.status = :status";
+            $params['status'] = $filters['status'];
+        } else {
+            $sql .= " AND d.status = 'active'";
+        }
+        
+        // Filter: Scan-Status (default: clean)
+        if (!empty($filters['scan_status'])) {
+            $sql .= " AND b.scan_status = :scan_status";
+            $params['scan_status'] = $filters['scan_status'];
+        } else {
+            $sql .= " AND b.scan_status = 'clean'";
+        }
+        
+        // Filter: Zeitraum
+        if (!empty($filters['date_from'])) {
+            $sql .= " AND d.created_at >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+        if (!empty($filters['date_to'])) {
+            $sql .= " AND d.created_at <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+        
+        // Filter: Quelle
+        if (!empty($filters['source_type'])) {
+            $sql .= " AND d.source_type = :source_type";
+            $params['source_type'] = $filters['source_type'];
+        }
+        
+        // Filter: Entity-Type/ID
         if (!empty($filters['entity_type']) && !empty($filters['entity_uuid'])) {
             $sql .= " AND EXISTS (
                 SELECT 1 FROM document_attachments da
@@ -824,9 +1038,37 @@ class DocumentService extends BaseEntityService
             $params['entity_uuid'] = $filters['entity_uuid'];
         }
         
+        // Filter: Rolle
+        if (!empty($filters['role'])) {
+            $sql .= " AND EXISTS (
+                SELECT 1 FROM document_attachments da
+                WHERE da.document_uuid = d.document_uuid
+                  AND da.role = :role
+            )";
+            $params['role'] = $filters['role'];
+        }
+        
+        // Filter: Nur ohne Zuordnung
+        if (!empty($filters['orphaned_only']) && $filters['orphaned_only'] === true) {
+            $sql .= " AND NOT EXISTS (
+                SELECT 1 FROM document_attachments da
+                WHERE da.document_uuid = d.document_uuid
+            )";
+        }
+        
+        // Filter: Klassifikation
         if (!empty($filters['classification'])) {
             $sql .= " AND d.classification = :classification";
             $params['classification'] = $filters['classification'];
+        }
+        
+        // Filter: Tags
+        if (!empty($filters['tags']) && is_array($filters['tags'])) {
+            foreach ($filters['tags'] as $i => $tag) {
+                $paramName = 'tag_' . $i;
+                $sql .= " AND JSON_CONTAINS(d.tags, :{$paramName})";
+                $params[$paramName] = json_encode($tag);
+            }
         }
         
         $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit";
@@ -847,6 +1089,12 @@ class DocumentService extends BaseEntityService
         foreach ($documents as &$doc) {
             if ($doc['tags']) {
                 $doc['tags'] = json_decode($doc['tags'], true) ?: [];
+            }
+            if ($doc['source_metadata']) {
+                $doc['source_metadata'] = json_decode($doc['source_metadata'], true) ?: [];
+            }
+            if ($doc['extraction_meta']) {
+                $doc['extraction_meta'] = json_decode($doc['extraction_meta'], true) ?: [];
             }
             $doc['relevance_score'] = (float)($doc['relevance_score'] ?? 0);
         }

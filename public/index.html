@@ -41,6 +41,9 @@
                 <li><a href="#persons" class="nav-link" data-page="persons">
                     <span class="icon">👤</span> Personen
                 </a></li>
+                <li><a href="#documents" class="nav-link" data-page="documents">
+                    <span class="icon">📄</span> Dokumente
+                </a></li>
                 <li><a href="#monitoring" class="nav-link" data-page="monitoring">
                     <span class="icon">🔍</span> Monitoring
                 </a></li>
@@ -886,6 +889,91 @@
                     <!-- Rollen-Verwaltung -->
                     <div id="admin-tab-roles" class="admin-tab-content">
                         <div id="admin-roles-list" class="admin-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dokumente Suche -->
+            <div id="page-documents" class="page document-search-page">
+                <div class="document-search-header">
+                    <h1>Dokumente</h1>
+                </div>
+                
+                <!-- Suchfeld und Filter -->
+                <div class="document-search-container">
+                    <div class="document-search-box">
+                        <div class="search-box-large">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="document-search-input" class="document-search-input-large" 
+                                   placeholder="Dokumente suchen (Titel, Inhalt, Tags, Rollen) …" 
+                                   autocomplete="off">
+                        </div>
+                    </div>
+                    
+                    <!-- Filter-Bereich -->
+                    <div class="document-filters">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label for="filter-classification">Klassifikation</label>
+                                <select id="filter-classification" class="filter-select">
+                                    <option value="">Alle</option>
+                                    <option value="invoice">Rechnung</option>
+                                    <option value="quote">Angebot</option>
+                                    <option value="contract">Vertrag</option>
+                                    <option value="email_attachment">E-Mail-Anhang</option>
+                                    <option value="other">Sonstiges</option>
+                                </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="filter-source">Quelle</label>
+                                <select id="filter-source" class="filter-select">
+                                    <option value="">Alle</option>
+                                    <option value="upload">Upload</option>
+                                    <option value="email">E-Mail</option>
+                                    <option value="api">API</option>
+                                    <option value="import">Import</option>
+                                </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="filter-status">Status</label>
+                                <select id="filter-status" class="filter-select">
+                                    <option value="">Alle</option>
+                                    <option value="active">Aktiv</option>
+                                    <option value="blocked">Blockiert</option>
+                                    <option value="deleted">Gelöscht</option>
+                                </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="filter-date-from">Von</label>
+                                <input type="date" id="filter-date-from" class="filter-input">
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="filter-date-to">Bis</label>
+                                <input type="date" id="filter-date-to" class="filter-input">
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label>
+                                    <input type="checkbox" id="filter-orphaned-only">
+                                    Nur ohne Zuordnung
+                                </label>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <button id="btn-reset-filters" class="btn btn-secondary btn-sm">Filter zurücksetzen</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Suchergebnisse -->
+                <div id="document-search-results" class="document-search-results">
+                    <div class="search-placeholder">
+                        <p>Geben Sie einen Suchbegriff ein oder verwenden Sie die Filter, um Dokumente zu finden.</p>
                     </div>
                 </div>
             </div>

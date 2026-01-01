@@ -706,6 +706,62 @@ class TOM3API {
             }
         });
     }
+    
+    /**
+     * Dokumente suchen
+     * @param {string} query Suchbegriff
+     * @param {object} filters Filter-Objekt
+     * @returns {Promise<Array>}
+     */
+    async searchDocuments(query = '', filters = {}) {
+        const params = new URLSearchParams();
+        if (query) {
+            params.append('q', query);
+        }
+        if (filters.classification) {
+            params.append('classification', filters.classification);
+        }
+        if (filters.source_type) {
+            params.append('source_type', filters.source_type);
+        }
+        if (filters.status) {
+            params.append('status', filters.status);
+        }
+        if (filters.scan_status) {
+            params.append('scan_status', filters.scan_status);
+        }
+        if (filters.role) {
+            params.append('role', filters.role);
+        }
+        if (filters.date_from) {
+            params.append('date_from', filters.date_from);
+        }
+        if (filters.date_to) {
+            params.append('date_to', filters.date_to);
+        }
+        if (filters.orphaned_only) {
+            params.append('orphaned_only', '1');
+        }
+        if (filters.tags && Array.isArray(filters.tags)) {
+            params.append('tags', filters.tags.join(','));
+        }
+        if (filters.limit) {
+            params.append('limit', filters.limit);
+        }
+        
+        return this.request(`/documents/search?${params.toString()}`);
+    }
+    
+    /**
+     * Attachments eines Dokuments abrufen
+     * @param {string} documentUuid
+     * @returns {Promise<Array>}
+     */
+    async getDocumentAttachments(documentUuid) {
+        // Wird bereits in searchDocuments mitgeliefert, aber für direkten Zugriff:
+        const doc = await this.getDocument(documentUuid);
+        return doc.attachments || [];
+    }
 }
 
 // Export für globale Verwendung

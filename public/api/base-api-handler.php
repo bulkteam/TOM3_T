@@ -116,3 +116,33 @@ function getBoolQueryParam(string $key, bool $default = false): bool
     }
     return $value === 'true' || $value === '1' || $value === true;
 }
+
+/**
+ * Behandelt API-Exceptions und gibt JSON-Fehlerantwort zurück
+ */
+function handleApiException(\Throwable $e, string $context = 'API request'): void
+{
+    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
+    $isDev = in_array($appEnv, ['local', 'dev', 'development']);
+    
+    // Logge den Fehler
+    error_log("{$context}: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    
+    $error = [
+        'error' => 'Internal server error',
+        'message' => $isDev ? $e->getMessage() : 'An error occurred'
+    ];
+    
+    if ($isDev) {
+        $error['file'] = basename($e->getFile());
+        $error['line'] = $e->getLine();
+        $error['type'] = get_class($e);
+    }
+    
+    // PDO-Exceptions haben zusätzliche Info
+    if ($e instanceof \PDOException) {
+        $error['pdo_error'] = $e->errorInfo ?? null;
+    }
+    
+    jsonResponse($error, 500);
+}
