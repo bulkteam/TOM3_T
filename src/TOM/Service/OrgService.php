@@ -148,10 +148,12 @@ class OrgService extends BaseEntityService
             SELECT 
                 o.*,
                 i_main.name as industry_main_name,
-                i_sub.name as industry_sub_name
+                i_sub.name as industry_sub_name,
+                u.name as account_owner_name
             FROM org o
             LEFT JOIN industry i_main ON o.industry_main_uuid = i_main.industry_uuid
             LEFT JOIN industry i_sub ON o.industry_sub_uuid = i_sub.industry_uuid
+            LEFT JOIN users u ON o.account_owner_user_id = u.user_id
             WHERE o.org_uuid = :uuid
         ");
         $stmt->execute(['uuid' => $orgUuid]);

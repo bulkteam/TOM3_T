@@ -41,38 +41,99 @@ try {
     $orgs['acme'] = $orgService->createOrg([
         'name' => 'ACME Corporation',
         'org_kind' => 'customer',
-        'external_ref' => 'CUST-001'
+        'external_ref' => 'CUST-001',
+        'website' => 'https://www.acme-corp.com',
+        'revenue_range' => 'large',
+        'employee_count' => 5000,
+        'status' => 'customer'
     ]);
     echo "  ✓ ACME Corporation (Kunde)\n";
     
     $orgs['techcorp'] = $orgService->createOrg([
         'name' => 'TechCorp Industries',
         'org_kind' => 'customer',
-        'external_ref' => 'CUST-002'
+        'external_ref' => 'CUST-002',
+        'website' => 'https://www.techcorp.de',
+        'revenue_range' => 'medium',
+        'employee_count' => 250,
+        'status' => 'customer'
     ]);
     echo "  ✓ TechCorp Industries (Kunde)\n";
     
     $orgs['global'] = $orgService->createOrg([
         'name' => 'Global Solutions GmbH',
         'org_kind' => 'customer',
-        'external_ref' => 'CUST-003'
+        'external_ref' => 'CUST-003',
+        'website' => 'https://www.global-solutions.de',
+        'revenue_range' => 'enterprise',
+        'employee_count' => 12000,
+        'status' => 'customer'
     ]);
     echo "  ✓ Global Solutions GmbH (Kunde)\n";
+    
+    $orgs['innovate'] = $orgService->createOrg([
+        'name' => 'Innovate Systems AG',
+        'org_kind' => 'customer',
+        'external_ref' => 'CUST-004',
+        'website' => 'https://www.innovate-systems.com',
+        'revenue_range' => 'small',
+        'employee_count' => 50,
+        'status' => 'lead'
+    ]);
+    echo "  ✓ Innovate Systems AG (Kunde)\n";
+    
+    $orgs['mega'] = $orgService->createOrg([
+        'name' => 'Mega Manufacturing GmbH',
+        'org_kind' => 'customer',
+        'external_ref' => 'CUST-005',
+        'website' => 'https://www.mega-manufacturing.de',
+        'revenue_range' => 'large',
+        'employee_count' => 3000,
+        'status' => 'customer'
+    ]);
+    echo "  ✓ Mega Manufacturing GmbH (Kunde)\n";
+    
+    $orgs['startup'] = $orgService->createOrg([
+        'name' => 'Startup Dynamics e.K.',
+        'org_kind' => 'customer',
+        'external_ref' => 'CUST-006',
+        'website' => 'https://www.startup-dynamics.de',
+        'revenue_range' => 'micro',
+        'employee_count' => 5,
+        'status' => 'lead'
+    ]);
+    echo "  ✓ Startup Dynamics e.K. (Kunde)\n";
     
     // Lieferanten
     $orgs['supplier1'] = $orgService->createOrg([
         'name' => 'Premium Components Ltd.',
         'org_kind' => 'supplier',
-        'external_ref' => 'SUP-001'
+        'external_ref' => 'SUP-001',
+        'website' => 'https://www.premium-components.com',
+        'revenue_range' => 'medium',
+        'employee_count' => 200
     ]);
     echo "  ✓ Premium Components Ltd. (Lieferant)\n";
     
     $orgs['supplier2'] = $orgService->createOrg([
         'name' => 'Quality Parts AG',
         'org_kind' => 'supplier',
-        'external_ref' => 'SUP-002'
+        'external_ref' => 'SUP-002',
+        'website' => 'https://www.quality-parts.de',
+        'revenue_range' => 'small',
+        'employee_count' => 80
     ]);
     echo "  ✓ Quality Parts AG (Lieferant)\n";
+    
+    $orgs['supplier3'] = $orgService->createOrg([
+        'name' => 'Global Supply Chain GmbH',
+        'org_kind' => 'supplier',
+        'external_ref' => 'SUP-003',
+        'website' => 'https://www.global-supply.de',
+        'revenue_range' => 'large',
+        'employee_count' => 1500
+    ]);
+    echo "  ✓ Global Supply Chain GmbH (Lieferant)\n";
     
     // Berater
     $orgs['consultant'] = $orgService->createOrg([
@@ -101,49 +162,149 @@ try {
     
     // Personen bei ACME
     $persons['acme_ceo'] = $personService->createPerson([
-        'display_name' => 'Max Mustermann',
+        'first_name' => 'Max',
+        'last_name' => 'Mustermann',
         'email' => 'max.mustermann@acme-corp.com',
         'phone' => '+49 30 12345678'
     ]);
     echo "  ✓ Max Mustermann (ACME)\n";
     
     $persons['acme_procurement'] = $personService->createPerson([
-        'display_name' => 'Anna Schmidt',
+        'first_name' => 'Anna',
+        'last_name' => 'Schmidt',
         'email' => 'anna.schmidt@acme-corp.com',
         'phone' => '+49 30 12345679'
     ]);
     echo "  ✓ Anna Schmidt (ACME)\n";
     
+    $persons['acme_cto'] = $personService->createPerson([
+        'first_name' => 'Michael',
+        'last_name' => 'Bauer',
+        'title' => 'Dr.',
+        'email' => 'michael.bauer@acme-corp.com',
+        'phone' => '+49 30 12345680'
+    ]);
+    echo "  ✓ Dr. Michael Bauer (ACME)\n";
+    
     // Personen bei TechCorp
     $persons['techcorp_cto'] = $personService->createPerson([
-        'display_name' => 'Dr. Thomas Weber',
+        'first_name' => 'Thomas',
+        'last_name' => 'Weber',
+        'title' => 'Dr.',
         'email' => 'thomas.weber@techcorp.de',
         'phone' => '+49 40 98765432'
     ]);
     echo "  ✓ Dr. Thomas Weber (TechCorp)\n";
     
     $persons['techcorp_pm'] = $personService->createPerson([
-        'display_name' => 'Lisa Müller',
+        'first_name' => 'Lisa',
+        'last_name' => 'Müller',
         'email' => 'lisa.mueller@techcorp.de',
         'phone' => '+49 40 98765433'
     ]);
     echo "  ✓ Lisa Müller (TechCorp)\n";
     
-    // Person bei Global Solutions
+    $persons['techcorp_sales'] = $personService->createPerson([
+        'first_name' => 'Julia',
+        'last_name' => 'Fischer',
+        'email' => 'julia.fischer@techcorp.de',
+        'phone' => '+49 40 98765434'
+    ]);
+    echo "  ✓ Julia Fischer (TechCorp)\n";
+    
+    // Personen bei Global Solutions
     $persons['global_manager'] = $personService->createPerson([
-        'display_name' => 'Peter Hoffmann',
+        'first_name' => 'Peter',
+        'last_name' => 'Hoffmann',
         'email' => 'peter.hoffmann@global-solutions.de',
         'phone' => '+49 89 55555555'
     ]);
     echo "  ✓ Peter Hoffmann (Global Solutions)\n";
     
-    // Interne Person
+    $persons['global_procurement'] = $personService->createPerson([
+        'first_name' => 'Sabine',
+        'last_name' => 'Wagner',
+        'email' => 'sabine.wagner@global-solutions.de',
+        'phone' => '+49 89 55555556'
+    ]);
+    echo "  ✓ Sabine Wagner (Global Solutions)\n";
+    
+    // Personen bei Innovate Systems
+    $persons['innovate_ceo'] = $personService->createPerson([
+        'first_name' => 'Alexander',
+        'last_name' => 'Neumann',
+        'email' => 'alexander.neumann@innovate-systems.com',
+        'phone' => '+49 211 77777777'
+    ]);
+    echo "  ✓ Alexander Neumann (Innovate Systems)\n";
+    
+    // Personen bei Mega Manufacturing
+    $persons['mega_procurement'] = $personService->createPerson([
+        'first_name' => 'Robert',
+        'last_name' => 'Schneider',
+        'email' => 'robert.schneider@mega-manufacturing.de',
+        'phone' => '+49 69 88888888'
+    ]);
+    echo "  ✓ Robert Schneider (Mega Manufacturing)\n";
+    
+    $persons['mega_engineer'] = $personService->createPerson([
+        'first_name' => 'Daniel',
+        'last_name' => 'Richter',
+        'email' => 'daniel.richter@mega-manufacturing.de',
+        'phone' => '+49 69 88888889'
+    ]);
+    echo "  ✓ Daniel Richter (Mega Manufacturing)\n";
+    
+    // Personen bei Startup Dynamics
+    $persons['startup_founder'] = $personService->createPerson([
+        'first_name' => 'Maria',
+        'last_name' => 'Becker',
+        'email' => 'maria.becker@startup-dynamics.de',
+        'phone' => '+49 711 99999999'
+    ]);
+    echo "  ✓ Maria Becker (Startup Dynamics)\n";
+    
+    // Personen bei Lieferanten
+    $persons['supplier1_contact'] = $personService->createPerson([
+        'first_name' => 'Klaus',
+        'last_name' => 'Zimmermann',
+        'email' => 'klaus.zimmermann@premium-components.com',
+        'phone' => '+49 421 11111111'
+    ]);
+    echo "  ✓ Klaus Zimmermann (Premium Components)\n";
+    
+    $persons['supplier2_contact'] = $personService->createPerson([
+        'first_name' => 'Nicole',
+        'last_name' => 'Schulz',
+        'email' => 'nicole.schulz@quality-parts.de',
+        'phone' => '+49 351 22222222'
+    ]);
+    echo "  ✓ Nicole Schulz (Quality Parts)\n";
+    
+    // Interne Personen
     $persons['internal_sales'] = $personService->createPerson([
-        'display_name' => 'Sarah Klein',
+        'first_name' => 'Sarah',
+        'last_name' => 'Klein',
         'email' => 'sarah.klein@eigene-firma.de',
         'phone' => '+49 221 11111111'
     ]);
     echo "  ✓ Sarah Klein (Intern)\n";
+    
+    $persons['internal_ops'] = $personService->createPerson([
+        'first_name' => 'Thomas',
+        'last_name' => 'Meier',
+        'email' => 'thomas.meier@eigene-firma.de',
+        'phone' => '+49 221 11111112'
+    ]);
+    echo "  ✓ Thomas Meier (Intern)\n";
+    
+    $persons['internal_manager'] = $personService->createPerson([
+        'first_name' => 'Jennifer',
+        'last_name' => 'Lange',
+        'email' => 'jennifer.lange@eigene-firma.de',
+        'phone' => '+49 221 11111113'
+    ]);
+    echo "  ✓ Jennifer Lange (Intern)\n";
     
     echo "\n";
     
@@ -352,8 +513,8 @@ try {
     // ============================================================================
     echo "=== Zusammenfassung ===\n\n";
     echo "Erstellt:\n";
-    echo "  - 7 Organisationen (3 Kunden, 2 Lieferanten, 1 Berater, 1 Intern)\n";
-    echo "  - 6 Personen\n";
+    echo "  - " . count($orgs) . " Organisationen (6 Kunden, 3 Lieferanten, 1 Berater, 1 Intern)\n";
+    echo "  - " . count($persons) . " Personen\n";
     echo "  - 3 Projekte\n";
     echo "  - 6 Vorgänge (verschiedene Engines und Phasen)\n";
     echo "  - 3 Aufgaben\n";

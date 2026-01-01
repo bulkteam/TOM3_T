@@ -1,13 +1,24 @@
 # TOM3 - Quick Start für Testversion
 
-## Schritt 1: Datenbank-Einstellungen prüfen
+## Schritt 1: Datenbank-Setup
+
+### Option A: Docker MariaDB (empfohlen)
+
+Siehe [DOCKER-MARIADB-SETUP.md](DOCKER-MARIADB-SETUP.md) für vollständige Anleitung.
+
+Kurzfassung:
+1. Docker Compose Setup mit MariaDB 10.4.32
+2. Port 3307 (Host) → 3306 (Container)
+3. Automatische Erstellung von DB und User
+
+### Option B: XAMPP MySQL
 
 Falls du XAMPP verwendest, ist MySQL bereits installiert:
 - Standard-Benutzer: `root`
 - Standard-Passwort: (leer) oder `root`
 - Datenbank über phpMyAdmin erstellen: http://localhost/phpmyadmin
 
-## Schritt 2: Datenbank erstellen
+## Schritt 2: Datenbank erstellen (nur für XAMPP/native MySQL)
 
 ### Option A: Über phpMyAdmin (XAMPP)
 
@@ -25,27 +36,34 @@ CREATE DATABASE tom CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 EXIT;
 ```
 
+**Hinweis:** Bei Docker wird die Datenbank automatisch erstellt.
+
 ## Schritt 3: Datenbank-Konfiguration
 
-Bearbeite `config/database.php`:
+**WICHTIG:** Secrets müssen über Umgebungsvariablen gesetzt werden.
 
-```php
-return [
-    'mysql' => [
-        'host' => 'localhost',
-        'port' => 3306,
-        'dbname' => 'tom',
-        'user' => 'root',
-        'password' => '',  // Leer bei XAMPP Standard
-        'charset' => 'utf8mb4'
-    ],
-    'neo4j' => [
-        'uri' => 'bolt://localhost:7687',
-        'user' => 'neo4j',
-        'password' => 'dein_neo4j_passwort'
-    ]
-];
+**Erstelle eine `.env` Datei** im Projektroot:
+
+```bash
+APP_ENV=local
+AUTH_MODE=dev
+
+# Docker MariaDB
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3307
+MYSQL_DBNAME=tom
+MYSQL_USER=tomcat
+MYSQL_PASSWORD=dein_passwort_hier
+
+# Oder XAMPP MySQL
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_DBNAME=tom
+# MYSQL_USER=root
+# MYSQL_PASSWORD=
 ```
+
+Siehe [SECURITY-IMPROVEMENTS.md](SECURITY-IMPROVEMENTS.md) für Details.
 
 ## Schritt 4: Datenbank-Schema erstellen
 
@@ -70,6 +88,16 @@ php scripts/run-migration-019.php
 - Login: http://localhost/TOM3/public/login.php
 
 ## Standard-Testwerte
+
+**MySQL/MariaDB (Docker - empfohlen):**
+- Host: `127.0.0.1`
+- Port: `3307`
+- Datenbank: `tom`
+- Benutzer: `tomcat`
+- Passwort: Über ENV-Variable `MYSQL_PASSWORD` setzen
+- phpMyAdmin: http://127.0.0.1:8081
+
+**Hinweis:** Passwörter werden nicht mehr in `config/database.php` gespeichert, sondern über ENV-Variablen gesetzt.
 
 **MySQL (XAMPP):**
 - Host: `localhost`
@@ -98,7 +126,7 @@ Get-Service | Where-Object { $_.Name -like "*mysql*" }
 ### Datenbank-Verbindungsfehler
 
 - Prüfe ob MySQL-Service läuft
-- Prüfe `config/database.php` (Host, Port, Credentials)
+- Prüfe ENV-Variablen (MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD)
 - Prüfe ob Datenbank `tom` existiert
 - Teste Verbindung: `mysql -u root -p`
 

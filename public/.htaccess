@@ -3,9 +3,10 @@
 RewriteEngine On
 RewriteBase /TOM3/public/
 
-# API Routes
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
+# API Routes - Alle API-Aufrufe über Router (auch direkte .php-Dateien)
+# Verhindert Bypass durch direkten Aufruf von api/*.php
+RewriteCond %{REQUEST_URI} ^/TOM3/public/api/ [NC]
+RewriteCond %{REQUEST_URI} !^/TOM3/public/api/index\.php [NC]
 RewriteRule ^api/(.*)$ api/index.php [QSA,L]
 
 # Umleitung von index.html zu index.php (für Auth-Prüfung)

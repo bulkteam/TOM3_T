@@ -52,7 +52,10 @@ function registerFatalErrorHandler(): void
         $error = error_get_last();
         if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
             setJsonHeaders();
-            jsonError('Fatal error', 500, $error['file'], $error['line']);
+            $message = $error['message'] ?? 'Fatal error';
+            $file = $error['file'] ?? null;
+            $line = $error['line'] ?? null;
+            jsonError($message, 500, $file, $line);
         }
     });
 }

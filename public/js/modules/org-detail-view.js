@@ -32,6 +32,17 @@ export class OrgDetailViewModule {
         return translations[status] || status || '-';
     }
     
+    translateRevenueRange(revenueRange) {
+        const translations = {
+            'micro': 'Micro (< 1 Mio €)',
+            'small': 'Small (1-10 Mio €)',
+            'medium': 'Medium (10-50 Mio €)',
+            'large': 'Large (50-250 Mio €)',
+            'enterprise': 'Enterprise (> 250 Mio €)'
+        };
+        return translations[revenueRange] || revenueRange || '-';
+    }
+    
     translateRelationType(relationType) {
         const relationTypeMap = {
             // Konzern & Struktur
@@ -179,7 +190,7 @@ export class OrgDetailViewModule {
                         </div>
                         <div class="org-detail-item">
                             <strong>Kundennummer:</strong>
-                            <div class="org-detail-value">${Utils.escapeHtml(org.external_ref || '-')}</div>
+                            <div class="org-detail-value" id="org-field-external_ref">${Utils.escapeHtml(org.external_ref || '-')}</div>
                         </div>
                         <div class="org-detail-item">
                             <strong>Typ:</strong>
@@ -229,9 +240,16 @@ export class OrgDetailViewModule {
                         <div class="org-detail-item">
                             <strong>Umsatzgröße:</strong>
                             <div class="org-detail-value" id="org-field-revenue_range">
-                                ${org.revenue_range ? Utils.escapeHtml(org.revenue_range) : '<span class="org-detail-empty">-</span>'}
+                                ${org.revenue_range ? Utils.escapeHtml(this.translateRevenueRange(org.revenue_range)) : '<span class="org-detail-empty">-</span>'}
                             </div>
-                            <input type="text" class="org-detail-input" id="org-input-revenue_range" value="${Utils.escapeHtml(org.revenue_range || '')}" style="display: none;" placeholder="z.B. 1-10 Mio. EUR">
+                            <select class="org-detail-input" id="org-input-revenue_range" style="display: none;">
+                                <option value="">-- Bitte wählen --</option>
+                                <option value="micro" ${org.revenue_range === 'micro' ? 'selected' : ''}>Micro (< 1 Mio €)</option>
+                                <option value="small" ${org.revenue_range === 'small' ? 'selected' : ''}>Small (1-10 Mio €)</option>
+                                <option value="medium" ${org.revenue_range === 'medium' ? 'selected' : ''}>Medium (10-50 Mio €)</option>
+                                <option value="large" ${org.revenue_range === 'large' ? 'selected' : ''}>Large (50-250 Mio €)</option>
+                                <option value="enterprise" ${org.revenue_range === 'enterprise' ? 'selected' : ''}>Enterprise (> 250 Mio €)</option>
+                            </select>
                         </div>
                         <div class="org-detail-item">
                             <strong>Mitarbeiter (ca.):</strong>

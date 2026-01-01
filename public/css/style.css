@@ -244,12 +244,12 @@ body {
 }
 
 .btn-secondary {
-    background: var(--secondary);
-    color: white;
+    background: #64748b !important;
+    color: white !important;
 }
 
 .btn-secondary:hover {
-    background: #475569;
+    background: #475569 !important;
 }
 
 .btn-danger {

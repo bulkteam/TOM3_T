@@ -12,7 +12,28 @@ Diese Anleitung führt dich Schritt für Schritt durch die Installation von MySQ
 
 ---
 
-## Teil 1: MySQL installieren
+## Teil 1: MySQL/MariaDB installieren
+
+### Option A: Docker MariaDB (empfohlen)
+
+**Vorteile:**
+- Keine System-Services
+- Isoliert von anderen MySQL-Instanzen
+- Einfach zu entfernen
+- phpMyAdmin inklusive
+
+**Anleitung:** Siehe [DOCKER-MARIADB-SETUP.md](../docs/DOCKER-MARIADB-SETUP.md)
+
+### Option B: XAMPP MySQL
+
+Falls du XAMPP verwendest, ist MySQL bereits installiert:
+- Standard-Benutzer: `root`
+- Standard-Passwort: (leer) oder `root`
+- Datenbank über phpMyAdmin erstellen: http://localhost/phpmyadmin
+
+### Option C: Native MySQL Installation
+
+## Teil 1B: Native MySQL installieren (Alternative)
 
 ### Schritt 1: MySQL herunterladen
 
@@ -83,6 +104,9 @@ EXIT;
 - Benutzer: `tom3_user`
 - Passwort: `tom3_password` (oder dein gewähltes Passwort)
 
+**Alternative mit Docker:**
+Siehe [DOCKER-MARIADB-SETUP.md](../docs/DOCKER-MARIADB-SETUP.md) für Docker-Setup.
+
 **Alternative mit XAMPP:**
 Falls du XAMPP verwendest, ist MySQL bereits installiert:
 - Standard-Benutzer: `root`
@@ -128,25 +152,36 @@ Du solltest das Neo4j Browser-Interface sehen.
 
 ### Schritt 1: Datenbank-Konfiguration
 
-Bearbeite `config/database.php`:
+**WICHTIG:** Secrets müssen über Umgebungsvariablen gesetzt werden. Siehe [SECURITY-IMPROVEMENTS.md](SECURITY-IMPROVEMENTS.md) für Details.
 
-```php
-return [
-    'mysql' => [
-        'host' => 'localhost',
-        'port' => 3306,
-        'dbname' => 'tom',
-        'user' => 'tom3_user',
-        'password' => 'tom3_password',
-        'charset' => 'utf8mb4'
-    ],
-    'neo4j' => [
-        'uri' => 'bolt://localhost:7687',
-        'user' => 'neo4j',
-        'password' => 'dein_neo4j_passwort'
-    ]
-];
+**Erstelle eine `.env` Datei** im Projektroot:
+
+```bash
+# .env
+APP_ENV=local
+AUTH_MODE=dev
+
+# Docker MariaDB (empfohlen)
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3307
+MYSQL_DBNAME=tom
+MYSQL_USER=tomcat
+MYSQL_PASSWORD=dein_passwort_hier
+
+# Oder XAMPP MySQL
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_DBNAME=tom
+# MYSQL_USER=root
+# MYSQL_PASSWORD=
+
+# Neo4j (optional)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=dein_neo4j_passwort
 ```
+
+**Hinweis:** `config/database.php` liest automatisch aus ENV-Variablen. In Production müssen alle Secrets gesetzt sein.
 
 ### Schritt 2: Datenbank-Schema erstellen
 
@@ -175,6 +210,19 @@ php scripts/setup-neo4j-constraints.php
 
 ### MySQL startet nicht
 
+**Für Docker:**
+```powershell
+# Container-Status prüfen
+docker compose ps
+
+# Container starten
+docker compose start
+
+# Logs prüfen
+docker logs mariadb104
+```
+
+**Für XAMPP/native MySQL:**
 ```powershell
 # Service-Status prüfen
 Get-Service | Where-Object { $_.Name -like "*mysql*" }
@@ -185,6 +233,13 @@ Start-Service -Name "MySQL80"
 
 ### MySQL-Verbindung fehlgeschlagen
 
+**Für Docker:**
+- Prüfe Container läuft: `docker compose ps`
+- Prüfe Port 3307 (nicht 3306!)
+- Prüfe `config/database.php` verwendet `127.0.0.1:3307`
+- Siehe [DOCKER-MARIADB-SETUP.md](../docs/DOCKER-MARIADB-SETUP.md) für Troubleshooting
+
+**Für XAMPP/native MySQL:**
 - Prüfe ob MySQL-Service läuft
 - Prüfe Port 3306 (Standard)
 - Prüfe Firewall-Regeln

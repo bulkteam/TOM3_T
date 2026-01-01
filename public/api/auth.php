@@ -18,7 +18,8 @@ if (!defined('TOM3_AUTOLOADED')) {
 use TOM\Infrastructure\Auth\AuthService;
 use TOM\Infrastructure\Activity\ActivityLogService;
 
-// Set headers before any output
+// Headers werden bereits vom Router gesetzt
+// Nur setzen, wenn noch nicht gesetzt (für direkten Aufruf)
 if (!headers_sent()) {
     header('Content-Type: application/json; charset=utf-8');
 }
@@ -28,10 +29,21 @@ try {
     $auth = new AuthService(null, $activityLogService);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode([
+    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
+    $isDev = in_array($appEnv, ['local', 'dev', 'development']);
+    
+    $error = [
         'error' => 'Auth service initialization failed',
-        'message' => $e->getMessage()
-    ]);
+        'message' => $isDev ? $e->getMessage() : 'Authentication service unavailable'
+    ];
+    
+    if ($isDev) {
+        $error['file'] = basename($e->getFile());
+        $error['line'] = $e->getLine();
+        $error['trace'] = explode("\n", $e->getTraceAsString());
+    }
+    
+    echo json_encode($error);
     exit;
 }
 
@@ -47,8 +59,8 @@ if (isset($id) || isset($action)) {
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
     $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
     
-    // Entferne /TOM3/public falls vorhanden
-    $path = preg_replace('#^/TOM3/public#', '', $path);
+    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
+    $path = preg_replace('#^/tom3/public#i', '', $path);
     // Entferne /api prefix
     $path = preg_replace('#^/api/?|^api/?#', '', $path);
     $path = trim($path, '/');

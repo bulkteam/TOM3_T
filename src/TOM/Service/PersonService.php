@@ -5,6 +5,7 @@ namespace TOM\Service;
 
 use PDO;
 use TOM\Infrastructure\Access\AccessTrackingService;
+use TOM\Infrastructure\Utils\UuidHelper;
 use TOM\Service\BaseEntityService;
 use TOM\Service\Person\PersonAffiliationService;
 use TOM\Service\Person\PersonRelationshipService;

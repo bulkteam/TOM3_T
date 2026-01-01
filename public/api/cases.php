@@ -30,7 +30,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Der Pfad ist jetzt z.B. "cases" oder "cases/{uuid}" oder "cases/{uuid}/notes"
 $requestUri = $_SERVER['REQUEST_URI'];
 $path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/TOM3/public#', '', $path);
+$path = preg_replace('#^/tom3/public#i', '', $path);
 $path = preg_replace('#^/api/?|^api/?#', '', $path);
 $path = trim($path, '/');
 $pathParts = explode('/', $path);

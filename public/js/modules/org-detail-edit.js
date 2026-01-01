@@ -253,10 +253,12 @@ export class OrgDetailEditModule {
             const revenueRangeValue = document.getElementById('org-field-revenue_range');
             const revenueRangeInput = document.getElementById('org-input-revenue_range');
             if (revenueRangeValue && revenueRangeInput) {
-                const value = revenueRangeInput.value.trim();
-                revenueRangeValue.innerHTML = value 
-                    ? Utils.escapeHtml(value) 
-                    : '<span class="org-detail-empty">-</span>';
+                const selectedOption = revenueRangeInput.options[revenueRangeInput.selectedIndex];
+                if (selectedOption && selectedOption.value) {
+                    revenueRangeValue.innerHTML = Utils.escapeHtml(selectedOption.textContent);
+                } else {
+                    revenueRangeValue.innerHTML = '<span class="org-detail-empty">-</span>';
+                }
             }
             
             const employeeCountValue = document.getElementById('org-field-employee_count');

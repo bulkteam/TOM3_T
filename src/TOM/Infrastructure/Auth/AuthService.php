@@ -41,6 +41,17 @@ class AuthService
     private function startSession(): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
+            // Session läuft bereits, prüfe nur Timeout
+            $sessionTimeout = (int)(getenv('SESSION_TIMEOUT') ?: 28800);
+            $this->checkSessionTimeout($sessionTimeout);
+            return;
+        }
+        
+        // Prüfe ob Header bereits gesendet wurden (z.B. durch API-Response)
+        if (headers_sent()) {
+            // Header bereits gesendet - Session kann nicht gestartet werden
+            // Dies passiert z.B. bei API-Aufrufen, wo JSON-Header bereits gesendet wurden
+            // In diesem Fall können wir keine Session verwenden, aber das ist OK für API-Calls
             return;
         }
         
@@ -93,6 +104,11 @@ class AuthService
      */
     public function getCurrentUser(): ?array
     {
+        // Wenn Session nicht aktiv ist (z.B. Header bereits gesendet), gibt es keinen eingeloggten User
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return null;
+        }
+        
         if (empty($_SESSION['user_id'])) {
             return null;
         }

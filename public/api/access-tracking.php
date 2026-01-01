@@ -24,7 +24,7 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$path = preg_replace('#^/TOM3/public#', '', $path);
+$path = preg_replace('#^/tom3/public#i', '', $path);
 $path = preg_replace('#^/api/access-tracking/?|^access-tracking/?#', '', $path);
 $path = trim($path, '/');
 $parts = explode('/', $path);

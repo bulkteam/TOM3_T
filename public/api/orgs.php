@@ -64,8 +64,8 @@ if ($id === 'next-customer-number') {
 // Für PUT/DELETE mit address_uuid oder relation_uuid müssen wir den Pfad nochmal parsen
 $requestUri = $_SERVER['REQUEST_URI'];
 $path = parse_url($requestUri, PHP_URL_PATH);
-// Entferne /TOM3/public falls vorhanden
-$path = preg_replace('#^/TOM3/public#', '', $path);
+// Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
+$path = preg_replace('#^/tom3/public#i', '', $path);
 // Entferne /api prefix
 $path = preg_replace('#^/api/?|^api/?#', '', $path);
 $path = trim($path, '/');

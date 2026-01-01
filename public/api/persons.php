@@ -162,10 +162,19 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode([
+    $errorResponse = [
         'error' => 'Internal server error',
         'message' => $e->getMessage()
-    ]);
+    ];
+    
+    // In Development: Mehr Details
+    if (defined('TOM3_DEBUG') && TOM3_DEBUG) {
+        $errorResponse['file'] = basename($e->getFile());
+        $errorResponse['line'] = $e->getLine();
+        $errorResponse['trace'] = explode("\n", $e->getTraceAsString());
+    }
+    
+    echo json_encode($errorResponse);
 }
 
 

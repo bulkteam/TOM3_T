@@ -22,8 +22,8 @@ class DatabaseConnection
             
             $dsn = sprintf(
                 'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-                $dbConfig['host'] ?? 'localhost',
-                $dbConfig['port'] ?? 3306,
+                $dbConfig['host'] ?? '127.0.0.1',
+                $dbConfig['port'] ?? 3307,
                 $dbConfig['dbname'] ?? 'tom',
                 $dbConfig['charset'] ?? 'utf8mb4'
             );

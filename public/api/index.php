@@ -1,24 +1,23 @@
 <?php
 /**
  * TOM3 - API Router
+ * 
+ * Zentrale API-Routing mit Security-Layer
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/api-security.php';
 
-// CORS Headers (für Entwicklung)
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+// Prüfe APP_ENV (setzt Default auf 'local' wenn nicht gesetzt)
+requireAppEnv();
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
+// CORS Headers (dev vs prod)
+setCorsHeaders();
 
 // Content-Type
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Error Handling
 set_error_handler(function($severity, $message, $file, $line) {
@@ -30,8 +29,8 @@ try {
     $requestUri = $_SERVER['REQUEST_URI'];
     $path = parse_url($requestUri, PHP_URL_PATH);
     
-    // Entferne /TOM3/public falls vorhanden
-    $path = preg_replace('#^/TOM3/public#', '', $path);
+    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
+    $path = preg_replace('#^/tom3/public#i', '', $path);
     
     // Entferne /api prefix
     $path = preg_replace('#^/api/?|^api/?#', '', $path);
@@ -43,6 +42,16 @@ try {
     $resource = $parts[0] ?? '';
     $id = $parts[1] ?? null; // Pass ID to sub-handlers
     $action = $parts[2] ?? null; // Pass action to sub-handlers
+    
+    // Auth-Check (außer für öffentliche Endpunkte)
+    if (!isPublicEndpoint($resource, $id, $action)) {
+        requireAuth();
+    }
+    
+    // Spezielle Rollen-Checks für sensible Endpunkte
+    if ($resource === 'monitoring' || $resource === 'users') {
+        requireAdmin();
+    }
     
     // Route to appropriate handler
     switch ($resource) {
@@ -116,9 +125,5 @@ try {
             break;
     }
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
-    ]);
+    sendErrorResponse($e, true);
 }

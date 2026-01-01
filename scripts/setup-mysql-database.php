@@ -45,14 +45,16 @@ echo "📦 Führe Migrationen aus...\n\n";
 
 // Führe MySQL-Migrationen aus
 $migrationsDir = __DIR__ . '/../database/migrations';
-$migrations = [
-    $migrationsDir . '/001_tom_core_schema_mysql.sql',
-    $migrationsDir . '/002_workflow_definitions_mysql.sql',
-    $migrationsDir . '/003_org_addresses_and_relations_mysql.sql',
-    $migrationsDir . '/004_org_metadata_mysql.sql',
-    $migrationsDir . '/005_org_classification_mysql.sql',
-    $migrationsDir . '/006_org_account_ownership_mysql.sql'
-];
+
+// Lade alle Migrationen in numerischer Reihenfolge
+$migrations = [];
+$files = scandir($migrationsDir);
+foreach ($files as $file) {
+    if (preg_match('/^\d{3}_.*\.sql$/', $file)) {
+        $migrations[] = $migrationsDir . '/' . $file;
+    }
+}
+sort($migrations); // Sortiere nach Dateiname (numerisch)
 
 foreach ($migrations as $migration) {
     if (!file_exists($migration)) {

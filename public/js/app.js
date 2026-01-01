@@ -43,13 +43,6 @@ class TOM3App {
         // Modal-Close-Buttons
         document.querySelectorAll('.modal-close').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                console.log('[App] Globaler Close-Button Handler ausgeführt auf:', btn.closest('.modal')?.id || 'unbekannt');
-                console.log('[App] Event-Details:', {
-                    target: e.target,
-                    currentTarget: e.currentTarget,
-                    defaultPrevented: e.defaultPrevented,
-                    propagationStopped: e.cancelBubble
-                });
                 Utils.closeModal();
             });
         });
@@ -58,7 +51,6 @@ class TOM3App {
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
-                    console.log('[App] Globaler Overlay-Click Handler ausgeführt auf:', modal.id || 'unbekannt');
                     Utils.closeModal();
                 }
             });
