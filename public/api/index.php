@@ -60,10 +60,10 @@ try {
                 // GET /api/orgs/search?q=... - Autocomplete-Suche
                 require __DIR__ . '/orgs-search.php';
             } elseif ($id === 'recent') {
-                // GET /api/orgs/recent - Zuletzt verwendet
+                // GET /api/orgs/recent - Zuletzt verwendet (Legacy, wird zu access-tracking umgeleitet)
                 require __DIR__ . '/orgs-recent.php';
             } elseif ($id === 'track') {
-                // POST /api/orgs/track - Track Zugriff
+                // POST /api/orgs/track - Track Zugriff (Legacy, wird zu access-tracking umgeleitet)
                 require __DIR__ . '/orgs-track.php';
             } elseif ($id === 'owners') {
                 // GET /api/orgs/owners - Liste verfügbarer Account Owners
@@ -71,6 +71,9 @@ try {
             } else {
                 require __DIR__ . '/orgs.php';
             }
+            break;
+        case 'access-tracking':
+            require __DIR__ . '/access-tracking.php';
             break;
         case 'industries':
             require __DIR__ . '/industries.php';
@@ -88,7 +91,15 @@ try {
             require __DIR__ . '/users.php';
             break;
         case 'persons':
-            require __DIR__ . '/persons.php';
+            if ($id === 'recent') {
+                // GET /api/persons/recent - Zuletzt angesehen
+                require __DIR__ . '/persons-recent.php';
+            } elseif ($id === 'track') {
+                // POST /api/persons/track - Track Zugriff
+                require __DIR__ . '/persons-track.php';
+            } else {
+                require __DIR__ . '/persons.php';
+            }
             break;
         case 'tasks':
             require __DIR__ . '/tasks.php';

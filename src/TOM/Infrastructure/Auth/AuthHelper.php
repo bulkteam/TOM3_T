@@ -18,7 +18,9 @@ class AuthHelper
     private static function getAuthService(): AuthService
     {
         if (self::$authService === null) {
-            self::$authService = new AuthService();
+            // ActivityLogService optional - wenn nicht vorhanden, wird kein Activity-Log erstellt
+            $activityLogService = new \TOM\Infrastructure\Activity\ActivityLogService();
+            self::$authService = new AuthService(null, $activityLogService);
         }
         return self::$authService;
     }

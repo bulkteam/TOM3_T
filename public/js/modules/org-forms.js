@@ -15,31 +15,20 @@ export class OrgFormsModule {
     }
     
     async showCreateOrgModal() {
-        // Log sofort am Anfang - vor allem anderen Code
-        console.log('========================================');
-        console.log('[OrgForms] ===== showCreateOrgModal called =====');
-        console.log('[OrgForms] This:', this);
-        console.log('[OrgForms] window.app:', window.app);
-        console.log('[OrgForms] window.app.orgForms:', window.app?.orgForms);
-        console.log('========================================');
-        
         const modal = document.getElementById('modal-create-org');
         if (!modal) {
             console.error('[OrgForms] Create org modal not found');
             return;
         }
         
-        console.log('[OrgForms] Modal found, activating...');
         modal.classList.add('active');
         
         // Lade nächste Kundennummer
-        console.log('[OrgForms] Loading next customer number...');
         await this.loadNextCustomerNumber();
         
         // Formular zurücksetzen
         const form = document.getElementById('form-create-org');
         if (form) {
-            console.log('[OrgForms] Resetting form...');
             form.reset();
         }
         
@@ -52,10 +41,8 @@ export class OrgFormsModule {
         
         if (mainSelect && subSelect) {
             // Wie im Edit-Modus: Abhängigkeit setzen und Hauptbranchen laden
-            console.log('[OrgForms] Setting up industry dependency (like edit mode)...');
             Utils.setupIndustryDependency(mainSelect, subSelect, false); // false = kein Klonen (wie im Edit-Modus)
             await Utils.loadIndustryMainClasses(mainSelect);
-            console.log('[OrgForms] Industry setup completed');
         } else {
             console.error('[OrgForms] Industry selects not found!', { mainSelect, subSelect });
         }
@@ -71,8 +58,6 @@ export class OrgFormsModule {
             this._createWebsiteBlurHandler = () => Utils.normalizeUrl(websiteInput);
             websiteInput.addEventListener('blur', this._createWebsiteBlurHandler);
         }
-        
-        console.log('[OrgForms] ===== showCreateOrgModal completed =====');
     }
     
     async loadNextCustomerNumber() {
@@ -121,15 +106,6 @@ export class OrgFormsModule {
         
         const data = Utils.formDataToObject(form, {
             filterEmpty: true
-        });
-        
-        // Debug: Prüfe Branchen-Felder
-        console.log('[OrgForms] Form data before submit:', data);
-        console.log('[OrgForms] Industry fields:', {
-            industry_main_uuid: data.industry_main_uuid,
-            industry_sub_uuid: data.industry_sub_uuid,
-            mainSelect: document.getElementById('org-create-industry-main')?.value,
-            subSelect: document.getElementById('org-create-industry-sub')?.value
         });
         
         // Normalisiere Website-URL

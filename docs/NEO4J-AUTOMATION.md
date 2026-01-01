@@ -16,12 +16,15 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
 Das Script:
 - Erstellt einen Windows Task Scheduler Job
 - Führt den Sync-Worker alle 5 Minuten aus (konfigurierbar)
-- Läuft automatisch im Hintergrund
+- Läuft automatisch im Hintergrund (unsichtbar, keine aufblinkende Konsole)
 - Startet bei Windows-Start
+- Verwendet VBScript-Wrapper für unsichtbare Ausführung
 
 **Parameter:**
 - `-IntervalMinutes 5` - Intervall in Minuten (Standard: 5)
 - `-ScriptPath` - Pfad zum Batch-Script (Standard: `scripts\sync-neo4j-worker.bat`)
+
+**Hinweis:** Der Task verwendet automatisch einen VBScript-Wrapper (`sync-neo4j-worker.vbs`), der das Batch-Script unsichtbar startet. Dadurch wird keine Konsole angezeigt und Deprecated-Warnungen werden unterdrückt.
 
 **Beispiel mit anderem Intervall:**
 ```powershell
@@ -41,8 +44,9 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
    - Dauer: Unbegrenzt
 5. **Aktionen:**
    - Neu → Programm starten
-   - Programm/Script: `C:\xampp\htdocs\TOM3\scripts\sync-neo4j-worker.bat`
-   - Starten in: `C:\xampp\htdocs\TOM3`
+   - Programm/Script: `wscript.exe`
+   - Argumente: `"C:\xampp\htdocs\TOM3\scripts\sync-neo4j-worker.vbs"`
+   - **Hinweis:** Verwende den VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
 6. **Bedingungen:**
    - ✅ "Aufgabe starten, unabhängig davon, ob Computer im Netzbetrieb oder Batteriebetrieb ist"
 7. **Einstellungen:**
@@ -141,8 +145,28 @@ Unregister-ScheduledTask -TaskName "TOM3-Neo4j-Sync-Worker" -Confirm:$false
 
 4. **Manuell testen:**
    ```bash
+   # Mit Output (für Debugging)
    php scripts/sync-neo4j-worker.php
+   
+   # Stumm (wie im Task Scheduler)
+   php scripts/sync-neo4j-worker.php --quiet
+   
+   # Oder über VBScript-Wrapper (unsichtbar)
+   wscript scripts\sync-neo4j-worker.vbs
    ```
+
+### Task zeigt aufblinkende Konsole
+
+**Problem:** Task zeigt alle 5 Minuten kurz eine Konsole an.
+
+**Lösung:** Task aktualisieren, um VBScript-Wrapper zu verwenden:
+
+```powershell
+cd C:\xampp\htdocs\TOM3
+powershell -ExecutionPolicy Bypass -File scripts\update-neo4j-sync-task.ps1
+```
+
+Dies aktualisiert den Task, sodass er den VBScript-Wrapper verwendet und keine Konsole mehr anzeigt.
 
 ### Events werden nicht verarbeitet
 
@@ -169,7 +193,11 @@ Unregister-ScheduledTask -TaskName "TOM3-Neo4j-Sync-Worker" -Confirm:$false
 
 2. **Teste Verbindung:**
    ```bash
+   # Mit Output (für Debugging)
    php scripts/sync-neo4j-worker.php
+   
+   # Stumm (wie im Task Scheduler)
+   php scripts/sync-neo4j-worker.php --quiet
    ```
 
 3. **Prüfe Firewall/Netzwerk:**
@@ -185,6 +213,18 @@ php scripts/sync-neo4j-worker.php --daemon
 ```
 
 **Hinweis:** Läuft nur solange die Konsole offen ist. Für Produktion sollte der Task Scheduler verwendet werden.
+
+## Script-Modi
+
+Der Sync-Worker unterstützt verschiedene Modi:
+
+| Modus | Command | Beschreibung |
+|-------|---------|--------------|
+| **Normal** | `php scripts/sync-neo4j-worker.php` | Einmalige Verarbeitung mit Output |
+| **Quiet** | `php scripts/sync-neo4j-worker.php --quiet` | Einmalige Verarbeitung ohne Output (für Task Scheduler) |
+| **Daemon** | `php scripts/sync-neo4j-worker.php --daemon` | Kontinuierliche Verarbeitung (läuft bis Ctrl+C) |
+
+**Hinweis:** Der Task Scheduler verwendet automatisch den `--quiet` Modus über den VBScript-Wrapper, sodass keine Konsole angezeigt wird und Deprecated-Warnungen unterdrückt werden.
 
 ## Empfohlene Konfiguration
 

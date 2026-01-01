@@ -12,8 +12,8 @@ Erstellt die Kern-Tabellen:
 - `person` - Personen/Kontakte
 - `person_affiliation` - Zugehörigkeiten
 - `project` - Projekte
-- `project_partner` - Projektpartner
-- `project_stakeholder` - Projekt-Stakeholder
+- `project_party` - Projektparteien (neu, ersetzt project_partner)
+- `project_person` - Projektpersonen (neu, ersetzt project_stakeholder)
 - `case_item` - Vorgänge
 - `project_case` - Projekt-Vorgang-Verknüpfungen
 - `task` - Aufgaben
@@ -79,6 +79,9 @@ Oder verwende die einzelnen Migrations-Scripts:
 php scripts/run-migration-001.php
 php scripts/run-migration-002.php
 # ... weitere Migrationen
+php scripts/run-migration-021.php  # Neue Tabellen erstellen
+php scripts/run-migration-022.php  # Daten migrieren (optional)
+php scripts/run-migration-023.php  # Alte Tabellen löschen (--yes für automatische Bestätigung)
 ```
 
 ## Konfiguration

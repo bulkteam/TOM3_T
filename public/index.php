@@ -173,7 +173,8 @@ if (!isMySQLRunning()) {
 
 // 2. Prüfe Authentifizierung
 try {
-    $auth = new AuthService();
+    $activityLogService = new \TOM\Infrastructure\Activity\ActivityLogService();
+    $auth = new \TOM\Infrastructure\Auth\AuthService(null, $activityLogService);
     $currentUser = $auth->getCurrentUser();
     
     // Wenn nicht eingeloggt -> weiterleiten zu Login

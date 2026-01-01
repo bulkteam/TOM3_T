@@ -419,7 +419,7 @@ body {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    z-index: 2000;
     overflow-y: auto;
 }
 
@@ -438,14 +438,21 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
     padding: 1.5rem;
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    z-index: 100;
+    box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.1);
 }
 
 /* Org Detail Modal - Header verstecken, da wir Sticky Header verwenden */
@@ -482,6 +489,8 @@ body {
 .modal-body {
     padding: 1.5rem;
     font-size: 12pt;
+    flex: 1;
+    overflow-y: auto;
 }
 
 /* Org Detail Modal - Padding oben für Sticky Header */
@@ -952,6 +961,17 @@ body {
     margin-bottom: 1rem;
 }
 
+.person-recent-section {
+    margin-bottom: 2rem;
+}
+
+.person-recent-section h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 1rem;
+}
+
 .org-recent-list {
     display: flex;
     flex-wrap: wrap;
@@ -1040,7 +1060,6 @@ body {
     z-index: 1000;
     padding: 1.5rem;
     margin: 0 0 1.5rem 0;
-    border-bottom: 2px solid var(--border);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
@@ -1077,9 +1096,7 @@ body {
 }
 
 .org-detail-header-divider {
-    height: 2px;
-    background: var(--border);
-    margin-top: 1rem;
+    display: none;
 }
 
 .org-detail-account-section {
@@ -1543,4 +1560,589 @@ body {
 .audit-trail-new-value {
     color: var(--success);
     font-weight: 500;
+}
+
+/* Activity Log Styles */
+.activity-log {
+    padding: 1rem 0;
+}
+
+.activity-log-empty {
+    padding: 3rem;
+    text-align: center;
+    color: var(--text-light);
+}
+
+.activity-log-day {
+    margin-bottom: 2rem;
+}
+
+.activity-log-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border-left: 3px solid var(--primary);
+    margin-bottom: 1rem;
+    border-radius: 4px;
+}
+
+.activity-log-date {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.activity-log-count {
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+.activity-log-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.activity-log-entry {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    transition: box-shadow 0.2s;
+}
+
+.activity-log-entry:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.activity-log-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.activity-log-entry-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.activity-log-entry-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+.activity-log-action-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.activity-log-action-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.activity-log-action-info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.activity-log-action-primary {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.activity-log-action-warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.activity-log-action-secondary {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.activity-log-entity {
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+.activity-log-time {
+    font-weight: 500;
+}
+
+.activity-log-user {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.activity-log-details {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9375rem;
+    color: var(--text);
+    line-height: 1.6;
+}
+
+.activity-log-audit-link {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--primary);
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    transition: background 0.2s;
+}
+
+.activity-log-audit-link:hover {
+    background: #2563eb;
+}
+
+/* ============================================================================
+   Person Search Styles (ähnlich wie Org Search)
+   ============================================================================ */
+
+.person-search-page {
+    padding: 2rem;
+}
+
+.person-search-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.person-search-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+}
+
+.person-main-search {
+    margin-bottom: 2rem;
+}
+
+.person-search-input-large {
+    width: 100%;
+    padding: 1rem 1rem 1rem 3rem;
+    font-size: 1.125rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.2s;
+}
+
+.person-search-input-large:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.person-search-results-large {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.person-search-result {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.person-search-result:hover,
+.person-search-result.keyboard-selected {
+    background: var(--primary);
+    color: #fff;
+}
+
+.person-search-result:hover h4,
+.person-search-result.keyboard-selected h4 {
+    color: #fff;
+}
+
+.person-search-result:hover p,
+.person-search-result.keyboard-selected p {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.person-search-result.archived {
+    background: #f5f5f5;
+    opacity: 0.7;
+}
+
+.person-search-result h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.person-search-result p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+/* ============================================================================
+   Person Detail Styles (ähnlich wie Org Detail)
+   ============================================================================ */
+
+.person-detail {
+    padding: 0;
+}
+
+.person-detail-header-sticky {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1000;
+    padding: 1.5rem 0;
+    margin: 0 0 1.5rem 0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.person-detail-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 1.5rem;
+}
+
+.person-detail-header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.person-detail-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.person-detail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.person-detail-menu {
+    position: relative;
+}
+
+.person-detail-menu-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    font-size: 1.25rem;
+    line-height: 1;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.person-detail-menu-toggle:hover {
+    background: var(--bg);
+}
+
+.person-detail-menu-dots {
+    display: block;
+    line-height: 1;
+    transform: rotate(90deg);
+    font-weight: bold;
+}
+
+.person-detail-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    min-width: 180px;
+    z-index: 1000;
+    display: none;
+    margin-top: 0.25rem;
+}
+
+.person-detail-menu-dropdown.active {
+    display: block;
+}
+
+.person-detail-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--text);
+    transition: background-color 0.2s;
+}
+
+.person-detail-menu-item:hover {
+    background: var(--bg);
+}
+
+.person-detail-menu-icon {
+    font-size: 1rem;
+}
+
+.person-detail-header-divider {
+    display: none;
+}
+
+.person-detail-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text);
+}
+
+.person-detail-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-light);
+    cursor: pointer;
+    padding: 0.5rem;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.person-detail-close:hover {
+    color: var(--text);
+}
+
+.person-detail-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+    gap: 0;
+}
+
+.person-detail-tab {
+    padding: 1rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: -1px;
+}
+
+.person-detail-tab:hover {
+    color: var(--text);
+    background: var(--bg);
+}
+
+.person-detail-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.person-detail-content {
+    padding: 1.5rem;
+}
+
+.person-detail-tab-content {
+    display: none;
+}
+
+.person-detail-tab-content.active {
+    display: block;
+}
+
+/* Form Sections - Allgemeine Styles für alle Form-Sections in Modals */
+.form-section {
+    margin-bottom: 2rem;
+    padding-bottom: 0;
+}
+
+.form-section:last-child {
+    margin-bottom: 0;
+}
+
+.form-section h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    margin-top: 0;
+    padding-bottom: 0.75rem;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+}
+
+/* Person Stammdaten - Spezifische Styles (falls nötig) */
+.person-stammdaten .form-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.person-stammdaten .form-section:last-child {
+    border-bottom: none;
+}
+
+.person-stammdaten .form-section h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text);
+}
+
+.person-stammdaten .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.person-stammdaten .form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.person-stammdaten .form-group label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-light);
+    margin-bottom: 0.5rem;
+}
+
+.person-stammdaten .form-group .form-value {
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.affiliations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.affiliation-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.affiliation-item.active {
+    border-left: 4px solid var(--success);
+}
+
+.affiliation-item.inactive {
+    opacity: 0.7;
+    border-left: 4px solid var(--text-light);
+}
+
+.affiliation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.affiliation-header h4 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.affiliation-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.affiliation-details .detail-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.affiliation-details .detail-row .label {
+    font-weight: 500;
+    color: var(--text-light);
+    min-width: 100px;
+}
+
+.relationships-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.relationship-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.relationship-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.relationship-header h4 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.relationship-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.relationship-details .detail-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.relationship-details .detail-row .label {
+    font-weight: 500;
+    color: var(--text-light);
+    min-width: 100px;
 }

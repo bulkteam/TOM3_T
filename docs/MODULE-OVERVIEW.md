@@ -4,17 +4,31 @@
 
 ## JavaScript Module (Frontend)
 
+### Entity-spezifische Module
+
 | Modul | Zeilen | Größe | Beschreibung |
 |-------|--------|-------|-------------|
 | `admin.js` | 389 | 18,08 KB | Admin-Bereich (Benutzer- und Rollenverwaltung) |
-| `audit-trail.js` | 228 | 8,67 KB | Audit-Trail-Anzeige für Organisationen |
+| `audit-trail.js` | 228 | 8,67 KB | Audit-Trail-Anzeige (zentralisiert für org/person) |
 | `auth.js` | 64 | 2,26 KB | Authentifizierung |
 | `org-detail.js` | 1,322 | 66,6 KB | Organisationsdetail-Ansicht (größtes Modul) |
 | `org-forms.js` | 181 | 6,66 KB | Formulare für Organisationen |
 | `org-search.js` | 253 | 11,6 KB | Organisationssuche |
+| `person-detail.js` | ~400 | ~20 KB | Personendetail-Ansicht |
+| `person-forms.js` | ~200 | ~8 KB | Formulare für Personen |
+| `person-search.js` | ~150 | ~7 KB | Personensuche |
 | `utils.js` | 135 | 3,98 KB | Utility-Funktionen |
 
-**Gesamt JavaScript:** 2,572 Zeilen | 117,84 KB
+### Zentrale Module (Code-Zentralisierung)
+
+| Modul | Zeilen | Größe | Beschreibung |
+|-------|--------|-------|-------------|
+| `entity-detail-base.js` | ~300 | ~12 KB | Basis-Klasse für Detail-Views (org/person) |
+| `recent-list.js` | ~100 | ~4 KB | "Zuletzt angesehen" Listen (zentralisiert) |
+| `search-keyboard-navigation.js` | ~200 | ~8 KB | Keyboard-Navigation für Suchergebnisse (zentralisiert) |
+| `search-input.js` | ~80 | ~3 KB | Debounced Search-Inputs (zentralisiert) |
+
+**Gesamt JavaScript:** ~3,500 Zeilen | ~150 KB
 
 ### Hinweise
 - `org-detail.js` ist mit 1,322 Zeilen das größte Frontend-Modul und könnte weiter aufgeteilt werden
@@ -56,7 +70,16 @@
 | `Utils/UrlHelper.php` | 95 | 2,79 KB | URL-Helper |
 | `Utils/UuidHelper.php` | 77 | 2,17 KB | UUID-Helper |
 
-**Gesamt PHP Infrastructure:** 1,078 Zeilen | 32,04 KB
+### Zentrale Services (Code-Zentralisierung)
+
+| Modul | Zeilen | Größe | Beschreibung |
+|-------|--------|-------|-------------|
+| `Audit/AuditTrailService.php` | ~200 | ~7 KB | Audit-Trail-Service (zentralisiert für org/person) |
+| `Access/AccessTrackingService.php` | ~150 | ~5 KB | Access-Tracking-Service (zentralisiert für org/person) |
+| `Service/BaseEntityService.php` | ~90 | ~3 KB | Basis-Service-Klasse (gemeinsame Patterns) |
+| `Service/SearchQueryHelper.php` | ~100 | ~3 KB | Query-Parsing-Utilities (zentralisiert) |
+
+**Gesamt PHP Infrastructure:** ~1,600 Zeilen | ~50 KB
 
 ---
 
@@ -71,18 +94,25 @@
 | `index.php` | 106 | 3,38 KB | Router |
 | `industries.php` | 48 | 1,68 KB | Branchen |
 | `monitoring.php` | 318 | 8,8 KB | Monitoring |
-| `orgs-recent.php` | 40 | 1,12 KB | Zuletzt verwendete Organisationen |
+| `orgs-recent.php` | 40 | 1,12 KB | Zuletzt verwendete Organisationen (deprecated) |
 | `orgs-search.php` | 47 | 1,78 KB | Organisationssuche |
-| `orgs-track.php` | 40 | 1,2 KB | Organisations-Tracking |
+| `orgs-track.php` | 40 | 1,2 KB | Organisations-Tracking (deprecated) |
 | `orgs.php` | 553 | 23,33 KB | Organisationen (größter Endpoint) |
-| `persons.php` | 50 | 1,43 KB | Personen |
+| `persons.php` | ~200 | ~8 KB | Personen |
 | `plz-lookup.php` | 32 | 0,88 KB | PLZ-Suche |
 | `projects.php` | 91 | 3,22 KB | Projekte |
 | `tasks.php` | 51 | 1,5 KB | Tasks |
 | `users.php` | 144 | 5,92 KB | Benutzer |
 | `workflow.php` | 66 | 2,17 KB | Workflows |
 
-**Gesamt PHP API:** 1,945 Zeilen | 69,48 KB
+### Zentrale API-Handler
+
+| Endpoint | Zeilen | Größe | Beschreibung |
+|----------|--------|-------|-------------|
+| `base-api-handler.php` | ~100 | ~3 KB | Gemeinsame Error-Handling-Funktionen |
+| `access-tracking.php` | ~100 | ~3 KB | Zentrale Access-Tracking-Endpoints (org/person) |
+
+**Gesamt PHP API:** ~2,200 Zeilen | ~75 KB
 
 ### Hinweise
 - `orgs.php` ist mit 553 Zeilen der größte API-Endpoint
@@ -103,7 +133,22 @@
 
 ---
 
-## Empfehlungen für Refactoring
+## Code-Zentralisierung (Abgeschlossen ✅)
+
+Alle 6 Phasen der Code-Zentralisierung wurden erfolgreich umgesetzt:
+
+1. ✅ **Keyboard-Navigation** - `SearchKeyboardNavigationModule`
+2. ✅ **Detail-View-Struktur** - `EntityDetailBaseModule`
+3. ✅ **Basis-Service-Patterns** - `BaseEntityService`
+4. ✅ **API-Error-Handling** - `base-api-handler.php`
+5. ✅ **Search-Input-Handling** - `SearchInputModule`
+6. ✅ **Query-Parsing** - `SearchQueryHelper`
+
+**Ergebnis:** ~500 Zeilen Code reduziert, 6 neue zentrale Komponenten erstellt.
+
+Siehe `docs/REFACTORING-ERGEBNISSE-V2.md` für Details.
+
+## Empfehlungen für weitere Refactorings
 
 ### Priorität 1: Große Module aufteilen
 

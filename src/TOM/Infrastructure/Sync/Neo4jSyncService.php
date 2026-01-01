@@ -239,8 +239,12 @@ class Neo4jSyncService
         $query = "
             MERGE (p:Person {uuid: \$uuid})
             SET p.display_name = \$display_name,
+                p.first_name = \$first_name,
+                p.last_name = \$last_name,
                 p.email = \$email,
                 p.phone = \$phone,
+                p.mobile_phone = \$mobile_phone,
+                p.is_active = \$is_active,
                 p.updated_at = datetime()
             RETURN p
         ";
@@ -248,8 +252,12 @@ class Neo4jSyncService
         $this->neo4j->run($query, [
             'uuid' => $person['person_uuid'],
             'display_name' => $person['display_name'] ?? '',
+            'first_name' => $person['first_name'] ?? null,
+            'last_name' => $person['last_name'] ?? null,
             'email' => $person['email'] ?? null,
-            'phone' => $person['phone'] ?? null
+            'phone' => $person['phone'] ?? null,
+            'mobile_phone' => $person['mobile_phone'] ?? null,
+            'is_active' => $person['is_active'] ?? 1
         ]);
         
         return true;

@@ -178,8 +178,53 @@
                 <canvas id="chart-event-types"></canvas>
             </div>
         </section>
+
+        <!-- Activity Log -->
+        <section class="metrics-section">
+            <h2>Activity Log</h2>
+            <div id="activity-log-list" class="activity-log-list">
+                <div class="loading">Lade Activity Log...</div>
+            </div>
+        </section>
+
+        <!-- Duplicate Check Results -->
+        <section class="metrics-section" id="duplicates-section">
+            <h2>Duplikaten-Prüfung</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">🏢</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="duplicate-org-count">-</div>
+                        <div class="metric-label">Org-Duplikate</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">👤</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="duplicate-person-count">-</div>
+                        <div class="metric-label">Person-Duplikate</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">🔍</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="duplicate-total-count">-</div>
+                        <div class="metric-label">Gesamt</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">🕐</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="duplicate-last-check" style="font-size: 0.875rem;">-</div>
+                        <div class="metric-label">Letzte Prüfung</div>
+                    </div>
+                </div>
+            </div>
+            <div id="duplicates-list" class="duplicates-list"></div>
+        </section>
     </div>
 
+    <script src="js/api.js"></script>
     <script src="js/monitoring.js"></script>
 </body>
 </html>

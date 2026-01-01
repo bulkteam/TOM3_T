@@ -8,6 +8,10 @@ import { AdminModule } from './modules/admin.js';
 import { OrgSearchModule } from './modules/org-search.js';
 import { OrgDetailModule } from './modules/org-detail.js';
 import { OrgFormsModule } from './modules/org-forms.js';
+import { PersonSearchModule } from './modules/person-search.js';
+import { PersonDetailModule } from './modules/person-detail.js';
+import { PersonFormsModule } from './modules/person-forms.js';
+import { MonitoringModule } from './modules/monitoring.js';
 import { Utils } from './modules/utils.js';
 
 class TOM3App {
@@ -20,6 +24,10 @@ class TOM3App {
         this.orgSearch = new OrgSearchModule(this);
         this.orgDetail = new OrgDetailModule(this);
         this.orgForms = new OrgFormsModule(this);
+        this.personSearch = new PersonSearchModule(this);
+        this.personDetail = new PersonDetailModule(this);
+        this.personForms = new PersonFormsModule(this);
+        this.monitoring = new MonitoringModule(this);
         
         this.init();
     }
@@ -60,6 +68,11 @@ class TOM3App {
     setupNavigation() {
         // Navigation-Links mit Event-Listenern versehen
         document.querySelectorAll('.nav-link').forEach(link => {
+            // Überspringe Links ohne data-page (z.B. externe Links wie Monitoring)
+            if (!link.dataset.page) {
+                return;
+            }
+            
             const newLink = link.cloneNode(true);
             link.parentNode.replaceChild(newLink, link);
             
@@ -135,11 +148,18 @@ class TOM3App {
                 // this.loadAccounts();
                 break;
             case 'persons':
-                // this.loadPersons();
+                if (this.personSearch) {
+                    this.personSearch.init();
+                }
                 break;
             case 'admin':
                 if (this.admin) {
                     this.admin.load();
+                }
+                break;
+            case 'monitoring':
+                if (this.monitoring) {
+                    this.monitoring.init();
                 }
                 break;
         }
@@ -264,6 +284,12 @@ class TOM3App {
 // Initialize app
 const app = new TOM3App();
 window.app = app;
+
+
+
+
+
+
 
 
 

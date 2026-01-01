@@ -306,8 +306,8 @@ export class OrgAddressModule {
                 </div>
                 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" id="address-form-cancel">Abbrechen</button>
                     <button type="submit" class="btn btn-success">Speichern</button>
+                    <button type="button" class="btn btn-secondary" id="address-form-cancel">Abbrechen</button>
                 </div>
             </form>
         `;

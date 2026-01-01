@@ -237,8 +237,8 @@ export class OrgVatModule {
                 </div>
                 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" id="vat-form-cancel">Abbrechen</button>
                     <button type="submit" class="btn btn-success">Speichern</button>
+                    <button type="button" class="btn btn-secondary" id="vat-form-cancel">Abbrechen</button>
                 </div>
             </form>
         `;
@@ -267,7 +267,6 @@ export class OrgVatModule {
         }
         
         if (cancelBtn) {
-            console.log('[VAT Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
             // Entferne alten Handler, falls vorhanden
             const formId = form.id || 'form-vat';
             const oldHandler = this._vatCancelHandlers.get(formId);
@@ -277,7 +276,6 @@ export class OrgVatModule {
             
             // Erstelle neuen Handler
             const handler = (e) => {
-                console.log('[VAT Modal] Abbrechen-Button geklickt');
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
@@ -309,18 +307,12 @@ export class OrgVatModule {
                 nullFields: ['valid_from', 'valid_to', 'location_type', 'notes']
             });
             
-            console.log('[VAT Form] Submitting data:', data);
-            console.log('[VAT Form] VAT UUID:', vatUuid, 'Is new:', !vatUuid || vatUuid === '');
-            
             try {
                 if (vatUuid && vatUuid !== '') {
-                    console.log('[VAT Form] Updating existing VAT registration');
                     await window.API.updateOrgVatRegistration(orgUuid, vatUuid, data);
                     Utils.showSuccess('USt-ID erfolgreich aktualisiert');
                 } else {
-                    console.log('[VAT Form] Creating new VAT registration');
-                    const result = await window.API.addOrgVatRegistration(orgUuid, data);
-                    console.log('[VAT Form] VAT registration created:', result);
+                    await window.API.addOrgVatRegistration(orgUuid, data);
                     Utils.showSuccess('USt-ID erfolgreich hinzugefügt');
                 }
                 Utils.closeSpecificModal('modal-vat');

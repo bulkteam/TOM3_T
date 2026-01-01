@@ -11,7 +11,6 @@ export class OrgDetailEditModule {
     }
     
     async toggleOrgEditMode(orgUuid) {
-        console.log('[OrgDetailEdit] ===== toggleOrgEditMode called =====', orgUuid);
         // Zeige Eingabefelder, verstecke Werte
         document.querySelectorAll(`[data-org-uuid="${orgUuid}"] .org-detail-value`).forEach(el => {
             el.style.display = 'none';
@@ -35,16 +34,8 @@ export class OrgDetailEditModule {
         const industryValue = document.getElementById('org-field-industry');
         const industryMainInput = document.getElementById('org-input-industry_main');
         const industrySubInput = document.getElementById('org-input-industry_sub');
-        console.log('[OrgDetailEdit] Industry inputs found:', {
-            value: industryValue,
-            main: industryMainInput,
-            sub: industrySubInput,
-            mainId: industryMainInput?.id,
-            subId: industrySubInput?.id
-        });
         
         if (industryValue && industryMainInput && industrySubInput) {
-            console.log('[OrgDetailEdit] All industry elements found, setting up...');
             industryValue.style.display = 'none';
             const industryInputContainer = industryMainInput.parentElement;
             if (industryInputContainer) {
@@ -52,20 +43,15 @@ export class OrgDetailEditModule {
             }
             
             // Setze Abhängigkeit (ohne Klonen, da Element nur einmal erstellt wird)
-            console.log('[OrgDetailEdit] Setting up dependency...');
             const mainInput = Utils.setupIndustryDependency(industryMainInput, industrySubInput, false);
-            console.log('[OrgDetailEdit] Dependency setup completed, mainInput:', mainInput);
             
             // Lade Hauptbranchen
             if (mainInput) {
-                console.log('[OrgDetailEdit] Loading main classes...');
                 await Utils.loadIndustryMainClasses(mainInput);
-                console.log('[OrgDetailEdit] Main classes loaded');
                 
                 // Setze aktuelle Werte
                 const currentMainUuid = industryMainInput.dataset.currentMainUuid;
                 const currentSubUuid = industrySubInput.dataset.currentSubUuid;
-                console.log('[OrgDetailEdit] Current values:', { currentMainUuid, currentSubUuid });
                 if (currentMainUuid) {
                     mainInput.value = currentMainUuid;
                     if (currentMainUuid) {
@@ -75,15 +61,7 @@ export class OrgDetailEditModule {
                         }
                     }
                 }
-            } else {
-                console.error('[OrgDetailEdit] mainInput is null!');
             }
-        } else {
-            console.error('[OrgDetailEdit] Industry elements not found!', {
-                value: industryValue,
-                main: industryMainInput,
-                sub: industrySubInput
-            });
         }
         
         const actions = document.getElementById('org-edit-actions');
@@ -200,12 +178,22 @@ export class OrgDetailEditModule {
             notes: document.getElementById('org-input-notes')?.value || null,
             account_owner_user_id: selectedAccountOwnerId,
             industry_main_uuid: document.getElementById('org-input-industry_main')?.value || null,
-            industry_sub_uuid: document.getElementById('org-input-industry_sub')?.value || null
+            industry_sub_uuid: document.getElementById('org-input-industry_sub')?.value || null,
+            revenue_range: document.getElementById('org-input-revenue_range')?.value || null,
+            employee_count: document.getElementById('org-input-employee_count')?.value || null
         };
         
-        // Entferne leere Werte
+        // Entferne leere Werte (außer employee_count, das kann 0 sein)
         Object.keys(data).forEach(key => {
-            if (data[key] === null || data[key] === '') {
+            if (key === 'employee_count') {
+                // employee_count kann 0 sein, also nur null/undefined entfernen
+                if (data[key] === null || data[key] === undefined || data[key] === '') {
+                    delete data[key];
+                } else {
+                    // Konvertiere zu Zahl
+                    data[key] = parseInt(data[key], 10);
+                }
+            } else if (data[key] === null || data[key] === '') {
                 delete data[key];
             }
         });
@@ -259,6 +247,25 @@ export class OrgDetailEditModule {
                 if (selectedOption) {
                     statusValue.textContent = selectedOption.textContent;
                 }
+            }
+            
+            // Aktualisiere Umsatzgröße und Mitarbeiterzahl
+            const revenueRangeValue = document.getElementById('org-field-revenue_range');
+            const revenueRangeInput = document.getElementById('org-input-revenue_range');
+            if (revenueRangeValue && revenueRangeInput) {
+                const value = revenueRangeInput.value.trim();
+                revenueRangeValue.innerHTML = value 
+                    ? Utils.escapeHtml(value) 
+                    : '<span class="org-detail-empty">-</span>';
+            }
+            
+            const employeeCountValue = document.getElementById('org-field-employee_count');
+            const employeeCountInput = document.getElementById('org-input-employee_count');
+            if (employeeCountValue && employeeCountInput) {
+                const value = employeeCountInput.value.trim();
+                employeeCountValue.innerHTML = value 
+                    ? Utils.escapeHtml(String(value)) 
+                    : '<span class="org-detail-empty">-</span>';
             }
             
             // Aktualisiere die Anzeige (lädt die komplette Ansicht neu)

@@ -5,8 +5,12 @@
 // Helper: Ermittelt den Base-Path der Anwendung
 function getBasePath() {
     const path = window.location.pathname;
-    // Entferne index.html, login.php oder trailing slash
-    const base = path.replace(/\/index\.html$/, '').replace(/\/login\.php$/, '').replace(/\/$/, '');
+    // Entferne index.html, login.php, monitoring.html oder trailing slash
+    const base = path
+        .replace(/\/index\.html$/, '')
+        .replace(/\/login\.php$/, '')
+        .replace(/\/monitoring\.html$/, '')
+        .replace(/\/$/, '');
     return base || '';
 }
 
@@ -209,6 +213,77 @@ class TOM3API {
     async getOrgDetails(orgUuid) {
         return this.request(`/orgs/${orgUuid}/details`);
     }
+
+    // Persons
+    async searchPersons(query = '', limit = 50) {
+        if (!query) {
+            return this.request(`/persons`);
+        }
+        return this.request(`/persons/search?q=${encodeURIComponent(query)}`);
+    }
+
+    async getPerson(personUuid) {
+        return this.request(`/persons/${personUuid}`);
+    }
+
+    async createPerson(data) {
+        return this.request('/persons', {
+            method: 'POST',
+            body: data
+        });
+    }
+
+    async updatePerson(personUuid, data) {
+        return this.request(`/persons/${personUuid}`, {
+            method: 'PUT',
+            body: data
+        });
+    }
+
+    async getPersonAffiliations(personUuid, includeInactive = false) {
+        const params = includeInactive ? '?include_inactive=true' : '';
+        return this.request(`/persons/${personUuid}/affiliations${params}`);
+    }
+
+    async createPersonAffiliation(personUuid, data) {
+        return this.request(`/persons/${personUuid}/affiliations`, {
+            method: 'POST',
+            body: data
+        });
+    }
+
+    async getPersonAuditTrail(personUuid, limit = 100) {
+        return this.request(`/persons/${personUuid}/audit-trail?limit=${limit}`);
+    }
+
+    async getPersonRelationships(personUuid, includeInactive = false) {
+        const params = includeInactive ? '?include_inactive=true' : '';
+        return this.request(`/persons/${personUuid}/relationships${params}`);
+    }
+
+    async createPersonRelationship(personUuid, data) {
+        return this.request(`/persons/${personUuid}/relationships`, {
+            method: 'POST',
+            body: data
+        });
+    }
+
+    async deletePersonRelationship(relationshipUuid) {
+        return this.request(`/persons/relationships?relationship_uuid=${relationshipUuid}`, {
+            method: 'DELETE'
+        });
+    }
+
+    async getOrgUnits(orgUuid) {
+        return this.request(`/persons/org-units?org_uuid=${orgUuid}`);
+    }
+
+    async createOrgUnit(data) {
+        return this.request('/persons/org-units', {
+            method: 'POST',
+            body: data
+        });
+    }
     
     // Addresses
     async getOrgAddresses(orgUuid, addressType = null) {
@@ -312,6 +387,20 @@ class TOM3API {
     
     async getOrgAuditTrail(orgUuid, limit = 100) {
         return this.request(`/orgs/${orgUuid}/audit-trail?limit=${limit}`);
+    }
+    
+    // Activity-Log API
+    async getActivityLog(filters = {}, limit = 100, offset = 0) {
+        const params = new URLSearchParams({ limit, offset, ...filters });
+        return this.request(`/activity-log?${params.toString()}`);
+    }
+    
+    async getUserActivities(userId, limit = 50, offset = 0) {
+        return this.request(`/activity-log/user/${userId}?limit=${limit}&offset=${offset}`);
+    }
+    
+    async getEntityActivities(entityType, entityUuid, limit = 50) {
+        return this.request(`/activity-log/entity/${entityType}/${entityUuid}?limit=${limit}`);
     }
     
     async archiveOrg(orgUuid, userId = 'default_user') {
@@ -528,6 +617,48 @@ class TOM3API {
 
     async getEventTypesDistribution() {
         return this.request('/monitoring/event-types');
+    }
+
+    async getDuplicateCheckResults() {
+        return this.request('/monitoring/duplicates');
+    }
+    
+    async getMonitoringActivityLog(limit = 100) {
+        return this.request(`/monitoring/activity-log?limit=${limit}`);
+    }
+    
+    async getRecentPersons(userId = 'default_user', limit = 10) {
+        return this.request(`/persons/recent?user_id=${userId}&limit=${limit}`);
+    }
+    
+    async trackPersonAccess(personUuid, userId = 'default_user', accessType = 'recent') {
+        return this.request('/persons/track', {
+            method: 'POST',
+            body: {
+                person_uuid: personUuid,
+                user_id: userId,
+                access_type: accessType
+            }
+        });
+    }
+    
+    /**
+     * Zentrale API-Methoden für Access-Tracking (ersetzt getRecentOrgs/getRecentPersons)
+     */
+    async getRecentEntities(entityType, userId = 'default_user', limit = 10) {
+        return this.request(`/access-tracking/${entityType}/recent?user_id=${userId}&limit=${limit}`);
+    }
+    
+    async trackEntityAccess(entityType, entityUuid, userId = 'default_user', accessType = 'recent') {
+        const uuidField = entityType === 'org' ? 'org_uuid' : 'person_uuid';
+        return this.request(`/access-tracking/${entityType}/track`, {
+            method: 'POST',
+            body: {
+                [uuidField]: entityUuid,
+                user_id: userId,
+                access_type: accessType
+            }
+        });
     }
 }
 

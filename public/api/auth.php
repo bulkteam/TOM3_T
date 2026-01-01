@@ -16,6 +16,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Infrastructure\Auth\AuthService;
+use TOM\Infrastructure\Activity\ActivityLogService;
 
 // Set headers before any output
 if (!headers_sent()) {
@@ -23,7 +24,8 @@ if (!headers_sent()) {
 }
 
 try {
-    $auth = new AuthService();
+    $activityLogService = new ActivityLogService();
+    $auth = new AuthService(null, $activityLogService);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([

@@ -9,9 +9,11 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Infrastructure\Auth\AuthService;
+use TOM\Infrastructure\Activity\ActivityLogService;
 
 try {
-    $auth = new AuthService();
+    $activityLogService = new ActivityLogService();
+    $auth = new AuthService(null, $activityLogService);
     $auth->logout();
 } catch (Exception $e) {
     // Ignoriere Fehler beim Logout

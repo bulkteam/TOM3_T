@@ -5,19 +5,27 @@ namespace TOM\Service;
 
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Service\User\UserRoleService;
+use TOM\Service\User\UserPermissionService;
 
 /**
- * UserService - Verwaltung von Usern und Rollen
+ * UserService - Verwaltung von Usern
  * 
  * Lädt User-Definitionen aus der Datenbank (users Tabelle)
+ * Rollen-Management ist in UserRoleService ausgelagert
+ * Permission-Prüfungen sind in UserPermissionService ausgelagert
  */
 class UserService
 {
     private PDO $db;
+    private UserRoleService $roleService;
+    private UserPermissionService $permissionService;
     
     public function __construct(?PDO $db = null)
     {
         $this->db = $db ?? DatabaseConnection::getInstance();
+        $this->roleService = new UserRoleService($this->db);
+        $this->permissionService = new UserPermissionService($this->db, $this->roleService);
     }
     
     /**
@@ -123,23 +131,16 @@ class UserService
         return $user;
     }
     
+    // ============================================================================
+    // ROLE MANAGEMENT (delegiert an UserRoleService)
+    // ============================================================================
+    
     /**
      * Hole alle Workflow-Rollen eines Users
      */
     public function getUserWorkflowRoles($userId): array
     {
-        $userIdInt = (int)$userId;
-        
-        $stmt = $this->db->prepare("
-            SELECT wr.role_code
-            FROM user_workflow_role uwr
-            JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
-            WHERE uwr.user_id = :user_id
-            ORDER BY wr.role_code
-        ");
-        $stmt->execute(['user_id' => $userIdInt]);
-        
-        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'role_code');
+        return $this->roleService->getUserWorkflowRoles($userId);
     }
     
     /**
@@ -147,8 +148,7 @@ class UserService
      */
     public function userHasWorkflowRole($userId, string $role): bool
     {
-        $roles = $this->getUserWorkflowRoles($userId);
-        return in_array($role, $roles, true);
+        return $this->roleService->userHasWorkflowRole($userId, $role);
     }
     
     /**
@@ -156,24 +156,7 @@ class UserService
      */
     public function getAvailableWorkflowRoles(): array
     {
-        $stmt = $this->db->query("
-            SELECT workflow_role_id, role_code, role_name, description
-            FROM workflow_role
-            ORDER BY role_code
-        ");
-        
-        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Konvertiere zu altem Format für Kompatibilität
-        $result = [];
-        foreach ($roles as $role) {
-            $result[$role['role_code']] = [
-                'name' => $role['role_name'],
-                'description' => $role['description']
-            ];
-        }
-        
-        return $result;
+        return $this->roleService->getAvailableWorkflowRoles();
     }
     
     /**
@@ -181,24 +164,7 @@ class UserService
      */
     public function getAvailableAccountTeamRoles(): array
     {
-        $stmt = $this->db->query("
-            SELECT account_team_role_id, role_code, role_name, description
-            FROM account_team_role
-            ORDER BY role_code
-        ");
-        
-        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Konvertiere zu altem Format für Kompatibilität
-        $result = [];
-        foreach ($roles as $role) {
-            $result[$role['role_code']] = [
-                'name' => $role['role_name'],
-                'description' => $role['description']
-            ];
-        }
-        
-        return $result;
+        return $this->roleService->getAvailableAccountTeamRoles();
     }
     
     /**
@@ -206,24 +172,7 @@ class UserService
      */
     public function getAvailablePermissionRoles(): array
     {
-        $stmt = $this->db->query("
-            SELECT role_code, role_name, description
-            FROM role
-            ORDER BY role_code
-        ");
-        
-        $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Konvertiere zu altem Format für Kompatibilität
-        $result = [];
-        foreach ($roles as $role) {
-            $result[$role['role_code']] = [
-                'name' => $role['role_name'],
-                'description' => $role['description']
-            ];
-        }
-        
-        return $result;
+        return $this->roleService->getAvailablePermissionRoles();
     }
     
     /**
@@ -231,29 +180,12 @@ class UserService
      */
     public function getUsersByWorkflowRole(string $role): array
     {
-        $stmt = $this->db->prepare("
-            SELECT 
-                u.user_id,
-                u.email,
-                u.name,
-                u.is_active
-            FROM users u
-            JOIN user_workflow_role uwr ON u.user_id = uwr.user_id
-            JOIN workflow_role wr ON uwr.workflow_role_id = wr.workflow_role_id
-            WHERE wr.role_code = :role_code AND u.is_active = 1
-            ORDER BY u.name
-        ");
-        $stmt->execute(['role_code' => $role]);
-        
-        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Konvertiere user_id zu String für Kompatibilität
-        foreach ($users as &$user) {
-            $user['user_id'] = (string)$user['user_id'];
-        }
-        
-        return $users;
+        return $this->roleService->getUsersByWorkflowRole($role);
     }
+    
+    // ============================================================================
+    // PERMISSION MANAGEMENT (delegiert an UserPermissionService)
+    // ============================================================================
     
     /**
      * Prüfe, ob ein User als Account Owner fungieren kann
@@ -262,8 +194,7 @@ class UserService
      */
     public function canUserBeAccountOwner($userId): bool
     {
-        $user = $this->getUser($userId);
-        return $user !== null; // Alle aktiven User können Account Owner sein
+        return $this->permissionService->canUserBeAccountOwner($userId, [$this, 'getUser']);
     }
     
     /**
@@ -272,26 +203,8 @@ class UserService
     public function getUserPermissionRole($userId): ?string
     {
         $user = $this->getUser($userId);
-        if (!$user || empty($user['roles'])) {
-            return null;
-        }
-        
-        // Priorität: admin > manager > user > readonly
-        $priority = ['admin' => 4, 'manager' => 3, 'user' => 2, 'readonly' => 1];
-        $userRoles = $user['roles'];
-        
-        $highestRole = null;
-        $highestPriority = 0;
-        
-        foreach ($userRoles as $role) {
-            $rolePriority = $priority[$role] ?? 0;
-            if ($rolePriority > $highestPriority) {
-                $highestPriority = $rolePriority;
-                $highestRole = $role;
-            }
-        }
-        
-        return $highestRole;
+        $userRoles = $user['roles'] ?? null;
+        return $this->permissionService->getUserPermissionRole($userId, $userRoles);
     }
     
     /**
@@ -299,15 +212,9 @@ class UserService
      */
     public function userHasPermission($userId, string $permission): bool
     {
-        $userRole = $this->getUserPermissionRole($userId);
-        
-        // Admin hat alle Berechtigungen
-        if ($userRole === 'admin') {
-            return true;
-        }
-        
-        // Spezifische Berechtigungen
-        return $userRole === $permission;
+        $user = $this->getUser($userId);
+        $userRoles = $user['roles'] ?? null;
+        return $this->permissionService->userHasPermission($userId, $permission, $userRoles);
     }
     
     /**
@@ -318,26 +225,7 @@ class UserService
      */
     private function hasActiveAdmin(?int $excludeUserId = null): bool
     {
-        $sql = "
-            SELECT COUNT(*) as admin_count
-            FROM users u
-            JOIN user_role ur ON u.user_id = ur.user_id
-            JOIN role r ON ur.role_id = r.role_id
-            WHERE r.role_code = 'admin' 
-              AND u.is_active = 1
-        ";
-        
-        $params = [];
-        if ($excludeUserId !== null) {
-            $sql .= " AND u.user_id != :exclude_user_id";
-            $params['exclude_user_id'] = $excludeUserId;
-        }
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        return (int)($result['admin_count'] ?? 0) > 0;
+        return $this->permissionService->hasActiveAdmin($excludeUserId);
     }
     
     /**

@@ -36,7 +36,14 @@ if ($existingTask) {
 }
 
 # Erstelle Task-Action
-$action = New-ScheduledTaskAction -Execute $ScriptPath
+# Verwende VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
+$vbsWrapper = Join-Path $PSScriptRoot "sync-neo4j-worker.vbs"
+if (Test-Path $vbsWrapper) {
+    $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsWrapper`""
+} else {
+    # Fallback: Batch-Script direkt (kann kurz aufblinken)
+    $action = New-ScheduledTaskAction -Execute $ScriptPath
+}
 
 # Erstelle Task-Trigger (alle X Minuten)
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) -RepetitionDuration (New-TimeSpan -Days 365)

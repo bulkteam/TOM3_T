@@ -12,6 +12,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Infrastructure\Auth\AuthService;
+use TOM\Infrastructure\Activity\ActivityLogService;
 
 $authMode = getenv('AUTH_MODE') ?: 'dev';
 if ($authMode !== 'dev') {
@@ -20,7 +21,8 @@ if ($authMode !== 'dev') {
 }
 
 try {
-    $auth = new AuthService();
+    $activityLogService = new ActivityLogService();
+    $auth = new AuthService(null, $activityLogService);
 } catch (Exception $e) {
     http_response_code(500);
     die('Auth service initialization failed: ' . $e->getMessage());
@@ -150,7 +152,7 @@ $users = $auth->getActiveUsers();
                     </select>
                 </div>
                 
-                <button type="submit" class="btn btn-primary">Anmelden</button>
+                <button type="submit" class="btn btn-success">Anmelden</button>
             </form>
             
             <div class="dev-badge">

@@ -210,8 +210,8 @@ export class OrgChannelModule {
                 </div>
                 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" id="channel-form-cancel">Abbrechen</button>
                     <button type="submit" class="btn btn-success">Speichern</button>
+                    <button type="button" class="btn btn-secondary" id="channel-form-cancel">Abbrechen</button>
                 </div>
             </form>
         `;
@@ -240,7 +240,6 @@ export class OrgChannelModule {
         }
         
         if (cancelBtn) {
-            console.log('[Channel Modal] Abbrechen-Button gefunden, setze Handler', cancelBtn);
             // Entferne alten Handler, falls vorhanden
             const formId = form.id || 'form-channel';
             const oldHandler = this._channelCancelHandlers.get(formId);
@@ -250,7 +249,6 @@ export class OrgChannelModule {
             
             // Erstelle neuen Handler
             const handler = (e) => {
-                console.log('[Channel Modal] Abbrechen-Button geklickt');
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();

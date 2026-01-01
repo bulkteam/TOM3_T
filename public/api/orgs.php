@@ -3,28 +3,8 @@
  * TOM3 - Orgs API
  */
 
-// Fehler als JSON ausgeben, nicht als HTML
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-
-// Content-Type auf JSON setzen
-header('Content-Type: application/json; charset=utf-8');
-
-// Shutdown Handler für Fatal Errors
-register_shutdown_function(function() {
-    $error = error_get_last();
-    if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-        http_response_code(500);
-        echo json_encode([
-            'error' => 'Fatal error',
-            'message' => $error['message'],
-            'file' => basename($error['file']),
-            'line' => $error['line']
-        ]);
-        exit;
-    }
-});
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
 
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
@@ -293,8 +273,15 @@ switch ($method) {
                 exit;
             }
             $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->createOrg($data, $userId);
-            echo json_encode($result);
+            try {
+                $result = $orgService->createOrg($data, $userId);
+                http_response_code(201);
+                // Warnungen werden im Ergebnis mit _warnings Feld zurückgegeben
+                echo json_encode($result);
+            } catch (\InvalidArgumentException $e) {
+                http_response_code(409); // Conflict
+                echo json_encode(['error' => $e->getMessage()]);
+            }
         }
         break;
         

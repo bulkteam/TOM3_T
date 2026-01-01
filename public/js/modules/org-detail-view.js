@@ -226,18 +226,20 @@ export class OrgDetailViewModule {
                                 </select>
                             </div>
                         </div>
-                        ${org.revenue_range ? `
-                            <div class="org-detail-item">
-                                <strong>Umsatzgröße:</strong>
-                                <div class="org-detail-value">${Utils.escapeHtml(org.revenue_range || '-')}</div>
+                        <div class="org-detail-item">
+                            <strong>Umsatzgröße:</strong>
+                            <div class="org-detail-value" id="org-field-revenue_range">
+                                ${org.revenue_range ? Utils.escapeHtml(org.revenue_range) : '<span class="org-detail-empty">-</span>'}
                             </div>
-                        ` : ''}
-                        ${org.employee_count ? `
-                            <div class="org-detail-item">
-                                <strong>Mitarbeiter (ca.):</strong>
-                                <div class="org-detail-value">${Utils.escapeHtml(String(org.employee_count || '-'))}</div>
+                            <input type="text" class="org-detail-input" id="org-input-revenue_range" value="${Utils.escapeHtml(org.revenue_range || '')}" style="display: none;" placeholder="z.B. 1-10 Mio. EUR">
+                        </div>
+                        <div class="org-detail-item">
+                            <strong>Mitarbeiter (ca.):</strong>
+                            <div class="org-detail-value" id="org-field-employee_count">
+                                ${org.employee_count ? Utils.escapeHtml(String(org.employee_count)) : '<span class="org-detail-empty">-</span>'}
                             </div>
-                        ` : ''}
+                            <input type="number" class="org-detail-input" id="org-input-employee_count" value="${org.employee_count || ''}" style="display: none;" placeholder="z.B. 50" min="0">
+                        </div>
                     </div>
                     
                     <!-- Notizen in Grunddaten-Sektion (vor Adressen, im Edit-Modus oberhalb der Buttons) -->

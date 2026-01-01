@@ -5,6 +5,7 @@ namespace TOM\Infrastructure\Auth;
 
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Activity\ActivityLogService;
 
 /**
  * AuthService - Session-basierte Authentifizierung
@@ -17,10 +18,12 @@ class AuthService
     private PDO $db;
     private string $authMode;
     private string $appEnv;
+    private ?ActivityLogService $activityLogService = null;
     
-    public function __construct(?PDO $db = null)
+    public function __construct(?PDO $db = null, ?ActivityLogService $activityLogService = null)
     {
         $this->db = $db ?? DatabaseConnection::getInstance();
+        $this->activityLogService = $activityLogService;
         $this->authMode = getenv('AUTH_MODE') ?: 'dev';
         $this->appEnv = getenv('APP_ENV') ?: 'local';
         
@@ -198,6 +201,11 @@ class AuthService
         ");
         $stmt->execute(['user_id' => $userId]);
         
+        // Logge Login in Activity-Log
+        if ($this->activityLogService) {
+            $this->activityLogService->logLogin((string)$userId);
+        }
+        
         return true;
     }
     
@@ -206,6 +214,11 @@ class AuthService
      */
     public function logout(): void
     {
+        // Logge Logout in Activity-Log (vor Session-Löschung)
+        if ($this->activityLogService && isset($_SESSION['user_id'])) {
+            $this->activityLogService->logLogout((string)$_SESSION['user_id']);
+        }
+        
         $_SESSION = [];
         
         // Cookie löschen

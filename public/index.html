@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TOM3 - Vorgangssteuerung</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/monitoring.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -39,7 +41,7 @@
                 <li><a href="#persons" class="nav-link" data-page="persons">
                     <span class="icon">👤</span> Personen
                 </a></li>
-                <li><a href="monitoring.html" class="nav-link" target="_blank">
+                <li><a href="#monitoring" class="nav-link" data-page="monitoring">
                     <span class="icon">🔍</span> Monitoring
                 </a></li>
                 <li id="admin-menu-item" style="display: none;">
@@ -144,6 +146,44 @@
                         <button class="modal-close">&times;</button>
                     </div>
                     <div class="modal-body" id="modal-org-body">
+                        <!-- Wird dynamisch gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Person Detail Modal (Stammdatenblatt) -->
+            <div id="modal-person-detail" class="modal">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3 id="modal-person-title">Person Details</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modal-person-body">
+                        <!-- Wird dynamisch gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create/Edit Person Modal -->
+            <div id="modal-create-person" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-create-person-title">Neue Person</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modal-create-person-body">
+                        <!-- Wird dynamisch gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="modal-edit-person" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-edit-person-title">Person bearbeiten</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modal-edit-person-body">
                         <!-- Wird dynamisch gefüllt -->
                     </div>
                 </div>
@@ -287,8 +327,8 @@
                             </div>
 
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" id="btn-cancel-relation">Abbrechen</button>
                                 <button type="submit" class="btn btn-success" id="btn-submit-relation">Speichern</button>
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-relation">Abbrechen</button>
                             </div>
                         </form>
                     </div>
@@ -372,8 +412,8 @@
                             </div>
                             
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                                 <button type="submit" class="btn btn-success">Speichern</button>
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                             </div>
                         </form>
                     </div>
@@ -434,8 +474,8 @@
                             </div>
                             
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                                 <button type="submit" class="btn btn-success">Speichern</button>
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                             </div>
                         </form>
                     </div>
@@ -515,8 +555,8 @@
                             </div>
                             
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                                 <button type="submit" class="btn btn-success">Speichern</button>
+                                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Abbrechen</button>
                             </div>
                         </form>
                     </div>
@@ -620,8 +660,8 @@
                             </div>
 
                             <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" id="btn-cancel-create-org">Abbrechen</button>
                                 <button type="submit" class="btn btn-success" id="btn-submit-create-org">Organisation anlegen</button>
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-create-org">Abbrechen</button>
                             </div>
                         </form>
                     </div>
@@ -764,13 +804,32 @@
                 </div>
             </div>
 
-            <!-- Persons Page -->
-            <div id="page-persons" class="page">
-                <div class="page-header">
-                    <h2>Personen</h2>
+            <!-- Persons Page - Search-first Design -->
+            <div id="page-persons" class="page person-search-page">
+                <div class="person-search-header">
+                    <h1>Person finden</h1>
                     <button class="btn btn-primary" id="btn-create-person">+ Neue Person</button>
                 </div>
-                <div id="persons-list" class="person-list"></div>
+                
+                <!-- Hauptsuchfeld (Search-first) -->
+                <div class="person-main-search">
+                    <div class="search-box-large">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="person-search-input" class="person-search-input-large" 
+                               placeholder="Person suchen …" 
+                               autocomplete="off">
+                        <div id="person-search-results" class="person-search-results-large"></div>
+                    </div>
+                    <div class="search-hint">
+                        (Name, E-Mail, Firma)
+                    </div>
+                </div>
+                
+                <!-- Zuletzt verwendet Sektion -->
+                <div id="person-recent-section" class="person-recent-section">
+                    <h3>Zuletzt angesehen</h3>
+                    <div id="person-recent-list" class="person-recent-list"></div>
+                </div>
             </div>
 
             <!-- Accounts Page (Account Dashboard) -->
@@ -830,6 +889,100 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Monitoring Dashboard -->
+            <div id="page-monitoring" class="page">
+                <div class="page-header">
+                    <h2>Monitoring Dashboard</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" id="monitoring-btn-refresh">Aktualisieren</button>
+                        <label class="auto-refresh-toggle">
+                            <input type="checkbox" id="monitoring-auto-refresh" checked>
+                            <span>Auto-Refresh (30s)</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div id="monitoring-content" class="monitoring-content">
+                    <!-- System Status -->
+                    <section class="status-section">
+                        <h3>System Status</h3>
+                        <div class="status-grid">
+                            <div class="status-card" id="status-database">
+                                <div class="status-indicator" data-status="unknown"></div>
+                                <div class="status-content">
+                                    <div class="status-label">MySQL</div>
+                                    <div class="status-value" id="db-status">Prüfe...</div>
+                                </div>
+                            </div>
+                            <div class="status-card" id="status-neo4j">
+                                <div class="status-indicator" data-status="unknown"></div>
+                                <div class="status-content">
+                                    <div class="status-label">Neo4j</div>
+                                    <div class="status-value" id="neo4j-status">Prüfe...</div>
+                                </div>
+                            </div>
+                            <div class="status-card" id="status-sync">
+                                <div class="status-indicator" data-status="unknown"></div>
+                                <div class="status-content">
+                                    <div class="status-label">Sync-Worker</div>
+                                    <div class="status-value" id="sync-status">Prüfe...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Outbox Metrics -->
+                    <section class="metrics-section">
+                        <h3>Outbox Events</h3>
+                        <div id="outbox-metrics" class="metrics-grid"></div>
+                        <div class="chart-container">
+                            <canvas id="chart-outbox"></canvas>
+                        </div>
+                    </section>
+
+                    <!-- Case Statistics -->
+                    <section class="metrics-section">
+                        <h3>Vorgangs-Statistiken</h3>
+                        <div id="case-statistics" class="metrics-grid"></div>
+                        <div class="chart-container">
+                            <canvas id="chart-cases"></canvas>
+                        </div>
+                    </section>
+
+                    <!-- Sync Statistics -->
+                    <section class="metrics-section">
+                        <h3>Neo4j Sync-Statistiken</h3>
+                        <div id="sync-statistics" class="metrics-grid"></div>
+                    </section>
+
+                    <!-- Recent Errors -->
+                    <section class="metrics-section">
+                        <h3>Letzte Fehler</h3>
+                        <div id="recent-errors-list" class="errors-list"></div>
+                    </section>
+
+                    <!-- Event Types Distribution -->
+                    <section class="metrics-section">
+                        <h3>Event-Typen-Verteilung (24h)</h3>
+                        <div class="chart-container">
+                            <canvas id="chart-events"></canvas>
+                        </div>
+                    </section>
+
+                    <!-- Activity Log -->
+                    <section class="metrics-section">
+                        <h3>Activity Log</h3>
+                        <div id="activity-log-list" class="activity-log-list"></div>
+                    </section>
+
+                    <!-- Duplicate Check Results -->
+                    <section class="metrics-section" id="duplicates-section">
+                        <h3>Duplikaten-Prüfung</h3>
+                        <div id="duplicates-list" class="duplicates-list"></div>
+                    </section>
+                </div>
+            </div>
         </main>
     </div>
     
@@ -837,6 +990,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="js/api.js"></script>
+    <script src="js/monitoring.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 </html>

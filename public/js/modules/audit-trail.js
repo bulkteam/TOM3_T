@@ -12,13 +12,21 @@ export class AuditTrailModule {
         this._auditTrailCloseHandler = null;
     }
     
-    async showAuditTrail(orgUuid, orgName) {
+    async showAuditTrail(entityUuid, entityName, entityType = 'org') {
         try {
             // Lade Audit-Trail-Daten
-            const auditTrail = await window.API.getOrgAuditTrail(orgUuid, 200);
+            let auditTrail;
+            if (entityType === 'org') {
+                auditTrail = await window.API.getOrgAuditTrail(entityUuid, 200);
+            } else if (entityType === 'person') {
+                auditTrail = await window.API.getPersonAuditTrail(entityUuid, 200);
+            } else {
+                throw new Error(`Unbekannter Entity-Typ: ${entityType}`);
+            }
             
             // Erstelle oder hole Modal
-            const modal = Utils.getOrCreateModal('modal-audit-trail', `Audit-Trail: ${Utils.escapeHtml(orgName || 'Organisation')}`);
+            const entityLabel = entityType === 'org' ? 'Organisation' : 'Person';
+            const modal = Utils.getOrCreateModal('modal-audit-trail', `Audit-Trail: ${Utils.escapeHtml(entityName || entityLabel)}`);
             
             const modalBody = modal.querySelector('.modal-body');
             if (!modalBody) {
@@ -26,7 +34,7 @@ export class AuditTrailModule {
             }
             
             // Rendere Audit-Trail
-            modalBody.innerHTML = this.renderAuditTrail(auditTrail, orgUuid);
+            modalBody.innerHTML = this.renderAuditTrail(auditTrail, entityUuid);
             
             // Überschreibe Close-Button-Handler, damit nur dieses Modal geschlossen wird
             const closeBtn = modal.querySelector('.modal-close');
@@ -41,11 +49,19 @@ export class AuditTrailModule {
                     e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
-                    const orgDetailModal = document.getElementById('modal-org-detail');
-                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                        // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
-                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                            this.app.orgDetail.showOrgDetail(orgUuid);
+                    if (entityType === 'org') {
+                        const orgDetailModal = document.getElementById('modal-org-detail');
+                        if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                            if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                                this.app.orgDetail.showOrgDetail(entityUuid);
+                            }
+                        }
+                    } else if (entityType === 'person') {
+                        const personDetailModal = document.getElementById('modal-person-detail');
+                        if (!personDetailModal || !personDetailModal.classList.contains('active')) {
+                            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                                this.app.personDetail.showPersonDetail(entityUuid);
+                            }
                         }
                     }
                     return false;
@@ -62,11 +78,19 @@ export class AuditTrailModule {
                     e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
-                    const orgDetailModal = document.getElementById('modal-org-detail');
-                    if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                        // Falls das Stammdaten-Modal geschlossen wurde, öffne es wieder
-                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                            this.app.orgDetail.showOrgDetail(orgUuid);
+                    if (entityType === 'org') {
+                        const orgDetailModal = document.getElementById('modal-org-detail');
+                        if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
+                            if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                                this.app.orgDetail.showOrgDetail(entityUuid);
+                            }
+                        }
+                    } else if (entityType === 'person') {
+                        const personDetailModal = document.getElementById('modal-person-detail');
+                        if (!personDetailModal || !personDetailModal.classList.contains('active')) {
+                            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                                this.app.personDetail.showPersonDetail(entityUuid);
+                            }
                         }
                     }
                     return false;
@@ -144,10 +168,88 @@ export class AuditTrailModule {
             const metadata = entry.metadata ? JSON.parse(entry.metadata) : {};
             const oldArchivedAt = metadata.archived_at ? new Date(metadata.archived_at).toLocaleString('de-DE') : '';
             changeDetails = `<div class="audit-trail-change">Organisation reaktiviert${oldArchivedAt ? ` (war archiviert am ${oldArchivedAt})` : ''}</div>`;
-        } else if (entry.metadata) {
+        } else if (entry.change_type === 'vat_added') {
+            // Verwende new_value wenn vorhanden, sonst formatiere metadata
+            if (entry.new_value) {
+                changeDetails = `<div class="audit-trail-change">USt-ID hinzugefügt: ${Utils.escapeHtml(entry.new_value)}</div>`;
+            } else {
+                try {
+                    const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                    const vatId = metadata.vat_id || '';
+                    const countryCode = metadata.country_code || '';
+                    const countryName = this.getCountryName(countryCode);
+                    changeDetails = `<div class="audit-trail-change">USt-ID hinzugefügt: ${Utils.escapeHtml(vatId)} (${Utils.escapeHtml(countryName)})</div>`;
+                } catch (e) {
+                    changeDetails = `<div class="audit-trail-change">USt-ID hinzugefügt</div>`;
+                }
+            }
+        } else if (entry.change_type === 'vat_removed') {
+            // Verwende old_value wenn vorhanden, sonst formatiere metadata
+            if (entry.old_value) {
+                changeDetails = `<div class="audit-trail-change">USt-ID entfernt: ${Utils.escapeHtml(entry.old_value)}</div>`;
+            } else {
+                try {
+                    const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                    const vatId = metadata.vat_id || '';
+                    const countryCode = metadata.country_code || '';
+                    const countryName = this.getCountryName(countryCode);
+                    changeDetails = `<div class="audit-trail-change">USt-ID entfernt: ${Utils.escapeHtml(vatId)} (${Utils.escapeHtml(countryName)})</div>`;
+                } catch (e) {
+                    changeDetails = `<div class="audit-trail-change">USt-ID entfernt</div>`;
+                }
+            }
+        } else if (entry.change_type === 'address_added' || entry.change_type === 'address_deleted' || entry.change_type === 'address_updated') {
+            // Adressen - verwende new_value/old_value wenn vorhanden, sonst formatiere metadata
+            if (entry.new_value) {
+                changeDetails = `<div class="audit-trail-change">Adresse hinzugefügt: ${Utils.escapeHtml(entry.new_value)}</div>`;
+            } else if (entry.old_value) {
+                changeDetails = `<div class="audit-trail-change">Adresse entfernt: ${Utils.escapeHtml(entry.old_value)}</div>`;
+            } else {
+                try {
+                    const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                    const addressType = metadata.address_type || '';
+                    const city = metadata.city || '';
+                    const postalCode = metadata.postal_code || '';
+                    const addressParts = [addressType, postalCode, city].filter(p => p);
+                    changeDetails = `<div class="audit-trail-change">Adresse ${entry.change_type === 'address_added' ? 'hinzugefügt' : entry.change_type === 'address_deleted' ? 'entfernt' : 'aktualisiert'}: ${Utils.escapeHtml(addressParts.join(', '))}</div>`;
+                } catch (e) {
+                    changeDetails = `<div class="audit-trail-change">Adresse ${entry.change_type === 'address_added' ? 'hinzugefügt' : 'entfernt'}</div>`;
+                }
+            }
+        } else if (entry.change_type === 'channel_added' || entry.change_type === 'channel_removed' || entry.change_type === 'channel_updated') {
+            // Kommunikationskanäle - formatiere metadata menschenlesbar
             try {
                 const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
-                changeDetails = `<div class="audit-trail-change">${Utils.escapeHtml(JSON.stringify(metadata, null, 2))}</div>`;
+                const channelType = metadata.channel_type || '';
+                const label = metadata.label || '';
+                const action = entry.change_type === 'channel_added' ? 'hinzugefügt' : 
+                              entry.change_type === 'channel_removed' ? 'entfernt' : 'aktualisiert';
+                const channelLabel = label ? `${channelType} (${label})` : channelType;
+                changeDetails = `<div class="audit-trail-change">Kommunikationskanal ${action}: ${Utils.escapeHtml(channelLabel)}</div>`;
+            } catch (e) {
+                changeDetails = `<div class="audit-trail-change">Kommunikationskanal ${entry.change_type === 'channel_added' ? 'hinzugefügt' : 'entfernt'}</div>`;
+            }
+        } else if (entry.metadata) {
+            // Für andere change_types: Versuche menschenlesbare Formatierung
+            try {
+                const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                
+                // Wenn old_value und new_value vorhanden sind, verwende diese
+                if (entry.old_value || entry.new_value) {
+                    const fieldLabel = entry.field_name ? this.getFieldLabel(entry.field_name) : '';
+                    changeDetails = `
+                        <div class="audit-trail-change">
+                            ${fieldLabel ? `<span class="audit-trail-field">${Utils.escapeHtml(fieldLabel)}:</span>` : ''}
+                            <span class="audit-trail-old-value">${Utils.escapeHtml(entry.old_value || '(leer)')}</span>
+                            <span class="audit-trail-arrow">→</span>
+                            <span class="audit-trail-new-value">${Utils.escapeHtml(entry.new_value || '(leer)')}</span>
+                        </div>
+                    `;
+                } else {
+                    // Fallback: Formatiere metadata menschenlesbar
+                    const formattedMetadata = this.formatMetadata(metadata);
+                    changeDetails = `<div class="audit-trail-change">${formattedMetadata}</div>`;
+                }
             } catch (e) {
                 changeDetails = `<div class="audit-trail-change">${Utils.escapeHtml(entry.metadata)}</div>`;
             }
@@ -269,6 +371,7 @@ export class AuditTrailModule {
             'address_added': 'Adresse hinzugefügt',
             'address_updated': 'Adresse aktualisiert',
             'address_removed': 'Adresse entfernt',
+            'address_deleted': 'Adresse entfernt',
             'channel_added': 'Kommunikationskanal hinzugefügt',
             'channel_updated': 'Kommunikationskanal aktualisiert',
             'channel_removed': 'Kommunikationskanal entfernt',
@@ -329,6 +432,61 @@ export class AuditTrailModule {
             'channel_notes': 'Notizen'
         };
         return labels[fieldName] || fieldName;
+    }
+    
+    getCountryName(countryCode) {
+        const countries = {
+            'DE': 'Deutschland',
+            'AT': 'Österreich',
+            'CH': 'Schweiz',
+            'FR': 'Frankreich',
+            'IT': 'Italien',
+            'NL': 'Niederlande',
+            'BE': 'Belgien',
+            'PL': 'Polen',
+            'CZ': 'Tschechien',
+            'UK': 'Vereinigtes Königreich'
+        };
+        return countries[countryCode] || countryCode;
+    }
+    
+    formatMetadata(metadata) {
+        if (!metadata || typeof metadata !== 'object') {
+            return '';
+        }
+        
+        // Formatiere häufige Metadaten-Felder menschenlesbar
+        const parts = [];
+        
+        if (metadata.vat_id && metadata.country_code) {
+            const countryName = this.getCountryName(metadata.country_code);
+            parts.push(`USt-ID: ${metadata.vat_id} (${countryName})`);
+        }
+        
+        if (metadata.channel_type) {
+            const label = metadata.label ? `${metadata.channel_type} (${metadata.label})` : metadata.channel_type;
+            parts.push(`Kanal: ${label}`);
+        }
+        
+        if (metadata.address_type) {
+            parts.push(`Adresstyp: ${metadata.address_type}`);
+        }
+        
+        if (metadata.relation_type) {
+            parts.push(`Relation: ${metadata.relation_type}`);
+        }
+        
+        // Wenn keine bekannten Felder, zeige wichtige Felder
+        if (parts.length === 0) {
+            const importantFields = ['name', 'title', 'vat_id', 'channel_type', 'address_type'];
+            for (const field of importantFields) {
+                if (metadata[field]) {
+                    parts.push(`${field}: ${metadata[field]}`);
+                }
+            }
+        }
+        
+        return parts.length > 0 ? parts.join(', ') : JSON.stringify(metadata);
     }
 }
 

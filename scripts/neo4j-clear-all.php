@@ -53,16 +53,22 @@ try {
 
 echo "\n";
 
-// Bestätigung
-echo "⚠ WARNUNG: Dies löscht ALLE Daten aus Neo4j!\n";
-echo "Möchtest du fortfahren? (ja/n): ";
-$handle = fopen("php://stdin", "r");
-$line = trim(fgets($handle));
-fclose($handle);
+// Bestätigung (außer wenn --yes Flag gesetzt ist)
+$autoConfirm = in_array('--yes', $argv) || in_array('-y', $argv);
 
-if (strtolower($line) !== 'ja') {
-    echo "Abgebrochen.\n";
-    exit(0);
+if (!$autoConfirm) {
+    echo "⚠ WARNUNG: Dies löscht ALLE Daten aus Neo4j!\n";
+    echo "Möchtest du fortfahren? (ja/n): ";
+    $handle = fopen("php://stdin", "r");
+    $line = trim(fgets($handle));
+    fclose($handle);
+
+    if (strtolower($line) !== 'ja') {
+        echo "Abgebrochen.\n";
+        exit(0);
+    }
+} else {
+    echo "Automatische Bestätigung (--yes Flag gesetzt)\n";
 }
 
 echo "\nLösche alle Daten...\n";
