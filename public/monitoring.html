@@ -49,6 +49,63 @@
                         <div class="status-value" id="sync-status">Prüfe...</div>
                     </div>
                 </div>
+                <div class="status-card" id="status-clamav">
+                    <div class="status-indicator" data-status="unknown"></div>
+                    <div class="status-content">
+                        <div class="status-label">ClamAV</div>
+                        <div class="status-value" id="clamav-status">Prüfe...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ClamAV Security Status -->
+        <section class="metrics-section" id="clamav-section">
+            <h2>🔒 ClamAV Security Status</h2>
+            <div class="metrics-grid" id="clamav-metrics">
+                <div class="metric-card">
+                    <div class="metric-icon">🛡️</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="clamav-version">-</div>
+                        <div class="metric-label">Version</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">🔄</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="clamav-update-age">-</div>
+                        <div class="metric-label">Definitionen-Alter</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">⏳</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="clamav-pending">-</div>
+                        <div class="metric-label">Ausstehende Scans</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">✅</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="clamav-clean">-</div>
+                        <div class="metric-label">Saubere Dateien</div>
+                    </div>
+                </div>
+                <div class="metric-card" id="clamav-infected-card" style="display: none;">
+                    <div class="metric-icon">⚠️</div>
+                    <div class="metric-content">
+                        <div class="metric-value" id="clamav-infected" style="color: #ef4444; font-weight: bold;">-</div>
+                        <div class="metric-label">⚠️ Infizierte Dateien</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Infizierte Dateien Liste -->
+            <div id="clamav-infected-list" class="infected-list" style="display: none;">
+                <h3 style="color: #ef4444; margin-top: 1.5rem; margin-bottom: 1rem;">⚠️ Infizierte Dateien</h3>
+                <div id="infected-files-list" class="infected-files-list">
+                    <div class="loading">Lade infizierte Dateien...</div>
+                </div>
             </div>
         </section>
 

@@ -53,6 +53,9 @@ export class PersonDetailViewModule {
                     <button class="person-detail-tab active" data-tab="stammdaten">Stammdaten</button>
                     <button class="person-detail-tab" data-tab="historie">Historie</button>
                     <button class="person-detail-tab" data-tab="relationen">Relationen</button>
+                    <button class="person-detail-tab" data-tab="dokumente">
+                        Dokumente<span id="person-documents-count-badge" class="person-detail-tab-badge" style="display: none;"></span>
+                    </button>
                 </div>
                 
                 <!-- Tab Content -->
@@ -70,6 +73,11 @@ export class PersonDetailViewModule {
                     <!-- Relationen Tab -->
                     <div class="person-detail-tab-content" data-tab-content="relationen">
                         ${this.renderRelationen(person)}
+                    </div>
+                    
+                    <!-- Dokumente Tab -->
+                    <div class="person-detail-tab-content" data-tab-content="dokumente">
+                        ${this.renderDokumente(person)}
                     </div>
                 </div>
             </div>
@@ -186,6 +194,21 @@ export class PersonDetailViewModule {
                     <div class="empty-state">
                         <p>Noch keine Beziehungen erfasst</p>
                     </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    renderDokumente(person) {
+        const personUuid = person.person_uuid || person.uuid;
+        return `
+            <div class="person-dokumente">
+                <div class="section-header">
+                    <h3>Dokumente</h3>
+                    <button id="person-upload-document-btn" class="btn btn-sm btn-primary" data-person-uuid="${personUuid}">+ Dokument hochladen</button>
+                </div>
+                <div id="person-documents-list" class="document-list">
+                    <!-- Wird dynamisch geladen -->
                 </div>
             </div>
         `;

@@ -149,6 +149,9 @@ body {
 
 .page {
     display: none;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 .page.active {
@@ -408,6 +411,106 @@ body {
 
 .required {
     color: var(--danger);
+}
+
+/* Upload Format Info */
+.upload-allowed-formats {
+    font-size: 0.875rem;
+    color: var(--text-light);
+    padding: 0.75rem;
+    background: var(--bg);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin-top: 0.5rem;
+}
+
+.upload-allowed-formats strong {
+    color: var(--text);
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.upload-formats-list {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+}
+
+.format-category {
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Upload Files Preview */
+.upload-files-preview {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.upload-files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.upload-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.upload-file-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.upload-file-name {
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upload-file-size {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    white-space: nowrap;
+}
+
+/* Notification Animations */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
 }
 
 /* Modals */
@@ -682,7 +785,18 @@ body {
     color: #1e40af;
 }
 
-.badge:not(.badge-warning):not(.badge-danger):not(.badge-info) {
+.badge-success {
+    background: #d1fae5;
+    color: #065f46;
+    font-weight: 600;
+}
+
+.badge-error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.badge:not(.badge-warning):not(.badge-danger):not(.badge-info):not(.badge-success):not(.badge-error) {
     background: #e5e7eb;
     color: #374151;
 }
@@ -1947,14 +2061,19 @@ body {
     color: var(--text);
 }
 
-.person-detail-tabs {
+/* Gemeinsame Tab-Navigation - Wiederverwendbar für alle Detail-Views */
+.detail-tabs,
+.person-detail-tabs,
+.org-detail-tabs {
     display: flex;
     border-bottom: 1px solid var(--border);
     padding: 0 1.5rem;
     gap: 0;
 }
 
-.person-detail-tab {
+.detail-tab,
+.person-detail-tab,
+.org-detail-tab {
     padding: 1rem 1.5rem;
     background: none;
     border: none;
@@ -1967,26 +2086,52 @@ body {
     margin-bottom: -1px;
 }
 
-.person-detail-tab:hover {
+.detail-tab:hover,
+.person-detail-tab:hover,
+.org-detail-tab:hover {
     color: var(--text);
     background: var(--bg);
 }
 
-.person-detail-tab.active {
+.detail-tab.active,
+.person-detail-tab.active,
+.org-detail-tab.active {
     color: var(--primary);
     border-bottom-color: var(--primary);
 }
 
-.person-detail-content {
+.detail-content,
+.person-detail-content,
+.org-detail-content {
     padding: 1.5rem;
 }
 
-.person-detail-tab-content {
+.detail-tab-content,
+.person-detail-tab-content,
+.org-detail-tab-content {
     display: none;
 }
 
-.person-detail-tab-content.active {
+.detail-tab-content.active,
+.person-detail-tab-content.active,
+.org-detail-tab-content.active {
     display: block;
+}
+
+/* Tab Badge - Für Anzeige von Zählern in Tabs */
+.detail-tab-badge,
+.org-detail-tab-badge,
+.person-detail-tab-badge {
+    display: inline-block;
+    background: var(--primary);
+    color: white;
+    border-radius: 10px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+    min-width: 1.25rem;
+    text-align: center;
 }
 
 /* Form Sections - Allgemeine Styles für alle Form-Sections in Modals */
@@ -2145,4 +2290,106 @@ body {
     font-weight: 500;
     color: var(--text-light);
     min-width: 100px;
+}
+
+
+/* Document List Styles */
+.documents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.document-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    transition: box-shadow 0.2s;
+}
+
+.document-item:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.document-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.document-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.document-title {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+}
+
+.document-meta {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    font-size: 0.875rem;
+    color: var(--text-light);
+    flex-wrap: wrap;
+}
+
+.document-size,
+.document-date,
+.document-role {
+    display: inline-block;
+}
+
+.document-description {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-light);
+}
+
+.document-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.documents-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-light);
+}
+
+/* Upload Progress */
+.upload-progress {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 0.5rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s;
+    width: 0%;
+}
+
+.progress-text {
+    font-size: 0.875rem;
+    color: var(--text-light);
+    text-align: center;
 }

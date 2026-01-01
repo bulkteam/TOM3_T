@@ -12,6 +12,8 @@ import { PersonSearchModule } from './modules/person-search.js';
 import { PersonDetailModule } from './modules/person-detail.js';
 import { PersonFormsModule } from './modules/person-forms.js';
 import { MonitoringModule } from './modules/monitoring.js';
+import { DocumentUploadModule } from './modules/document-upload.js';
+import { DocumentListModule } from './modules/document-list.js';
 import { Utils } from './modules/utils.js';
 
 class TOM3App {
@@ -28,8 +30,50 @@ class TOM3App {
         this.personDetail = new PersonDetailModule(this);
         this.personForms = new PersonFormsModule(this);
         this.monitoring = new MonitoringModule(this);
+        this.documentUpload = new DocumentUploadModule(this);
+        this.documentList = new DocumentListModule(this);
+        
+        // Module-Referenz für Zugriff von anderen Modulen
+        this.modules = {
+            documentUpload: this.documentUpload,
+            documentList: this.documentList
+        };
         
         this.init();
+    }
+    
+    /**
+     * Zeigt eine Notification an
+     * @param {string} message Nachricht
+     * @param {string} type 'success' | 'error' | 'info'
+     */
+    showNotification(message, type = 'info') {
+        // Einfache Toast-Notification
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Nach 3 Sekunden entfernen
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => {
+                notification.remove();
+            }, 300);
+        }, 3000);
     }
 
     async init() {

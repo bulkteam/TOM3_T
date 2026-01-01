@@ -9,6 +9,7 @@ TOM3 benötigt folgende automatische Tasks:
 | Task-Name | Funktion | Intervall | Status |
 |-----------|----------|-----------|--------|
 | `TOM3-Neo4j-Sync-Worker` | Synchronisiert Events aus MySQL nach Neo4j | Alle 5 Minuten | **Pflicht** |
+| `TOM3-ClamAV-Scan-Worker` | Verarbeitet Scan-Jobs für Dokumente (ClamAV) | Alle 5 Minuten | **Pflicht** (wenn ClamAV aktiv) |
 | `TOM3-DuplicateCheck` | Prüft auf potenzielle Duplikate in Organisationen und Personen | Täglich 02:00 Uhr | Empfohlen |
 | `TOM3-ActivityLog-Maintenance` | Wartung für Activity-Log (Archivierung, Partitionierung, Löschung) | Monatlich am 1. Tag, 02:00 Uhr | Empfohlen |
 | `MySQL-Auto-Recovery` | Prüft und startet MySQL automatisch | Beim Systemstart | Optional |
@@ -218,6 +219,14 @@ Nach dem Portieren auf ein neues System:
   ```powershell
   Get-ScheduledTask -TaskName "TOM3-Neo4j-Sync-Worker" | Get-ScheduledTaskInfo
   ```
+- [ ] **ClamAV Scan Worker eingerichtet** (Pflicht - wenn ClamAV aktiv)
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\setup-clamav-scan-worker.ps1
+  ```
+- [ ] **ClamAV Scan Worker Status geprüft**
+  ```powershell
+  Get-ScheduledTask -TaskName "TOM3-ClamAV-Scan-Worker" | Get-ScheduledTaskInfo
+  ```
 - [ ] **MySQL Auto-Recovery eingerichtet** (Optional)
   ```batch
   scripts\setup-scheduled-tasks.bat
@@ -325,6 +334,8 @@ Nach dem Portieren auf ein neues System:
 - `docs/NEO4J-AUTOMATION.md` - Detaillierte Neo4j Sync Automatisierung
 - `docs/ACTIVITY-LOG-AUTOMATION.md` - Activity-Log Automatisierung und Wartung
 - `docs/SETUP-MYSQL-AUTOMATION.md` - MySQL Automatisierung
+- `docs/CLAMAV-IMPLEMENTATION-COMPLETE.md` - ClamAV Scan Worker Details
+- `docs/DOCUMENT-SECURITY-ROADMAP.md` - Security-Roadmap für Production
 - `docs/PORTIERUNG-ANLEITUNG.md` - Vollständige Portierungsanleitung
 
 ---

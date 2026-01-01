@@ -3,22 +3,44 @@
  * TOM3 - Monitoring API
  */
 
+// Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+// Dies muss VOR dem Autoloading geschehen, da die Klasse beim Laden bereits den Fehler wirft
+$oldErrorReporting = error_reporting();
+error_reporting($oldErrorReporting & ~E_DEPRECATED);
+
+// Verhindere HTML-Fehlerausgaben
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
 }
 
+// Lade .env Datei (falls vorhanden) - wichtig für Neo4j-Konfiguration
+$loadEnvPath = __DIR__ . '/../../config/load-env.php';
+if (file_exists($loadEnvPath)) {
+    require_once $loadEnvPath;
+}
+
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Document\ClamAvService;
+use TOM\Infrastructure\Neo4j\Neo4jService;
 
 try {
     $db = DatabaseConnection::getInstance();
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    // Wenn von index.php aufgerufen, wird der Fehler dort behandelt
+    if (!isset($id)) {
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'Database connection failed',
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+    // Sonst Exception weiterwerfen, damit index.php sie behandelt
+    throw $e;
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -46,7 +68,17 @@ if (isset($id)) {
 switch ($endpoint) {
     case 'status':
         // GET /api/monitoring/status
-        echo json_encode(getSystemStatus($db));
+        try {
+            echo json_encode(getSystemStatus($db));
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'error' => 'Internal server error',
+                'message' => $e->getMessage(),
+                'file' => basename($e->getFile()),
+                'line' => $e->getLine()
+            ]);
+        }
         break;
         
     case 'outbox':
@@ -85,6 +117,11 @@ switch ($endpoint) {
         echo json_encode(getActivityLog($db, $limit));
         break;
         
+    case 'clamav':
+        // GET /api/monitoring/clamav
+        echo json_encode(getClamAvStatus($db));
+        break;
+        
     default:
         http_response_code(404);
         echo json_encode(['error' => 'Not found']);
@@ -99,7 +136,8 @@ function getSystemStatus(PDO $db): array
     $status = [
         'database' => checkDatabase($db),
         'neo4j' => checkNeo4j(),
-        'sync_worker' => checkSyncWorker($db)
+        'sync_worker' => checkSyncWorker($db),
+        'clamav' => checkClamAv($db)
     ];
     
     return $status;
@@ -124,12 +162,87 @@ function checkDatabase(PDO $db): array
 
 function checkNeo4j(): array
 {
-    // TODO: Implementiere Neo4j-Status-Check
-    // Für jetzt: immer "unknown"
-    return [
-        'status' => 'unknown',
-        'message' => 'Nicht geprüft'
-    ];
+    try {
+        // Versuche zuerst direkt über Neo4jService (der lädt die Config selbst)
+        // Das ist zuverlässiger als manuelle Pfad-Prüfung
+        try {
+            $neo4j = new Neo4jService();
+            if ($neo4j->testConnection()) {
+                $nodeCount = $neo4j->runSingle('MATCH (n) RETURN count(n) as count');
+                $message = 'Verbunden';
+                if ($nodeCount !== null) {
+                    $message .= ' (' . number_format($nodeCount, 0, ',', '.') . ' Nodes)';
+                }
+                return [
+                    'status' => 'ok',
+                    'message' => $message
+                ];
+            } else {
+                return [
+                    'status' => 'error',
+                    'message' => 'Verbindung fehlgeschlagen'
+                ];
+            }
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+            
+            // Prüfe ob es ein Konfigurationsproblem ist
+            if (strpos($errorMessage, 'configuration') !== false || strpos($errorMessage, 'not found') !== false) {
+                // Versuche manuelle Pfad-Prüfung als Fallback
+                $possiblePaths = [
+                    __DIR__ . '/../../config/database.php',  // Von public/api/ -> config/
+                    dirname(__DIR__, 2) . '/config/database.php',  // Alternative
+                    getcwd() . '/config/database.php',  // Vom aktuellen Arbeitsverzeichnis
+                    $_SERVER['DOCUMENT_ROOT'] . '/TOM3/config/database.php',  // Von Document Root
+                    $_SERVER['DOCUMENT_ROOT'] . '/tom3/config/database.php'  // Case-insensitive
+                ];
+                
+                $dbConfig = null;
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path)) {
+                        $dbConfig = require $path;
+                        break;
+                    }
+                }
+                
+                if (!$dbConfig || !isset($dbConfig['neo4j']) || 
+                    empty($dbConfig['neo4j']['uri']) || empty($dbConfig['neo4j']['user']) || empty($dbConfig['neo4j']['password'])) {
+                    return [
+                        'status' => 'unknown',
+                        'message' => 'Nicht konfiguriert'
+                    ];
+                }
+                
+                // Konfiguration gefunden, aber Verbindung schlägt fehl
+                return [
+                    'status' => 'error',
+                    'message' => 'Konfiguriert, aber Verbindung fehlgeschlagen: ' . $errorMessage
+                ];
+            }
+            
+            // Anderer Fehler
+            return [
+                'status' => 'error',
+                'message' => 'Fehler: ' . $errorMessage
+            ];
+        }
+    } catch (\Exception $e) {
+        // Unerwarteter Fehler
+        $errorMessage = $e->getMessage();
+        
+        // Prüfe ob es ein Konfigurationsproblem ist
+        if (strpos($errorMessage, 'configuration') !== false || strpos($errorMessage, 'not found') !== false) {
+            return [
+                'status' => 'unknown',
+                'message' => 'Nicht konfiguriert'
+            ];
+        }
+        
+        return [
+            'status' => 'error',
+            'message' => 'Fehler: ' . $errorMessage
+        ];
+    }
 }
 
 function checkSyncWorker(PDO $db): array
@@ -168,6 +281,490 @@ function checkSyncWorker(PDO $db): array
             'status' => 'error',
             'message' => 'Fehler: ' . $e->getMessage()
         ];
+    }
+}
+
+function checkClamAv(PDO $db): array
+{
+    try {
+        $clamAvService = new ClamAvService();
+        
+        if (!$clamAvService->isAvailable()) {
+            return [
+                'status' => 'error',
+                'message' => 'ClamAV nicht verfügbar',
+                'available' => false
+            ];
+        }
+        
+        // Prüfe Update-Status der Virendefinitionen
+        $updateStatus = getClamAvUpdateStatus();
+        
+        // Prüfe Scan-Worker Status
+        $workerStatus = checkScanWorker($db);
+        
+        // Prüfe infizierte Dateien
+        $infectedCount = getInfectedDocumentsCount($db);
+        
+        $overallStatus = 'ok';
+        $message = 'Läuft';
+        
+        if ($updateStatus['age_hours'] > 48) {
+            $overallStatus = 'warning';
+            $message = 'Definitionen veraltet (' . round($updateStatus['age_hours'], 1) . 'h)';
+        }
+        
+        if ($infectedCount > 0) {
+            if ($overallStatus === 'ok') {
+                $overallStatus = 'warning';
+            }
+            $message .= ($message !== 'Läuft' ? ', ' : '') . "$infectedCount infizierte Datei(en)";
+        }
+        
+        if ($workerStatus['status'] !== 'ok') {
+            $overallStatus = $workerStatus['status'];
+            $message = $workerStatus['message'];
+        }
+        
+        return [
+            'status' => $overallStatus,
+            'message' => $message,
+            'available' => true,
+            'version' => $clamAvService->getVersion(),
+            'update_status' => $updateStatus,
+            'worker_status' => $workerStatus,
+            'infected_count' => $infectedCount
+        ];
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => 'Fehler: ' . $e->getMessage(),
+            'available' => false
+        ];
+    }
+}
+
+/**
+ * ClamAV Status (detailliert)
+ */
+function getClamAvStatus(PDO $db): array
+{
+    try {
+        $clamAvService = new ClamAvService();
+        
+        if (!$clamAvService->isAvailable()) {
+            return [
+                'available' => false,
+                'error' => 'ClamAV nicht verfügbar'
+            ];
+        }
+        
+        // Update-Status
+        $updateStatus = getClamAvUpdateStatus();
+        
+        // Worker-Status
+        $workerStatus = checkScanWorker($db);
+        
+        // Scan-Statistiken
+        $scanStats = getScanStatistics($db);
+        
+        // Infizierte Dateien
+        $infectedFiles = getInfectedDocuments($db);
+        
+        return [
+            'available' => true,
+            'version' => $clamAvService->getVersion(),
+            'update_status' => $updateStatus,
+            'worker_status' => $workerStatus,
+            'scan_statistics' => $scanStats,
+            'infected_files' => $infectedFiles
+        ];
+    } catch (Exception $e) {
+        return [
+            'available' => false,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Prüft Update-Status der ClamAV Virendefinitionen
+ */
+function getClamAvUpdateStatus(): array
+{
+    try {
+        // Prüfe Docker-Container
+        $containerName = getenv('CLAMAV_CONTAINER') ?: 'tom3-clamav';
+        
+        // ClamAV verwendet hybrides System: main.cvd (Basis) + daily.cld (tägliche Updates)
+        // Prüfe beide und verwende das neueste Datum
+        $filesToCheck = ['/var/lib/clamav/main.cvd', '/var/lib/clamav/daily.cld'];
+        $latestTimestamp = 0;
+        $latestFile = null;
+        
+        foreach ($filesToCheck as $file) {
+            $command = sprintf(
+                'docker exec %s stat -c %%Y %s 2>&1',
+                escapeshellarg($containerName),
+                escapeshellarg($file)
+            );
+            $output = []; // Reset output array für jede Iteration
+            exec($command, $output, $returnCode);
+            
+            // Prüfe ob Output gültig ist (nicht Fehlermeldung)
+            if ($returnCode === 0 && !empty($output)) {
+                $outputLine = trim($output[0]);
+                // Prüfe ob es eine Zahl ist (nicht eine Fehlermeldung)
+                if (is_numeric($outputLine)) {
+                    $timestamp = (int)$outputLine;
+                    if ($timestamp > 0 && $timestamp > $latestTimestamp) {
+                        $latestTimestamp = $timestamp;
+                        $latestFile = $file;
+                    }
+                }
+            }
+        }
+        
+        if ($latestTimestamp > 0) {
+            $ageHours = (time() - $latestTimestamp) / 3600;
+            
+            return [
+                'status' => $ageHours > 48 ? 'stale' : ($ageHours > 24 ? 'warning' : 'current'),
+                'last_update' => date('Y-m-d H:i:s', $latestTimestamp),
+                'age_hours' => round($ageHours, 1),
+                'source_file' => basename($latestFile)
+            ];
+        }
+        
+        // Fallback: Versuche ls -lh und parse Datum
+        $command = sprintf(
+            'docker exec %s ls -lh /var/lib/clamav/main.cvd 2>&1',
+            escapeshellarg($containerName)
+        );
+        exec($command, $output2, $returnCode2);
+        
+        if ($returnCode2 === 0 && !empty($output2)) {
+            $outputStr = implode("\n", $output2);
+            // Parse ls -lh Output: -rw-r--r-- 1 clamav clamav 50M Dec 28 07:26 main.cvd
+            if (preg_match('/(\w{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})/', $outputStr, $matches)) {
+                $month = $matches[1];
+                $day = (int)$matches[2];
+                $hour = (int)$matches[3];
+                $minute = (int)$matches[4];
+                
+                $currentYear = (int)date('Y');
+                $monthMap = [
+                    'Jan' => 1, 'Feb' => 2, 'Mar' => 3, 'Apr' => 4,
+                    'May' => 5, 'Jun' => 6, 'Jul' => 7, 'Aug' => 8,
+                    'Sep' => 9, 'Oct' => 10, 'Nov' => 11, 'Dec' => 12
+                ];
+                $monthNum = $monthMap[$month] ?? 1;
+                
+                $lastUpdate = mktime($hour, $minute, 0, $monthNum, $day, $currentYear);
+                $ageHours = (time() - $lastUpdate) / 3600;
+                
+                return [
+                    'status' => $ageHours > 48 ? 'stale' : ($ageHours > 24 ? 'warning' : 'current'),
+                    'last_update' => date('Y-m-d H:i:s', $lastUpdate),
+                    'age_hours' => round($ageHours, 1)
+                ];
+            }
+        }
+        
+        // Wenn alles fehlschlägt: Prüfe ob Datei existiert
+        $command = sprintf(
+            'docker exec %s test -f /var/lib/clamav/main.cvd && echo "exists" 2>&1',
+            escapeshellarg($containerName)
+        );
+        exec($command, $output3, $returnCode3);
+        
+        if ($returnCode3 === 0 && in_array('exists', $output3)) {
+            // Datei existiert, aber Datum nicht ermittelbar
+            return [
+                'status' => 'unknown',
+                'last_update' => null,
+                'age_hours' => null,
+                'message' => 'Definitionen vorhanden, Alter unbekannt'
+            ];
+        }
+        
+        return [
+            'status' => 'error',
+            'last_update' => null,
+            'age_hours' => null,
+            'error' => 'Definitionen-Datei nicht gefunden'
+        ];
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'last_update' => null,
+            'age_hours' => null,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Prüft Scan-Worker Status
+ */
+function checkScanWorker(PDO $db): array
+{
+    try {
+        // Prüfe, ob es ausstehende Scan-Jobs gibt (älter als 10 Minuten)
+        $stmt = $db->prepare("
+            SELECT COUNT(*) as count
+            FROM outbox_event
+            WHERE aggregate_type = 'blob'
+              AND event_type = 'BlobScanRequested'
+              AND processed_at IS NULL
+              AND created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+        ");
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $stuckJobs = (int)$result['count'];
+        
+        if ($stuckJobs > 10) {
+            return [
+                'status' => 'error',
+                'message' => "$stuckJobs Scan-Jobs hängen",
+                'stuck_jobs' => $stuckJobs
+            ];
+        } elseif ($stuckJobs > 0) {
+            return [
+                'status' => 'warning',
+                'message' => "$stuckJobs Scan-Job(s) hängen",
+                'stuck_jobs' => $stuckJobs
+            ];
+        } else {
+            // Prüfe, ob Worker in letzter Zeit aktiv war (verarbeitete Jobs in letzten 30 Minuten)
+            $stmt = $db->prepare("
+                SELECT COUNT(*) as count
+                FROM outbox_event
+                WHERE aggregate_type = 'blob'
+                  AND event_type = 'BlobScanRequested'
+                  AND processed_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+            ");
+            $stmt->execute();
+            $recentProcessed = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+            
+            // Prüfe, ob es neue Scan-Requests gibt, die noch nicht verarbeitet wurden
+            $stmt = $db->prepare("
+                SELECT COUNT(*) as count
+                FROM outbox_event
+                WHERE aggregate_type = 'blob'
+                  AND event_type = 'BlobScanRequested'
+                  AND processed_at IS NULL
+            ");
+            $stmt->execute();
+            $pendingJobs = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+            
+            // Prüfe, wann der letzte Scan verarbeitet wurde
+            $stmt = $db->prepare("
+                SELECT MAX(processed_at) as last_processed
+                FROM outbox_event
+                WHERE aggregate_type = 'blob'
+                  AND event_type = 'BlobScanRequested'
+                  AND processed_at IS NOT NULL
+            ");
+            $stmt->execute();
+            $lastProcessed = $stmt->fetch(PDO::FETCH_ASSOC)['last_processed'];
+            
+            // Prüfe, ob der letzte Scan zu lange her ist (>2 Stunden)
+            if ($lastProcessed === null) {
+                // Kein Scan wurde jemals verarbeitet - Worker läuft möglicherweise nicht
+                return [
+                    'status' => 'warning',
+                    'message' => 'Keine Scans verarbeitet (Worker möglicherweise nicht aktiv)',
+                    'recent_processed' => 0,
+                    'pending_jobs' => $pendingJobs,
+                    'stuck_jobs' => 0,
+                    'last_processed' => null
+                ];
+            } else {
+                $stmt = $db->prepare("
+                    SELECT TIMESTAMPDIFF(MINUTE, MAX(processed_at), NOW()) as minutes_ago
+                    FROM outbox_event
+                    WHERE aggregate_type = 'blob'
+                      AND event_type = 'BlobScanRequested'
+                      AND processed_at IS NOT NULL
+                ");
+                $stmt->execute();
+                $minutesAgo = (int)$stmt->fetch(PDO::FETCH_ASSOC)['minutes_ago'];
+                
+                if ($minutesAgo > 120) {
+                    // Keine Aktivität seit >2 Stunden - Worker könnte ausgefallen sein
+                    return [
+                        'status' => 'warning',
+                        'message' => "Keine Aktivität seit " . round($minutesAgo / 60, 1) . " Stunden",
+                        'recent_processed' => $recentProcessed,
+                        'pending_jobs' => $pendingJobs,
+                        'stuck_jobs' => 0,
+                        'last_processed' => $lastProcessed,
+                        'minutes_since_last' => $minutesAgo
+                    ];
+                } elseif ($recentProcessed === 0 && $pendingJobs > 0) {
+                    // Es gibt ausstehende Jobs, aber keine wurden in letzter Zeit verarbeitet
+                    return [
+                        'status' => 'warning',
+                        'message' => "$pendingJobs Job(s) ausstehend, keine Verarbeitung in letzter Zeit",
+                        'recent_processed' => 0,
+                        'pending_jobs' => $pendingJobs,
+                        'stuck_jobs' => 0,
+                        'last_processed' => $lastProcessed
+                    ];
+                } else {
+                    // Alles OK
+                    return [
+                        'status' => 'ok',
+                        'message' => 'Läuft',
+                        'recent_processed' => $recentProcessed,
+                        'pending_jobs' => $pendingJobs,
+                        'stuck_jobs' => 0,
+                        'last_processed' => $lastProcessed
+                    ];
+                }
+            }
+        }
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => 'Fehler: ' . $e->getMessage(),
+            'stuck_jobs' => 0
+        ];
+    }
+}
+
+/**
+ * Scan-Statistiken
+ */
+function getScanStatistics(PDO $db): array
+{
+    try {
+        // Status-Verteilung
+        $stmt = $db->query("
+            SELECT scan_status, COUNT(*) as count
+            FROM blobs
+            GROUP BY scan_status
+        ");
+        
+        $statusDistribution = [];
+        $total = 0;
+        $pending = 0;
+        $clean = 0;
+        $infected = 0;
+        
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $status = $row['scan_status'];
+            $count = (int)$row['count'];
+            $statusDistribution[$status] = $count;
+            $total += $count;
+            
+            if ($status === 'pending') {
+                $pending = $count;
+            } elseif ($status === 'clean') {
+                $clean = $count;
+            } elseif ($status === 'infected') {
+                $infected = $count;
+            }
+        }
+        
+        // Scans in letzten 24h
+        $stmt = $db->query("
+            SELECT COUNT(*) as count
+            FROM blobs
+            WHERE scan_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        ");
+        $scans24h = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+        
+        // Ausstehende Scan-Jobs
+        $stmt = $db->query("
+            SELECT COUNT(*) as count
+            FROM outbox_event
+            WHERE aggregate_type = 'blob'
+              AND event_type = 'BlobScanRequested'
+              AND processed_at IS NULL
+        ");
+        $pendingJobs = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+        
+        return [
+            'total' => $total,
+            'pending' => $pending,
+            'clean' => $clean,
+            'infected' => $infected,
+            'scans_24h' => $scans24h,
+            'pending_jobs' => $pendingJobs,
+            'status_distribution' => $statusDistribution
+        ];
+    } catch (Exception $e) {
+        return [
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Anzahl infizierter Dokumente
+ */
+function getInfectedDocumentsCount(PDO $db): int
+{
+    try {
+        $stmt = $db->query("
+            SELECT COUNT(DISTINCT d.document_uuid) as count
+            FROM documents d
+            INNER JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+            WHERE b.scan_status = 'infected'
+              AND d.status != 'deleted'
+        ");
+        return (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    } catch (Exception $e) {
+        return 0;
+    }
+}
+
+/**
+ * Liste infizierter Dokumente
+ */
+function getInfectedDocuments(PDO $db, int $limit = 20): array
+{
+    try {
+        $stmt = $db->prepare("
+            SELECT 
+                d.document_uuid,
+                d.title,
+                d.created_at,
+                d.created_by_user_id,
+                b.scan_at,
+                b.scan_result,
+                b.original_filename
+            FROM documents d
+            INNER JOIN blobs b ON d.current_blob_uuid = b.blob_uuid
+            WHERE b.scan_status = 'infected'
+              AND d.status != 'deleted'
+            ORDER BY b.scan_at DESC
+            LIMIT :limit
+        ");
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $documents = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $scanResult = json_decode($row['scan_result'], true);
+            $documents[] = [
+                'document_uuid' => $row['document_uuid'],
+                'title' => $row['title'],
+                'original_filename' => $row['original_filename'],
+                'created_at' => $row['created_at'],
+                'created_by_user_id' => $row['created_by_user_id'],
+                'scan_at' => $row['scan_at'],
+                'threats' => $scanResult['threats'] ?? [],
+                'message' => $scanResult['message'] ?? 'Threat detected'
+            ];
+        }
+        
+        return $documents;
+    } catch (Exception $e) {
+        return [];
     }
 }
 
@@ -289,13 +886,26 @@ function getSyncStatistics(PDO $db): array
     $eventsLastHour = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
     $eventsPerMinute = $eventsLastHour / 60.0;
     
-    // Neo4j counts (approximiert durch SQL - in Produktion sollte das aus Neo4j kommen)
-    // Für MVP: zählen wir einfach die Orgs/Personen in SQL
-    $stmt = $db->query("SELECT COUNT(*) as count FROM org");
-    $orgsCount = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    // Neo4j counts - ECHTE Daten aus Neo4j
+    $orgsCount = 0;
+    $personsCount = 0;
     
-    $stmt = $db->query("SELECT COUNT(*) as count FROM person");
-    $personsCount = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    try {
+        $neo4j = new Neo4jService();
+        
+        // Zähle Organisationen in Neo4j (Label ist "Org", nicht "Organization")
+        $orgsCount = (int)($neo4j->runSingle('MATCH (o:Org) RETURN count(o) as count') ?? 0);
+        
+        // Zähle Personen in Neo4j
+        $personsCount = (int)($neo4j->runSingle('MATCH (p:Person) RETURN count(p) as count') ?? 0);
+    } catch (\Exception $e) {
+        // Fallback: Wenn Neo4j nicht verfügbar ist, verwende SQL-Annäherung
+        $stmt = $db->query("SELECT COUNT(*) as count FROM org");
+        $orgsCount = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+        
+        $stmt = $db->query("SELECT COUNT(*) as count FROM person");
+        $personsCount = (int)$stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    }
     
     return [
         'total_synced' => $totalSynced,

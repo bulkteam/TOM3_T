@@ -26,6 +26,7 @@ class AuditTrailService
         'org' => 'org_audit_trail',
         'person' => 'person_audit_trail',
         'project' => 'project_audit_trail', // für zukünftige Nutzung
+        'document' => 'document_audit_trail',
     ];
     
     // Mapping von Entity-Typen zu UUID-Feldnamen
@@ -33,6 +34,7 @@ class AuditTrailService
         'org' => 'org_uuid',
         'person' => 'person_uuid',
         'project' => 'project_uuid',
+        'document' => 'document_uuid',
     ];
     
     public function __construct(?PDO $db = null, ?ActivityLogService $activityLogService = null)
@@ -76,20 +78,55 @@ class AuditTrailService
         
         if ($action === 'create') {
             // Bei Erstellung: Protokolliere alle initialen Werte
-            $changeType = $entityType . '_created';
+            // Für Dokumente: change_type = 'upload', sonst '{entity}_created'
+            $changeType = ($entityType === 'document') ? 'upload' : ($entityType . '_created');
+            
+            // Für Dokumente: Spezielle Felder in metadata packen
+            $auditMetadata = null;
+            $referenceEntityType = null;
+            $referenceEntityUuid = null;
+            if ($entityType === 'document') {
+                $auditMetadata = [];
+                if (isset($newData['current_blob_uuid'])) {
+                    $auditMetadata['blob_uuid'] = $newData['current_blob_uuid'];
+                }
+                if (isset($newData['entity_type'])) {
+                    $auditMetadata['entity_type'] = $newData['entity_type'];
+                    $referenceEntityType = $newData['entity_type'];
+                }
+                if (isset($newData['entity_uuid'])) {
+                    $auditMetadata['entity_uuid'] = $newData['entity_uuid'];
+                    $referenceEntityUuid = $newData['entity_uuid'];
+                }
+            }
             
             // Erstelle zuerst Activity-Log-Eintrag (für Rückverknüpfung)
             $activityLogId = null;
             if ($this->activityLogService) {
+                // Für Dokumente: Verwende 'upload' als action_type, sonst 'entity_change'
+                $actionType = ($entityType === 'document') ? 'upload' : 'entity_change';
+                
+                $documentTitle = $newData['title'] ?? $newData['name'] ?? $newData['display_name'] ?? null;
+                
                 $summary = [
                     'action' => 'create',
                     'change_type' => $changeType,
-                    'entity_name' => $newData['name'] ?? $newData['display_name'] ?? null
+                    'entity_name' => $documentTitle
                 ];
+                
+                // Für Dokumente: Füge Referenz-Informationen hinzu
+                if ($entityType === 'document') {
+                    $summary['document_title'] = $documentTitle;
+                    if ($referenceEntityType && $referenceEntityUuid) {
+                        $summary['reference_entity_type'] = $referenceEntityType;
+                        $summary['reference_entity_uuid'] = $referenceEntityUuid;
+                    }
+                }
+                
                 // Temporärer Eintrag ohne audit_trail_id
                 $activityLogId = $this->activityLogService->logActivity(
                     $userId,
-                    'entity_change',
+                    $actionType,
                     $entityType,
                     $entityUuid,
                     $summary,
@@ -98,7 +135,7 @@ class AuditTrailService
                 );
             }
             
-            $auditTrailId = $this->insertAuditEntry($entityType, $entityUuid, $userId, 'create', null, null, $changeType, null, $newData, $activityLogId);
+            $auditTrailId = $this->insertAuditEntry($entityType, $entityUuid, $userId, 'create', null, null, $changeType, $auditMetadata, $newData, $activityLogId);
             
             // Update Activity-Log mit audit_trail_id
             if ($this->activityLogService && $activityLogId !== null) {
@@ -229,6 +266,7 @@ class AuditTrailService
             throw new \InvalidArgumentException("Unbekannter Entity-Typ: $entityType");
         }
         
+        // Standard-Behandlung für alle Entity-Typen (vereinheitlichte Struktur)
         // Prüfe ob activity_log_id Spalte existiert (für Rückwärtskompatibilität)
         $hasActivityLogId = $this->hasActivityLogIdColumn($tableName);
         

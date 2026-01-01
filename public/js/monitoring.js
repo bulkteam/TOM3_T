@@ -57,7 +57,8 @@ class MonitoringDashboard {
                 this.loadRecentErrors(),
                 this.loadEventTypes(),
                 this.loadDuplicateCheckResults(),
-                this.loadActivityLog()
+                this.loadActivityLog(),
+                this.loadClamAvStatus()
             ]);
         } catch (error) {
             console.error('Error loading monitoring data:', error);
@@ -76,6 +77,9 @@ class MonitoringDashboard {
             
             // Sync worker status
             this.updateStatusCard('status-sync', status.sync_worker?.status || 'unknown', status.sync_worker?.message || 'Unbekannt');
+            
+            // ClamAV status
+            this.updateStatusCard('status-clamav', status.clamav?.status || 'unknown', status.clamav?.message || 'Unbekannt');
         } catch (error) {
             console.error('Error checking system status:', error);
             this.updateStatusCard('status-database', 'error', 'Fehler beim Prüfen');
@@ -535,9 +539,27 @@ class MonitoringDashboard {
                 };
                 
                 const actionLabel = actionTypeLabels[activity.action_type] || activity.action_type;
-                const entityInfo = activity.entity_type && activity.entity_uuid 
-                    ? `${activity.entity_type}: ${activity.entity_uuid.substring(0, 8)}...` 
-                    : '';
+                
+                // Für Uploads: Zeige Dokumentenname und Referenz
+                let entityInfo = '';
+                if (activity.action_type === 'upload' && activity.details) {
+                    const docTitle = activity.details.document_title || activity.details.entity_name || 'Unbekanntes Dokument';
+                    const refName = activity.details.reference_entity_name;
+                    const refType = activity.details.reference_entity_type;
+                    
+                    if (refName && refType) {
+                        entityInfo = `📄 ${this.escapeHtml(docTitle)} → ${this.escapeHtml(refType === 'org' ? '🏢' : '👤')} ${this.escapeHtml(refName)}`;
+                    } else if (refType) {
+                        entityInfo = `📄 ${this.escapeHtml(docTitle)} → ${this.escapeHtml(refType)}: ${activity.details.reference_entity_uuid?.substring(0, 8) || '...'}`;
+                    } else {
+                        entityInfo = `📄 ${this.escapeHtml(docTitle)}`;
+                    }
+                } else {
+                    // Für andere Aktionen: Standard-Format
+                    entityInfo = activity.entity_type && activity.entity_uuid 
+                        ? `${activity.entity_type}: ${activity.entity_uuid.substring(0, 8)}...` 
+                        : '';
+                }
                 
                 return `
                     <div class="activity-item">
@@ -547,12 +569,12 @@ class MonitoringDashboard {
                         </div>
                         <div class="activity-content">
                             <div class="activity-user">👤 ${this.escapeHtml(activity.user_name || activity.user_id || 'Unbekannt')}</div>
-                            ${entityInfo ? `<div class="activity-entity">📦 ${this.escapeHtml(entityInfo)}</div>` : ''}
+                            ${entityInfo ? `<div class="activity-entity">${entityInfo}</div>` : ''}
                             ${activity.details && typeof activity.details === 'object' ? `
                                 <div class="activity-details">
-                                    ${activity.details.summary ? `<div>${this.escapeHtml(activity.details.summary)}</div>` : ''}
+                                    ${activity.details.summary && activity.action_type !== 'upload' ? `<div>${this.escapeHtml(activity.details.summary)}</div>` : ''}
                                     ${activity.details.changed_fields ? `<div>Geänderte Felder: ${this.escapeHtml(activity.details.changed_fields.join(', '))}</div>` : ''}
-                                    ${activity.details.file_name ? `<div>Datei: ${this.escapeHtml(activity.details.file_name)}</div>` : ''}
+                                    ${activity.details.file_name && activity.action_type !== 'upload' ? `<div>Datei: ${this.escapeHtml(activity.details.file_name)}</div>` : ''}
                                 </div>
                             ` : ''}
                         </div>
@@ -563,6 +585,145 @@ class MonitoringDashboard {
             console.error('Error loading activity log:', error);
             container.innerHTML = '<div class="empty-state">Fehler beim Laden</div>';
         }
+    }
+
+    async loadClamAvStatus() {
+        try {
+            const status = await window.API.getClamAvStatus();
+            
+            // Prüfe ob ClamAV-Sektion existiert (kann in index.html fehlen)
+            const clamavSection = document.getElementById('clamav-section');
+            if (!clamavSection) {
+                return; // ClamAV-Sektion nicht vorhanden, überspringe
+            }
+            
+            // Helper-Funktion: Setze textContent nur wenn Element existiert
+            const setTextContent = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = text;
+                }
+            };
+            
+            if (!status.available) {
+                setTextContent('clamav-version', 'Nicht verfügbar');
+                setTextContent('clamav-update-age', '-');
+                setTextContent('clamav-pending', '-');
+                setTextContent('clamav-clean', '-');
+                return;
+            }
+            
+            // Version
+            const version = status.version || 'Unbekannt';
+            setTextContent('clamav-version', version.split('/')[0] || version);
+            
+            // Update-Status
+            const updateStatus = status.update_status || {};
+            const updateAgeEl = document.getElementById('clamav-update-age');
+            if (updateAgeEl) {
+                if (updateStatus.age_hours !== null && updateStatus.age_hours !== undefined) {
+                    const ageText = updateStatus.age_hours < 24 
+                        ? `${Math.round(updateStatus.age_hours * 10) / 10}h` 
+                        : `${Math.round(updateStatus.age_hours / 24 * 10) / 10}d`;
+                    updateAgeEl.textContent = ageText;
+                    
+                    // Warnung bei veralteten Definitionen
+                    if (updateStatus.age_hours > 48) {
+                        updateAgeEl.style.color = '#ef4444';
+                        updateAgeEl.style.fontWeight = 'bold';
+                    } else if (updateStatus.age_hours > 24) {
+                        updateAgeEl.style.color = '#f59e0b';
+                    } else {
+                        updateAgeEl.style.color = '';
+                        updateAgeEl.style.fontWeight = '';
+                    }
+                } else {
+                    updateAgeEl.textContent = 'Unbekannt';
+                }
+            }
+            
+            // Worker-Status anzeigen
+            const workerStatus = status.worker_status || {};
+            const workerStatusEl = document.getElementById('clamav-worker-status');
+            if (workerStatusEl) {
+                const statusText = workerStatus.message || 'Unbekannt';
+                workerStatusEl.textContent = statusText;
+                
+                // Status-Farbe basierend auf worker_status.status
+                if (workerStatus.status === 'error') {
+                    workerStatusEl.style.color = '#ef4444';
+                    workerStatusEl.style.fontWeight = 'bold';
+                } else if (workerStatus.status === 'warning') {
+                    workerStatusEl.style.color = '#f59e0b';
+                    workerStatusEl.style.fontWeight = 'bold';
+                } else {
+                    workerStatusEl.style.color = '';
+                    workerStatusEl.style.fontWeight = '';
+                }
+            }
+            
+            // Scan-Statistiken
+            const stats = status.scan_statistics || {};
+            setTextContent('clamav-pending', stats.pending || 0);
+            setTextContent('clamav-clean', stats.clean || 0);
+            
+            // Infizierte Dateien
+            const infectedCount = status.infected_files?.length || 0;
+            const infectedCard = document.getElementById('clamav-infected-card');
+            const infectedList = document.getElementById('clamav-infected-list');
+            
+            if (infectedCount > 0) {
+                setTextContent('clamav-infected', infectedCount);
+                if (infectedCard) infectedCard.style.display = 'block';
+                if (infectedList) infectedList.style.display = 'block';
+                
+                // Liste infizierter Dateien
+                this.renderInfectedFiles(status.infected_files || []);
+            } else {
+                if (infectedCard) infectedCard.style.display = 'none';
+                if (infectedList) infectedList.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error loading ClamAV status:', error);
+            const versionEl = document.getElementById('clamav-version');
+            if (versionEl) {
+                versionEl.textContent = 'Fehler';
+            }
+        }
+    }
+    
+    renderInfectedFiles(files) {
+        const container = document.getElementById('infected-files-list');
+        if (!container) return;
+        
+        if (files.length === 0) {
+            container.innerHTML = '<div class="empty-state">Keine infizierten Dateien</div>';
+            return;
+        }
+        
+        container.innerHTML = files.map(file => `
+            <div class="infected-file-item">
+                <div class="infected-file-header">
+                    <span class="infected-file-title">${this.escapeHtml(file.title || file.original_filename || 'Unbekannt')}</span>
+                    <span class="infected-file-time">${this.formatTime(file.scan_at)}</span>
+                </div>
+                <div class="infected-file-details">
+                    <div class="infected-file-threats">
+                        <strong>Erkannte Bedrohungen:</strong>
+                        ${file.threats && file.threats.length > 0 
+                            ? file.threats.map(t => `<span class="threat-badge">${this.escapeHtml(t)}</span>`).join('')
+                            : '<span class="threat-badge">Unbekannt</span>'}
+                    </div>
+                    <div class="infected-file-meta">
+                        <span>Hochgeladen: ${this.formatTime(file.created_at)}</span>
+                        ${file.created_by_user_id ? `<span>Von: ${this.escapeHtml(file.created_by_user_id)}</span>` : ''}
+                    </div>
+                    <div class="infected-file-action">
+                        <strong>Status:</strong> Datei ist blockiert und nicht downloadbar
+                    </div>
+                </div>
+            </div>
+        `).join('');
     }
 
     escapeHtml(text) {

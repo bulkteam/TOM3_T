@@ -28,14 +28,22 @@ class TOM3API {
         const url = `${this.baseUrl}${endpoint}`;
         const config = {
             headers: {
-                'Content-Type': 'application/json',
                 ...options.headers
             },
             ...options
         };
 
-        if (config.body && typeof config.body === 'object') {
+        // FormData nicht als JSON senden
+        if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
+            if (!config.headers['Content-Type']) {
+                config.headers['Content-Type'] = 'application/json';
+            }
             config.body = JSON.stringify(config.body);
+        } else if (config.body instanceof FormData) {
+            // FormData setzt Content-Type automatisch (inkl. boundary)
+            delete config.headers['Content-Type'];
+        } else if (!config.headers['Content-Type']) {
+            config.headers['Content-Type'] = 'application/json';
         }
 
         try {
@@ -626,6 +634,10 @@ class TOM3API {
     async getMonitoringActivityLog(limit = 100) {
         return this.request(`/monitoring/activity-log?limit=${limit}`);
     }
+
+    async getClamAvStatus() {
+        return this.request('/monitoring/clamav');
+    }
     
     async getRecentPersons(userId = 'default_user', limit = 10) {
         return this.request(`/persons/recent?user_id=${userId}&limit=${limit}`);
@@ -657,6 +669,40 @@ class TOM3API {
                 [uuidField]: entityUuid,
                 user_id: userId,
                 access_type: accessType
+            }
+        });
+    }
+    
+    // Documents
+    async uploadDocument(formData) {
+        return this.request('/documents/upload', {
+            method: 'POST',
+            body: formData,
+            headers: {} // FormData setzt Content-Type automatisch
+        });
+    }
+    
+    async getDocument(documentUuid) {
+        return this.request(`/documents/${documentUuid}`);
+    }
+    
+    async getEntityDocuments(entityType, entityUuid) {
+        return this.request(`/documents/entity/${entityType}/${entityUuid}`);
+    }
+    
+    async deleteDocument(documentUuid) {
+        return this.request(`/documents/${documentUuid}`, {
+            method: 'DELETE'
+        });
+    }
+    
+    async attachDocument(documentUuid, entityType, entityUuid, metadata = {}) {
+        return this.request(`/documents/${documentUuid}/attach`, {
+            method: 'POST',
+            body: {
+                entity_type: entityType,
+                entity_uuid: entityUuid,
+                ...metadata
             }
         });
     }

@@ -7,6 +7,15 @@
 
 declare(strict_types=1);
 
+// Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+// Dies muss VOR dem Autoloading geschehen, da die Klasse beim Laden bereits den Fehler wirft
+$oldErrorReporting = error_reporting();
+error_reporting($oldErrorReporting & ~E_DEPRECATED);
+
+// Verhindere HTML-Fehlerausgaben
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/api-security.php';
 
@@ -19,9 +28,41 @@ setCorsHeaders();
 // Content-Type
 header('Content-Type: application/json; charset=utf-8');
 
-// Error Handling
+// Error Handling (aber ignoriere E_DEPRECATED für Neo4j-Kompatibilität)
 set_error_handler(function($severity, $message, $file, $line) {
+    // Ignoriere Deprecation-Warnungen von laudis/neo4j-php-client
+    if ($severity === E_DEPRECATED) {
+        // Ignoriere alle Deprecation-Warnungen (nicht nur von Neo4j)
+        // Dies verhindert, dass sie in Exceptions konvertiert werden
+        return true; // Unterdrücke diese Warnung
+    }
+    // Nur non-deprecation Errors in Exceptions konvertieren
     throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
+// Shutdown Handler für Fatal Errors
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR])) {
+        // Ignoriere Neo4j Deprecation-Fehler und alle ArrayAccess Return-Type Fehler
+        if ($error['type'] === E_RECOVERABLE_ERROR && 
+            (strpos($error['file'], 'laudis/neo4j-php-client') !== false ||
+             strpos($error['message'], 'Return type of') !== false ||
+             strpos($error['message'], 'ArrayAccess') !== false)) {
+            return; // Ignoriere diesen Fehler
+        }
+        
+        // Sende JSON-Fehlerantwort
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'error' => 'Internal server error',
+            'message' => $error['message'] ?? 'Fatal error occurred',
+            'file' => basename($error['file'] ?? 'unknown'),
+            'line' => $error['line'] ?? 0
+        ]);
+        exit;
+    }
 });
 
 try {
@@ -118,6 +159,9 @@ try {
             break;
         case 'auth':
             require __DIR__ . '/auth.php';
+            break;
+        case 'documents':
+            require __DIR__ . '/documents.php';
             break;
         default:
             http_response_code(404);

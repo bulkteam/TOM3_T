@@ -58,6 +58,9 @@ export class PersonDetailModule extends EntityDetailBaseModule {
                 // Setup Tabs mit person-spezifischen Handlern
                 this.setupTabs(modalBody, uuid);
                 
+                // Lade initial Dokumente-Anzahl für Badge
+                this.updateDocumentsCount(uuid);
+                
                 // Load initial data für aktiven Tab (Stammdaten ist standardmäßig aktiv)
                 // Historie und Relationen werden beim Tab-Wechsel geladen
                 
@@ -129,6 +132,10 @@ export class PersonDetailModule extends EntityDetailBaseModule {
                     this.affiliationModule.loadAffiliations(personUuid);
                 } else if (tabName === 'relationen') {
                     this.relationshipModule.loadRelationships(personUuid);
+                } else if (tabName === 'dokumente') {
+                    this.loadDocuments(personUuid);
+                    // Event-Listener für Upload-Button registrieren, wenn Dokumente-Tab geöffnet wird
+                    this.setupUploadButton(container, personUuid);
                 }
             };
             
@@ -197,6 +204,61 @@ export class PersonDetailModule extends EntityDetailBaseModule {
             
             this._menuHandlers.set('audit-trail', auditHandler);
             auditTrailItem.addEventListener('click', auditHandler);
+        }
+    }
+    
+    async loadDocuments(personUuid) {
+        try {
+            const documentListModule = this.app.modules?.documentList;
+            if (documentListModule) {
+                await documentListModule.loadDocuments('person', personUuid, '#person-documents-list', '#person-documents-count-badge');
+            }
+        } catch (error) {
+            console.warn('Could not load documents:', error);
+        }
+    }
+    
+    async updateDocumentsCount(personUuid) {
+        try {
+            const documents = await window.API.getEntityDocuments('person', personUuid);
+            const badge = document.querySelector('#person-documents-count-badge');
+            if (badge) {
+                const count = documents?.length || 0;
+                if (count > 0) {
+                    badge.textContent = count;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        } catch (error) {
+            console.warn('Could not update documents count:', error);
+        }
+    }
+    
+    setupUploadButton(container, personUuid) {
+        // Entferne alten Event-Listener falls vorhanden
+        const existingButton = container.querySelector('#person-upload-document-btn');
+        if (existingButton) {
+            const newButton = existingButton.cloneNode(true);
+            existingButton.parentNode.replaceChild(newButton, existingButton);
+        }
+        
+        // Neuen Event-Listener registrieren
+        const uploadButton = container.querySelector('#person-upload-document-btn');
+        if (uploadButton) {
+            uploadButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (this.app.modules?.documentUpload) {
+                    this.app.modules.documentUpload.showUploadDialog('person', personUuid);
+                } else if (window.app?.documentUpload) {
+                    window.app.documentUpload.showUploadDialog('person', personUuid);
+                }
+            });
+        } else {
+            console.warn('Upload-Button nicht gefunden:', '#person-upload-document-btn');
         }
     }
     

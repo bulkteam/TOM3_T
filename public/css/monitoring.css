@@ -15,6 +15,12 @@
     --monitoring-status-warning: #f59e0b;
     --monitoring-status-error: #ef4444;
     --monitoring-status-unknown: #94a3b8;
+    
+    /* Overflow-Kontrolle */
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Monitoring Content Container */
@@ -22,6 +28,9 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 /* Header */
@@ -128,6 +137,9 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 1.25rem;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 #page-monitoring .status-card {
@@ -210,6 +222,9 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1.25rem;
     margin-bottom: 1.5rem;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 #page-monitoring .metric-card {
@@ -411,8 +426,8 @@
         padding: 1rem;
     }
     
-    .status-grid,
-    .metrics-grid {
+    #page-monitoring .status-grid,
+    #page-monitoring .metrics-grid {
         grid-template-columns: 1fr;
     }
     
@@ -420,6 +435,23 @@
         flex-direction: column;
         align-items: flex-start;
     }
+}
+
+/* Zusätzliche Overflow-Kontrolle für alle Monitoring-Elemente */
+#page-monitoring * {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#page-monitoring .chart-container {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+#page-monitoring .chart-container canvas {
+    max-width: 100%;
+    height: auto;
 }
 
 /* Scrollbar Styling */
@@ -439,6 +471,88 @@
 
 ::-webkit-scrollbar-thumb:hover {
     background: #475569;
+}
+
+/* ClamAV Infected Files */
+#page-monitoring .infected-list {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid var(--monitoring-status-error);
+}
+
+#page-monitoring .infected-files-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+#page-monitoring .infected-file-item {
+    background: var(--monitoring-bg-card);
+    border-left: 4px solid var(--monitoring-status-error);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
+}
+
+#page-monitoring .infected-file-item:hover {
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.2);
+}
+
+#page-monitoring .infected-file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 0.75rem;
+}
+
+#page-monitoring .infected-file-title {
+    font-weight: 600;
+    color: var(--monitoring-text);
+    font-size: 0.9375rem;
+}
+
+#page-monitoring .infected-file-time {
+    font-size: 0.75rem;
+    color: var(--monitoring-text-light);
+}
+
+#page-monitoring .infected-file-details {
+    color: var(--monitoring-text);
+    font-size: 0.875rem;
+}
+
+#page-monitoring .infected-file-threats {
+    margin-bottom: 0.5rem;
+}
+
+#page-monitoring .threat-badge {
+    display: inline-block;
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+#page-monitoring .infected-file-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--monitoring-text-light);
+}
+
+#page-monitoring .infected-file-action {
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--monitoring-border);
+    font-size: 0.75rem;
+    color: var(--monitoring-status-error);
+    font-weight: 500;
 }
 
 

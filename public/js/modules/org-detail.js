@@ -63,12 +63,119 @@ export class OrgDetailModule extends EntityDetailBaseModule {
                 if (industrySubInput && org.industry_sub_uuid) {
                     industrySubInput.dataset.currentSubUuid = org.industry_sub_uuid;
                 }
+                
+                // Setze Tab-Navigation
+                this.setupTabs(modalBody, uuid);
+                
+                // Lade initial Dokumente-Anzahl für Badge
+                this.updateDocumentsCount(uuid);
             }
         );
     }
     
     setupOrgHeaderMenu(modalBody, orgUuid, orgName) {
         this.setupHeaderMenu(modalBody, orgUuid, orgName);
+    }
+    
+    setupTabs(container, orgUuid) {
+        const tabs = container.querySelectorAll(this.config.tabSelector);
+        const tabContents = container.querySelectorAll(this.config.tabContentSelector);
+        
+        tabs.forEach(tab => {
+            const tabName = tab.dataset.tab;
+            if (!tabName) return;
+            
+            const oldHandler = this._tabHandlers?.get(tabName);
+            if (oldHandler) {
+                tab.removeEventListener('click', oldHandler);
+            }
+            
+            const handler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Update active tab
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active content
+                tabContents.forEach(content => {
+                    content.classList.remove('active');
+                    const contentTabName = content.dataset.tabContent;
+                    if (contentTabName === tabName) {
+                        content.classList.add('active');
+                    }
+                });
+                
+                // Load content if needed
+                if (tabName === 'dokumente') {
+                    this.loadDocuments(orgUuid);
+                    // Event-Listener für Upload-Button registrieren, wenn Dokumente-Tab geöffnet wird
+                    this.setupUploadButton(container, orgUuid);
+                }
+            };
+            
+            if (!this._tabHandlers) {
+                this._tabHandlers = new Map();
+            }
+            this._tabHandlers.set(tabName, handler);
+            tab.addEventListener('click', handler);
+        });
+    }
+    
+    async loadDocuments(orgUuid) {
+        try {
+            const documentListModule = this.app.modules?.documentList;
+            if (documentListModule) {
+                await documentListModule.loadDocuments('org', orgUuid, '#org-documents-list', '#org-documents-count-badge');
+            }
+        } catch (error) {
+            console.warn('Could not load documents:', error);
+        }
+    }
+    
+    async updateDocumentsCount(orgUuid) {
+        try {
+            const documents = await window.API.getEntityDocuments('org', orgUuid);
+            const badge = document.querySelector('#org-documents-count-badge');
+            if (badge) {
+                const count = documents?.length || 0;
+                if (count > 0) {
+                    badge.textContent = count;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        } catch (error) {
+            console.warn('Could not update documents count:', error);
+        }
+    }
+    
+    setupUploadButton(container, orgUuid) {
+        // Entferne alten Event-Listener falls vorhanden
+        const existingButton = container.querySelector('#org-upload-document-btn');
+        if (existingButton) {
+            const newButton = existingButton.cloneNode(true);
+            existingButton.parentNode.replaceChild(newButton, existingButton);
+        }
+        
+        // Neuen Event-Listener registrieren
+        const uploadButton = container.querySelector('#org-upload-document-btn');
+        if (uploadButton) {
+            uploadButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (this.app.modules?.documentUpload) {
+                    this.app.modules.documentUpload.showUploadDialog('org', orgUuid);
+                } else if (window.app?.documentUpload) {
+                    window.app.documentUpload.showUploadDialog('org', orgUuid);
+                }
+            });
+        } else {
+            console.warn('Upload-Button nicht gefunden:', '#org-upload-document-btn');
+        }
     }
     
     // Rendering delegated to OrgDetailViewModule

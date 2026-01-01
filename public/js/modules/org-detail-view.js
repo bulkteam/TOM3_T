@@ -134,8 +134,20 @@ export class OrgDetailViewModule {
                     <div class="org-detail-header-divider"></div>
                 </div>
                 
-                <!-- Account Owner & Gesundheit -->
-                <div class="org-detail-section org-detail-account-section">
+                <!-- Tabs -->
+                <div class="org-detail-tabs">
+                    <button class="org-detail-tab active" data-tab="grunddaten">Grunddaten</button>
+                    <button class="org-detail-tab" data-tab="dokumente">
+                        Dokumente<span id="org-documents-count-badge" class="org-detail-tab-badge" style="display: none;"></span>
+                    </button>
+                </div>
+                
+                <!-- Tab Content -->
+                <div class="org-detail-content">
+                    <!-- Grunddaten Tab -->
+                    <div class="org-detail-tab-content active" data-tab-content="grunddaten">
+                        <!-- Account Owner & Gesundheit -->
+                        <div class="org-detail-section org-detail-account-section">
                     <div class="org-detail-section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h4 style="margin: 0;">Account & Grunddaten</h4>
                         <button class="org-detail-edit-btn" onclick="app.orgDetail.editModule.toggleOrgEditMode('${orgUuid}')">Bearbeiten</button>
@@ -402,13 +414,29 @@ export class OrgDetailViewModule {
                     `}
                 </div>
                 
+                <!-- Archivieren-Button - Nur im Grunddaten-Tab sichtbar -->
                 <div class="org-detail-actions" style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border);">
                     ${org.archived_at ? `
-                        <button class="btn btn-success" onclick="app.orgDetail.unarchiveOrg('${orgUuid}')">📦 Reaktivieren</button>
+                        <button class="btn btn-success" onclick="window.app.orgDetail.unarchiveOrg('${orgUuid}')">📦 Reaktivieren</button>
                         <span style="color: var(--text-light); margin-left: 1rem;">Archiviert am ${new Date(org.archived_at).toLocaleDateString('de-DE')}</span>
                     ` : `
-                        <button class="btn btn-warning" onclick="app.orgDetail.archiveOrg('${orgUuid}')">📦 Archivieren</button>
+                        <button class="btn btn-warning" onclick="window.app.orgDetail.archiveOrg('${orgUuid}')">📦 Archivieren</button>
                     `}
+                </div>
+                    </div>
+                    
+                    <!-- Dokumente Tab -->
+                    <div class="org-detail-tab-content" data-tab-content="dokumente">
+                        <div class="org-detail-section">
+                            <div class="org-detail-section-header">
+                                <h4>Dokumente</h4>
+                                <button id="org-upload-document-btn" class="btn btn-sm btn-primary" data-org-uuid="${orgUuid}">+ Dokument hochladen</button>
+                            </div>
+                            <div id="org-documents-list" class="document-list">
+                                <!-- Wird dynamisch geladen -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;

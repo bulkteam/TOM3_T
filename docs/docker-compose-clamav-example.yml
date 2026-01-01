@@ -1,0 +1,63 @@
+# TOM3 - docker-compose.yml mit ClamAV Integration
+# Standort: C:\dev\mariadb-docker\docker-compose.yml
+
+services:
+  mariadb:
+    image: mariadb:10.4.32
+    container_name: mariadb104
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3307:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./conf.d:/etc/mysql/conf.d:ro
+      - ./logs:/var/log/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 0
+      UPLOAD_LIMIT: 256M
+
+  # ClamAV für Dokumenten-Scanning
+  # WICHTIG: Kein CRM-Container nötig! PHP-App läuft auf XAMPP (Host)
+  clamav:
+    image: clamav/clamav:latest
+    container_name: tom3-clamav
+    restart: unless-stopped
+    volumes:
+      - clamav_db:/var/lib/clamav
+      - clamav_logs:/var/log/clamav
+      # WICHTIG: Storage-Verzeichnis mounten, damit ClamAV auf Dateien zugreifen kann
+      # Anpassen an deinen tatsächlichen Pfad!
+      - C:/xampp/htdocs/TOM3/storage:/scans:ro
+    environment:
+      - CLAMAV_NO_FRESHCLAM=false  # FreshClam aktivieren (automatische Updates)
+      - CLAMAV_NO_CLAMD=false       # ClamAV Daemon aktivieren
+    ports:
+      - "3310:3310"  # ClamAV Socket (für clamdscan vom Host)
+    healthcheck:
+      test: ["CMD", "clamdscan", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mariadb_data:
+  clamav_db:      # ClamAV Virendefinitionen
+  clamav_logs:     # ClamAV Logs
+  # uploads Volume NICHT nötig, wenn Volume-Mount verwendet wird

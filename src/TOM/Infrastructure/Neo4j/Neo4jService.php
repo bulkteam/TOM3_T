@@ -16,35 +16,58 @@ class Neo4jService
     
     public function __construct(?array $config = null)
     {
-        if ($config === null) {
-            // Versuche verschiedene Pfade für database.php
-            $possiblePaths = [
-                __DIR__ . '/../../../config/database.php',
-                dirname(__DIR__, 3) . '/config/database.php',
-                getcwd() . '/config/database.php'
-            ];
-            
-            $dbConfig = null;
-            foreach ($possiblePaths as $path) {
-                if (file_exists($path)) {
-                    $dbConfig = require $path;
-                    break;
+        // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+        // Dies verhindert Fatal Errors bei PHP 8.1+ wegen veralteter Return-Type-Deklarationen
+        $oldErrorReporting = error_reporting();
+        error_reporting($oldErrorReporting & ~E_DEPRECATED);
+        
+        try {
+            if ($config === null) {
+                // Versuche verschiedene Pfade für database.php
+                // Von src/TOM/Infrastructure/Neo4j/ -> config/ (4 Ebenen hoch)
+                $possiblePaths = [
+                    __DIR__ . '/../../../../config/database.php',  // Von Neo4j/ -> config/
+                    dirname(__DIR__, 4) . '/config/database.php',  // Alternative
+                    getcwd() . '/config/database.php',  // Vom aktuellen Arbeitsverzeichnis
+                ];
+                
+                // Füge Document Root Pfade hinzu (nur wenn gesetzt)
+                if (isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT'])) {
+                    $docRoot = $_SERVER['DOCUMENT_ROOT'];
+                    $possiblePaths[] = $docRoot . '/TOM3/config/database.php';
+                    $possiblePaths[] = $docRoot . '/tom3/config/database.php';
+                    // Prüfe auch ohne TOM3 (falls direkt im htdocs)
+                    $possiblePaths[] = $docRoot . '/config/database.php';
+                }
+                
+                // Fallback: 3 Ebenen (von Infrastructure/)
+                $possiblePaths[] = dirname(__DIR__, 3) . '/config/database.php';
+                
+                $dbConfig = null;
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path)) {
+                        $dbConfig = require $path;
+                        break;
+                    }
+                }
+                
+                if (!$dbConfig) {
+                    throw new \RuntimeException('Neo4j configuration not found. Tried: ' . implode(', ', $possiblePaths));
+                }
+                
+                $config = $dbConfig['neo4j'] ?? null;
+                
+                if (!$config) {
+                    throw new \RuntimeException('Neo4j configuration not found in database.php');
                 }
             }
             
-            if (!$dbConfig) {
-                throw new \RuntimeException('Neo4j configuration not found. Tried: ' . implode(', ', $possiblePaths));
-            }
-            
-            $config = $dbConfig['neo4j'] ?? null;
-            
-            if (!$config) {
-                throw new \RuntimeException('Neo4j configuration not found in database.php');
-            }
+            $this->config = $config;
+            $this->client = $this->createClient();
+        } finally {
+            // Stelle error_reporting wieder her
+            error_reporting($oldErrorReporting);
         }
-        
-        $this->config = $config;
-        $this->client = $this->createClient();
     }
     
     private function createClient(): ClientInterface
@@ -82,14 +105,22 @@ class Neo4jService
      */
     public function run(string $query, array $parameters = []): array
     {
-        $result = $this->client->run($query, $parameters);
+        // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+        $oldErrorReporting = error_reporting();
+        error_reporting($oldErrorReporting & ~E_DEPRECATED);
         
-        $records = [];
-        foreach ($result as $record) {
-            $records[] = $record->toArray();
+        try {
+            $result = $this->client->run($query, $parameters);
+            
+            $records = [];
+            foreach ($result as $record) {
+                $records[] = $record->toArray();
+            }
+            
+            return $records;
+        } finally {
+            error_reporting($oldErrorReporting);
         }
-        
-        return $records;
     }
     
     /**
@@ -97,15 +128,23 @@ class Neo4jService
      */
     public function runSingle(string $query, array $parameters = []): mixed
     {
-        $result = $this->client->run($query, $parameters);
-        $first = $result->first();
+        // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+        $oldErrorReporting = error_reporting();
+        error_reporting($oldErrorReporting & ~E_DEPRECATED);
         
-        if (!$first) {
-            return null;
+        try {
+            $result = $this->client->run($query, $parameters);
+            $first = $result->first();
+            
+            if (!$first) {
+                return null;
+            }
+            
+            $values = $first->values();
+            return $values[0] ?? null;
+        } finally {
+            error_reporting($oldErrorReporting);
         }
-        
-        $values = $first->values();
-        return $values[0] ?? null;
     }
     
     /**
@@ -114,8 +153,18 @@ class Neo4jService
     public function testConnection(): bool
     {
         try {
-            $this->run('RETURN 1 as test');
-            return true;
+            // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
+            $oldErrorReporting = error_reporting();
+            error_reporting($oldErrorReporting & ~E_DEPRECATED);
+            
+            try {
+                $this->run('RETURN 1 as test');
+                $result = true;
+            } finally {
+                error_reporting($oldErrorReporting);
+            }
+            
+            return $result;
         } catch (\Exception $e) {
             return false;
         }
