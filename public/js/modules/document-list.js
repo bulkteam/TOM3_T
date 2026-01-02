@@ -307,34 +307,41 @@ export class DocumentListModule {
         
         const key = `${entityType}:${entityUuid}`;
         
-        // Stoppe vorhandenes Interval
-        if (this.refreshIntervals.has(key)) {
-            clearInterval(this.refreshIntervals.get(key));
-            this.refreshIntervals.delete(key);
+        // Wenn keine pending-Dokumente mehr vorhanden: Stoppe Auto-Refresh
+        if (!hasPending) {
+            if (this.refreshIntervals.has(key)) {
+                console.log(`[DocumentList] Stoppe Auto-Refresh für ${entityType}:${entityUuid} - keine pending-Dokumente mehr`);
+                clearInterval(this.refreshIntervals.get(key));
+                this.refreshIntervals.delete(key);
+            }
+            return;
         }
         
-        // Wenn pending-Dokumente vorhanden: Starte Auto-Refresh
+        // Wenn pending-Dokumente vorhanden: Starte oder setze Auto-Refresh fort
         if (hasPending) {
-            console.log(`[DocumentList] Starte Auto-Refresh für ${entityType}:${entityUuid} (${documents.filter(d => d.scan_status === 'pending').length} pending-Dokumente)`);
-            
-            // Alle 10 Sekunden prüfen (Scan-Worker läuft alle 5 Minuten, aber Status kann sich schneller ändern)
-            const intervalId = setInterval(() => {
-                console.log(`[DocumentList] Auto-Refresh: Lade Dokumente für ${entityType}:${entityUuid}`);
-                this.loadDocuments(entityType, entityUuid, containerSelector, badgeSelector);
-            }, 10000); // 10 Sekunden
-            
-            this.refreshIntervals.set(key, intervalId);
-            
-            // Stoppe nach 5 Minuten (maximale Wartezeit für Scan)
-            setTimeout(() => {
-                if (this.refreshIntervals.has(key)) {
-                    console.log(`[DocumentList] Auto-Refresh gestoppt (Timeout) für ${entityType}:${entityUuid}`);
-                    clearInterval(this.refreshIntervals.get(key));
-                    this.refreshIntervals.delete(key);
-                }
-            }, 5 * 60 * 1000); // 5 Minuten
-        } else {
-            console.log(`[DocumentList] Keine pending-Dokumente für ${entityType}:${entityUuid} - kein Auto-Refresh nötig`);
+            // Prüfe, ob bereits ein Interval läuft
+            if (!this.refreshIntervals.has(key)) {
+                const pendingCount = documents.filter(d => d.scan_status === 'pending').length;
+                console.log(`[DocumentList] Starte Auto-Refresh für ${entityType}:${entityUuid} - ${pendingCount} pending-Dokument(e)`);
+                
+                // Alle 10 Sekunden prüfen (Scan-Worker läuft alle 5 Minuten, aber Status kann sich schneller ändern)
+                const intervalId = setInterval(() => {
+                    // Lade Dokumente neu und prüfe, ob noch pending-Dokumente vorhanden sind
+                    this.loadDocuments(entityType, entityUuid, containerSelector, badgeSelector);
+                }, 10000); // 10 Sekunden
+                
+                this.refreshIntervals.set(key, intervalId);
+                
+                // Stoppe nach 10 Minuten (maximale Wartezeit für Scan - erhöht von 5 auf 10 Minuten)
+                setTimeout(() => {
+                    if (this.refreshIntervals.has(key)) {
+                        console.log(`[DocumentList] Auto-Refresh Timeout für ${entityType}:${entityUuid} - stoppe nach 10 Minuten`);
+                        clearInterval(this.refreshIntervals.get(key));
+                        this.refreshIntervals.delete(key);
+                    }
+                }, 10 * 60 * 1000); // 10 Minuten
+            }
+            // Wenn Interval bereits läuft: nichts zu tun (keine Log-Meldung, um Spam zu vermeiden)
         }
     }
     

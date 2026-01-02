@@ -122,6 +122,11 @@ switch ($endpoint) {
         echo json_encode(getClamAvStatus($db));
         break;
         
+    case 'scheduled-tasks':
+        // GET /api/monitoring/scheduled-tasks
+        echo json_encode(checkScheduledTasks());
+        break;
+        
     default:
         http_response_code(404);
         echo json_encode(['error' => 'Not found']);
@@ -137,7 +142,8 @@ function getSystemStatus(PDO $db): array
         'database' => checkDatabase($db),
         'neo4j' => checkNeo4j(),
         'sync_worker' => checkSyncWorker($db),
-        'clamav' => checkClamAv($db)
+        'clamav' => checkClamAv($db),
+        'scheduled_tasks' => checkScheduledTasks()
     ];
     
     return $status;
@@ -1084,6 +1090,485 @@ function getActivityLog(PDO $db, int $limit = 100): array
         return [
             'activities' => [],
             'total' => 0,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Prüft Windows Scheduled Tasks Status
+ */
+function checkScheduledTasks(): array
+{
+    try {
+        // Liste der zu überwachenden Tasks (basierend auf WINDOWS-SCHEDULER-JOBS.md)
+        $monitoredTasks = [
+            'TOM3-Neo4j-Sync-Worker' => ['required' => true, 'description' => 'Neo4j Sync Worker'],
+            'TOM3-ClamAV-Scan-Worker' => ['required' => false, 'description' => 'ClamAV Scan Worker'],
+            'TOM3-ExtractTextWorker' => ['required' => true, 'description' => 'Extract Text Worker'],
+            'TOM3-DuplicateCheck' => ['required' => false, 'description' => 'Duplicate Check'],
+            'TOM3-ActivityLog-Maintenance' => ['required' => false, 'description' => 'Activity Log Maintenance'],
+            'MySQL-Auto-Recovery' => ['required' => false, 'description' => 'MySQL Auto Recovery'],
+            'MySQL-Daily-Backup' => ['required' => false, 'description' => 'MySQL Daily Backup']
+        ];
+        
+        // PowerShell-Befehl zum Abrufen der Task-Informationen
+        // Verwendet zwei Methoden:
+        // 1. Get-ScheduledTask (findet Tasks des aktuellen Benutzers)
+        // 2. schtasks (findet auch SYSTEM-Tasks)
+        // Konvertiere DateTime-Objekte zu ISO-8601 Strings für bessere Kompatibilität
+        $psScript = '
+$ErrorActionPreference = "Continue"
+$tasks = @()
+$foundTaskNames = @()
+
+# Liste der zu suchenden Tasks
+$taskNamesToFind = @("TOM3-Neo4j-Sync-Worker", "TOM3-ClamAV-Scan-Worker", "TOM3-ExtractTextWorker", "TOM3-DuplicateCheck", "TOM3-ActivityLog-Maintenance", "MySQL-Auto-Recovery", "MySQL-Daily-Backup")
+
+# Methode 1: Get-ScheduledTask (findet Tasks des aktuellen Benutzers)
+try {
+    $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue
+    if ($null -ne $allTasks) {
+        foreach ($task in $allTasks) {
+            if ($null -eq $task) { continue }
+            $taskName = $task.TaskName
+            if ([string]::IsNullOrEmpty($taskName)) { continue }
+            
+            # Prüfe ob Task-Name in unserer Liste ist
+            if ($taskNamesToFind -contains $taskName) {
+                try {
+                    $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+                    if ($info) {
+                        $lastRun = $null
+                        if ($info.LastRunTime -and $info.LastRunTime -ne [DateTime]::MinValue) { 
+                            $lastRun = $info.LastRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        }
+                        $nextRun = $null
+                        if ($info.NextRunTime -and $info.NextRunTime -ne [DateTime]::MinValue) { 
+                            $nextRun = $info.NextRunTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        }
+                        $tasks += [PSCustomObject]@{
+                            TaskName = $taskName
+                            State = $task.State
+                            LastRunTime = $lastRun
+                            NextRunTime = $nextRun
+                            LastTaskResult = $info.LastTaskResult
+                        }
+                        $foundTaskNames += $taskName
+                    }
+                } catch {
+                    # Fehler beim Abrufen der Task-Info, überspringen
+                }
+            }
+        }
+    }
+} catch {
+    # Get-ScheduledTask fehlgeschlagen, weiter mit schtasks
+}
+
+# Methode 2: schtasks (findet auch SYSTEM-Tasks)
+foreach ($taskName in $taskNamesToFind) {
+    if ($foundTaskNames -contains $taskName) { continue }  # Bereits gefunden
+    
+    try {
+        $result = schtasks /query /tn $taskName /fo LIST /v 2>&1
+        if ($LASTEXITCODE -eq 0 -and $result -notmatch "FEHLER|ERROR|nicht gefunden|not found") {
+            # Parse Status
+            $taskState = "Unknown"
+            $statusLine = $result | Select-String "Status:"
+            if ($statusLine) {
+                $taskState = ($statusLine -split "Status:")[1].Trim()
+            }
+            
+            # Parse Last Run Time
+            $lastRun = $null
+            $lastRunLine = $result | Select-String "Letzte Ausführungszeit:|Last Run Time:"
+            if ($lastRunLine) {
+                $dateStr = ($lastRunLine -split ":")[1..-1] -join ":" | ForEach-Object { $_.Trim() }
+                if ($dateStr -and $dateStr -ne "N/A" -and $dateStr -ne "") {
+                    try {
+                        $parsedDate = [DateTime]::Parse($dateStr)
+                        $lastRun = $parsedDate.ToString("yyyy-MM-dd HH:mm:ss")
+                    } catch {
+                        # Parsing fehlgeschlagen, ignoriere
+                    }
+                }
+            }
+            
+            # Parse Next Run Time
+            $nextRun = $null
+            $nextRunLine = $result | Select-String "Nächste Ausführungszeit:|Next Run Time:"
+            if ($nextRunLine) {
+                $dateStr = ($nextRunLine -split ":")[1..-1] -join ":" | ForEach-Object { $_.Trim() }
+                if ($dateStr -and $dateStr -ne "N/A" -and $dateStr -ne "") {
+                    try {
+                        $parsedDate = [DateTime]::Parse($dateStr)
+                        $nextRun = $parsedDate.ToString("yyyy-MM-dd HH:mm:ss")
+                    } catch {
+                        # Parsing fehlgeschlagen, ignoriere
+                    }
+                }
+            }
+            
+            # Parse Last Result
+            $lastResult = $null
+            $resultLine = $result | Select-String "Letztes Ergebnis:|Last Result:"
+            if ($resultLine) {
+                $lastResultStr = ($resultLine -split ":")[1].Trim()
+                if ($lastResultStr -match "0x([0-9a-fA-F]+)") {
+                    $lastResult = [int]("0x" + $matches[1])
+                } elseif ($lastResultStr -match "(\d+)") {
+                    $lastResult = [int]$matches[1]
+                } elseif ($lastResultStr -match "erfolgreich|success") {
+                    $lastResult = 0
+                }
+            }
+            
+            $tasks += [PSCustomObject]@{
+                TaskName = $taskName
+                State = $taskState
+                LastRunTime = $lastRun
+                NextRunTime = $nextRun
+                LastTaskResult = $lastResult
+            }
+            $foundTaskNames += $taskName
+        }
+    } catch {
+        # schtasks fehlgeschlagen für diesen Task, überspringen
+    }
+}
+
+# Ausgabe als JSON-Array (auch wenn nur ein Task gefunden wurde)
+if ($tasks.Count -eq 0) {
+    Write-Output "[]"
+} elseif ($tasks.Count -eq 1) {
+    # Einzelnes Objekt als Array ausgeben
+    Write-Output "[$($tasks[0] | ConvertTo-Json -Compress)]"
+} else {
+    # Mehrere Objekte als Array ausgeben
+    Write-Output ($tasks | ConvertTo-Json -Compress)
+}
+';
+        
+        // Versuche zuerst mit -Command (direkter Befehl)
+        // Escaping für PowerShell-Command
+        $psScriptEscaped = str_replace('"', '`"', $psScript);
+        $psScriptEscaped = str_replace('$', '`$', $psScriptEscaped);
+        
+        $command = sprintf(
+            'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "%s"',
+            $psScriptEscaped
+        );
+        
+        $output = [];
+        $returnCode = 0;
+        exec($command . ' 2>&1', $output, $returnCode);
+        
+        // Falls das fehlschlägt, versuche es mit temporärer Datei
+        if ($returnCode !== 0 || empty($output) || (count($output) === 1 && strpos($output[0], '{') === false && strpos($output[0], '[') === false)) {
+            $tempScript = tempnam(sys_get_temp_dir(), 'tom3_tasks_');
+            // Verwende .ps1 Extension für bessere Kompatibilität
+            $tempScript = $tempScript . '.ps1';
+            file_put_contents($tempScript, $psScript);
+            
+            $command = sprintf(
+                'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%s"',
+                $tempScript
+            );
+            
+            $output = [];
+            $returnCode = 0;
+            exec($command . ' 2>&1', $output, $returnCode);
+            
+            // Lösche temporäre Datei
+            @unlink($tempScript);
+        }
+        
+        $tasks = [];
+        $overallStatus = 'ok';
+        $totalTasks = 0;
+        $runningTasks = 0;
+        $stoppedTasks = 0;
+        $missingRequiredTasks = [];
+        
+        $jsonOutput = '[]';
+        $decodedTasks = [];
+        
+        // Prüfe auch wenn Return Code nicht 0 ist - möglicherweise gibt es trotzdem JSON-Ausgabe
+        if (!empty($output)) {
+            // Entferne mögliche Fehlermeldungen und leere Zeilen
+            $cleanOutput = array_filter($output, function($line) {
+                $line = trim($line);
+                return !empty($line) && 
+                       !preg_match('/^(Warning|Error|Exception)/i', $line) &&
+                       !preg_match('/^Cannot find/i', $line) &&
+                       !preg_match('/^Die Benennung/i', $line); // Deutsche Fehlermeldungen
+            });
+            
+            if (empty($cleanOutput)) {
+                // Keine Tasks gefunden oder leere Ausgabe
+                $jsonOutput = '[]';
+            } else {
+                // Kombiniere alle Zeilen zu einem String
+                $jsonOutput = implode('', $cleanOutput);
+                
+                // Entferne mögliche BOM oder unsichtbare Zeichen am Anfang
+                $jsonOutput = trim($jsonOutput);
+                $jsonOutput = preg_replace('/^\xEF\xBB\xBF/', '', $jsonOutput); // UTF-8 BOM entfernen
+                
+                // Prüfe ob JSON-String mit [ beginnt (Array) oder { beginnt (Objekt)
+                // Wenn es mit { beginnt und nicht mit [{ beginnt, mache es zu einem Array
+                $trimmedJson = trim($jsonOutput);
+                if (!empty($trimmedJson) && substr($trimmedJson, 0, 1) === '{' && substr($trimmedJson, 0, 2) !== '[{') {
+                    $jsonOutput = '[' . $jsonOutput . ']';
+                }
+            }
+            
+            // PowerShell gibt JSON aus - kann ein Array oder einzelnes Objekt sein
+            
+            // Versuche zuerst als Array zu dekodieren
+            $decoded = json_decode($jsonOutput, true);
+            
+            // Wenn JSON-Dekodierung fehlschlägt, prüfe auf JSON-Fehler
+            if ($decoded === null && !empty($jsonOutput)) {
+                $jsonError = json_last_error_msg();
+                // Versuche die JSON-Ausgabe zu reparieren
+                $jsonOutput = preg_replace('/,\s*}/', '}', $jsonOutput); // Entferne trailing commas
+                $jsonOutput = preg_replace('/,\s*]/', ']', $jsonOutput); // Entferne trailing commas in Arrays
+                $decoded = json_decode($jsonOutput, true);
+            }
+            
+            if ($decoded !== null) {
+                if (isset($decoded[0]) && is_array($decoded[0])) {
+                    // Es ist ein Array von Objekten
+                    $decodedTasks = $decoded;
+                } elseif (is_array($decoded) && isset($decoded['TaskName'])) {
+                    // Es ist ein einzelnes Objekt
+                    $decodedTasks = [$decoded];
+                } elseif (is_array($decoded)) {
+                    // Versuche es als Array zu behandeln
+                    $decodedTasks = $decoded;
+                }
+            } else {
+                // JSON-Dekodierung fehlgeschlagen - versuche Zeile für Zeile
+                $jsonLines = explode("\n", trim($jsonOutput));
+                foreach ($jsonLines as $line) {
+                    $line = trim($line);
+                    if (empty($line)) continue;
+                    
+                    $decoded = json_decode($line, true);
+                    if ($decoded !== null) {
+                        if (isset($decoded[0]) && is_array($decoded[0])) {
+                            $decodedTasks = array_merge($decodedTasks, $decoded);
+                        } else {
+                            $decodedTasks[] = $decoded;
+                        }
+                    }
+                }
+            }
+            
+            foreach ($decodedTasks as $taskData) {
+                $taskName = $taskData['TaskName'] ?? '';
+                if (empty($taskName)) continue;
+                
+                $totalTasks++;
+                $state = $taskData['State'] ?? 'Unknown';
+                $lastRunTime = $taskData['LastRunTime'] ?? null;
+                $nextRunTime = $taskData['NextRunTime'] ?? null;
+                $lastTaskResult = $taskData['LastTaskResult'] ?? null;
+                
+                // Konvertiere State zu unserem Status-Format
+                // Windows Task Scheduler States: 0=Unknown, 1=Disabled, 2=Queued, 3=Ready, 4=Running
+                $taskStatus = 'unknown';
+                $statusMessage = 'Unbekannt';
+                $stateString = '';
+                
+                // Handle numerische States
+                if (is_numeric($state)) {
+                    $stateNum = (int)$state;
+                    switch ($stateNum) {
+                        case 0:
+                            $stateString = 'Unknown';
+                            $taskStatus = 'unknown';
+                            $statusMessage = 'Unbekannt';
+                            break;
+                        case 1:
+                            $stateString = 'Disabled';
+                            $taskStatus = 'warning';
+                            $statusMessage = 'Deaktiviert';
+                            $stoppedTasks++;
+                            break;
+                        case 2:
+                            $stateString = 'Queued';
+                            $taskStatus = 'warning';
+                            $statusMessage = 'In Warteschlange';
+                            $stoppedTasks++;
+                            break;
+                        case 3:
+                            $stateString = 'Ready';
+                            $taskStatus = 'ok';
+                            $statusMessage = 'Bereit';
+                            $runningTasks++;
+                            break;
+                        case 4:
+                            $stateString = 'Running';
+                            $taskStatus = 'ok';
+                            $statusMessage = 'Läuft';
+                            $runningTasks++;
+                            break;
+                        default:
+                            $stateString = 'Unknown (' . $stateNum . ')';
+                            $taskStatus = 'unknown';
+                            $statusMessage = 'Unbekannt (' . $stateNum . ')';
+                            break;
+                    }
+                } else {
+                    // Handle String-States
+                    $stateString = $state;
+                    if ($state === 'Running') {
+                        $taskStatus = 'ok';
+                        $statusMessage = 'Läuft';
+                        $runningTasks++;
+                    } elseif ($state === 'Ready') {
+                        $taskStatus = 'ok';
+                        $statusMessage = 'Bereit';
+                        $runningTasks++;
+                    } elseif ($state === 'Disabled') {
+                        $taskStatus = 'warning';
+                        $statusMessage = 'Deaktiviert';
+                        $stoppedTasks++;
+                    } elseif ($state === 'Queued') {
+                        $taskStatus = 'warning';
+                        $statusMessage = 'In Warteschlange';
+                        $stoppedTasks++;
+                    } else {
+                        $taskStatus = 'error';
+                        $statusMessage = 'Fehler: ' . $state;
+                        $stoppedTasks++;
+                    }
+                }
+                
+                // Prüfe LastTaskResult (0 = Erfolg, andere Werte = Fehler)
+                if ($lastTaskResult !== null && $lastTaskResult !== 0 && $lastTaskResult !== 267009) {
+                    // 267009 = Task wurde noch nicht ausgeführt
+                    if ($lastTaskResult !== 267009) {
+                        $taskStatus = 'error';
+                        $statusMessage = 'Fehler (Code: ' . $lastTaskResult . ')';
+                    }
+                }
+                
+                // Prüfe ob Task zu lange nicht gelaufen ist (wenn erwartet wird, dass er regelmäßig läuft)
+                if ($lastRunTime && in_array($taskName, ['TOM3-Neo4j-Sync-Worker', 'TOM3-ClamAV-Scan-Worker', 'TOM3-ExtractTextWorker'])) {
+                    try {
+                        $lastRunTimestamp = strtotime($lastRunTime);
+                        $minutesSinceLastRun = (time() - $lastRunTimestamp) / 60;
+                        
+                        // Wenn Task länger als 15 Minuten nicht gelaufen ist, markiere als Warnung
+                        if ($minutesSinceLastRun > 15 && $taskStatus === 'ok') {
+                            $taskStatus = 'warning';
+                            $statusMessage = 'Läuft, aber letzte Ausführung vor ' . round($minutesSinceLastRun) . ' Min';
+                        }
+                    } catch (Exception $e) {
+                        // Ignoriere Parse-Fehler
+                    }
+                }
+                
+                $taskInfo = $monitoredTasks[$taskName] ?? ['required' => false, 'description' => $taskName];
+                
+                // Formatiere Datumswerte für bessere JavaScript-Kompatibilität
+                $formattedLastRun = null;
+                if ($lastRunTime) {
+                    try {
+                        // PowerShell gibt DateTime-Objekte als ISO-8601 Strings zurück
+                        // Konvertiere zu Unix-Timestamp für JavaScript
+                        $dateTime = new DateTime($lastRunTime);
+                        $formattedLastRun = $dateTime->format('Y-m-d H:i:s');
+                    } catch (Exception $e) {
+                        $formattedLastRun = $lastRunTime;
+                    }
+                }
+                
+                $formattedNextRun = null;
+                if ($nextRunTime) {
+                    try {
+                        $dateTime = new DateTime($nextRunTime);
+                        $formattedNextRun = $dateTime->format('Y-m-d H:i:s');
+                    } catch (Exception $e) {
+                        $formattedNextRun = $nextRunTime;
+                    }
+                }
+                
+                $tasks[] = [
+                    'name' => $taskName,
+                    'description' => $taskInfo['description'],
+                    'required' => $taskInfo['required'],
+                    'status' => $taskStatus,
+                    'message' => $statusMessage,
+                    'state' => $stateString ?: (string)$state,
+                    'state_numeric' => is_numeric($state) ? (int)$state : null,
+                    'last_run_time' => $formattedLastRun,
+                    'next_run_time' => $formattedNextRun,
+                    'last_task_result' => $lastTaskResult
+                ];
+                
+                // Aktualisiere Gesamtstatus
+                if ($taskInfo['required'] && $taskStatus !== 'ok') {
+                    $overallStatus = 'error';
+                } elseif ($overallStatus === 'ok' && $taskStatus === 'warning') {
+                    $overallStatus = 'warning';
+                }
+            }
+        }
+        
+        // Prüfe ob erforderliche Tasks fehlen
+        foreach ($monitoredTasks as $taskName => $taskInfo) {
+            if ($taskInfo['required']) {
+                $found = false;
+                foreach ($tasks as $task) {
+                    if ($task['name'] === $taskName) {
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    $missingRequiredTasks[] = $taskName;
+                    $overallStatus = 'error';
+                }
+            }
+        }
+        
+        // Erstelle Gesamtmeldung
+        $message = '';
+        
+        if (!empty($missingRequiredTasks)) {
+            $message = 'Fehlende Tasks: ' . implode(', ', $missingRequiredTasks);
+        } elseif ($stoppedTasks > 0) {
+            $message = "$runningTasks laufend, $stoppedTasks gestoppt";
+        } elseif ($totalTasks > 0) {
+            $message = "$totalTasks Task(s) aktiv";
+        } else {
+            $message = 'Keine Tasks gefunden';
+        }
+        
+        return [
+            'status' => $overallStatus,
+            'message' => $message,
+            'total_tasks' => $totalTasks,
+            'running_tasks' => $runningTasks,
+            'stopped_tasks' => $stoppedTasks,
+            'missing_required_tasks' => $missingRequiredTasks,
+            'tasks' => $tasks
+        ];
+        
+        } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => 'Fehler: ' . $e->getMessage(),
+            'total_tasks' => 0,
+            'running_tasks' => 0,
+            'stopped_tasks' => 0,
+            'missing_required_tasks' => [],
+            'tasks' => [],
             'error' => $e->getMessage()
         ];
     }

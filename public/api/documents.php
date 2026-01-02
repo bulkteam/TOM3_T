@@ -447,6 +447,9 @@ function handleSearchDocuments(DocumentService $service): void
     if (!empty($_GET['limit'])) {
         $filters['limit'] = (int)$_GET['limit'];
     }
+    if (!empty($_GET['offset'])) {
+        $filters['offset'] = (int)$_GET['offset'];
+    }
     
     try {
         $results = [];

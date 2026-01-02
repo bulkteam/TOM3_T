@@ -49,7 +49,9 @@ services:
       - CLAMAV_NO_FRESHCLAM=false  # FreshClam aktivieren (automatische Updates)
       - CLAMAV_NO_CLAMD=false       # ClamAV Daemon aktivieren
     ports:
-      - "3310:3310"  # ClamAV Socket (für clamdscan vom Host)
+      # WICHTIG: Port-Mapping ist nötig, da PHP auf Host läuft (nicht in Container)
+      # 127.0.0.1:3310:3310 = Nur localhost erreichbar (sicherer als 0.0.0.0:3310)
+      - "127.0.0.1:3310:3310"  # ClamAV Socket (für clamdscan vom Host)
     healthcheck:
       test: ["CMD", "clamdscan", "--version"]
       interval: 30s

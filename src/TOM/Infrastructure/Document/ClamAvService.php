@@ -68,8 +68,12 @@ class ClamAvService
         // Annahme: storage/ ist gemountet als /scans
         $containerPath = $this->getContainerPath($filePath);
         
+        // Verwende --archive-verbose für besseres Archive-Scanning (DOCX, ZIP, etc.)
+        // --fdpass: Datei-Deskriptor-Passing für bessere Performance
+        // --infected: Nur bei Infektionen Output
+        // --no-summary: Keine Zusammenfassung am Ende
         $command = sprintf(
-            'docker exec %s clamdscan --no-summary --infected --fdpass %s 2>&1',
+            'docker exec %s clamdscan --no-summary --infected --fdpass --archive-verbose %s 2>&1',
             escapeshellarg($this->dockerContainer),
             escapeshellarg($containerPath)
         );

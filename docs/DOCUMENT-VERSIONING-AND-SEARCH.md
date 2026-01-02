@@ -6,6 +6,17 @@ Dieses Dokument beschreibt die Implementierung von Versionierung und Volltext-Su
 
 ## 1. Volltext-Suche (✅ Implementiert)
 
+### Architektur
+
+Die Suche durchsucht **zwei Felder**:
+1. **`title`** - Immer durchsuchbar (Metadaten)
+2. **`extracted_text`** - Nur wenn Text-Extraktion erfolgreich war
+
+**Relevanz-Score:**
+- Titel-Treffer: 1.5x Gewichtung
+- Text-Treffer: 1.0x Gewichtung
+- Kombiniert für optimale Ergebnisse
+
 ### MariaDB FULLTEXT Index
 
 **Status:** ✅ Bereits in Migration 036 vorhanden
@@ -15,12 +26,32 @@ FULLTEXT idx_extracted_text (extracted_text)
 FULLTEXT idx_title (title)
 ```
 
+### Text-Extraktion (Asynchron)
+
+**Status:** ✅ Vollständig implementiert
+
+Die Text-Extraktion erfolgt **asynchron** über einen Worker:
+- **Upload:** Sofort (Dokument wird gespeichert, Status: `extraction_status = 'pending'`)
+- **Extraktion:** Innerhalb von 5 Minuten (Worker läuft alle 5 Minuten)
+- **Suche:** Funktioniert sofort nach Extraktion
+
+**Unterstützte Formate:**
+- ✅ PDF (mit smalot/pdfparser)
+- ✅ DOCX (Word-Dokumente)
+- ✅ DOC (altes Word-Format, benötigt LibreOffice/Antiword)
+- ✅ XLSX/XLS (Excel-Tabellen, mit phpoffice/phpspreadsheet)
+- ✅ TXT, CSV, HTML (Text-Dateien)
+- ✅ Bilder mit OCR (PNG, JPEG, TIFF - benötigt Tesseract)
+
+**Worker:** `scripts/jobs/extract-text-worker.php`  
+**Windows Task:** `TOM3-ExtractTextWorker` (läuft alle 5 Minuten)
+
 ### Service-Methoden
 
 **Datei:** `src/TOM/Service/DocumentService.php`
 
-- `searchDocuments($query, $filters)` - Suche in `extracted_text`
-- `searchDocumentsInTitle($query, $filters)` - Fallback: Suche in `title`
+- `searchDocuments($query, $filters)` - Suche in `extracted_text` + `title`
+- `searchDocumentsInTitle($query, $filters)` - Fallback: Nur `title` (wenn keine Extraktion)
 
 ### API-Endpunkt
 
@@ -53,8 +84,11 @@ GET /api/documents/search?q={query}&entity_type={type}&entity_uuid={uuid}&classi
 
 - ✅ NATURAL LANGUAGE MODE (Standard)
 - ✅ Relevanz-Score (sortiert nach Score)
-- ✅ Filter: Entity, Klassifikation, Tags
+- ✅ Kombinierte Suche: Titel (1.5x) + Extrahierter Text (1.0x)
+- ✅ Filter: Entity, Klassifikation, Tags, Datum, Scan-Status
 - ✅ Fallback: Titel-Suche wenn keine Text-Extraktion vorhanden
+- ✅ Pagination (offset/limit)
+- ✅ Asynchrone Text-Extraktion (Worker-basiert)
 
 ### Erweiterte Suche (später)
 
@@ -227,4 +261,5 @@ SELECT MAX(version_number) FROM documents WHERE version_group_uuid=? FOR UPDATE;
 
 ---
 
-*Dokument erstellt: 2026-01-01*
+*Dokument erstellt: 2026-01-01*  
+*Aktualisiert: 2026-01-02 (Text-Extraktion implementiert)*

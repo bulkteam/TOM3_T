@@ -161,7 +161,15 @@ try {
             require __DIR__ . '/auth.php';
             break;
         case 'documents':
-            require __DIR__ . '/documents.php';
+            if ($id === 'recent') {
+                // GET /api/documents/recent - Zuletzt angesehen
+                require __DIR__ . '/documents-recent.php';
+            } elseif ($id === 'track') {
+                // POST /api/documents/track - Track Zugriff
+                require __DIR__ . '/documents-track.php';
+            } else {
+                require __DIR__ . '/documents.php';
+            }
             break;
         default:
             http_response_code(404);

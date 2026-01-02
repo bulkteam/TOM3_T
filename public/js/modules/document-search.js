@@ -5,14 +5,19 @@
 
 import { Utils } from './utils.js';
 import { SearchInputModule } from './search-input.js';
+import { RecentListModule } from './recent-list.js';
 
 export class DocumentSearchModule {
     constructor(app) {
         this.app = app;
         this.searchInput = new SearchInputModule();
+        this.recentListModule = new RecentListModule(app);
         this._searchInputCleanup = null;
         this.currentFilters = {};
         this.currentResults = [];
+        this.currentPage = 1;
+        this.pageSize = 20;
+        this.totalResults = 0;
     }
     
     init() {
@@ -53,6 +58,9 @@ export class DocumentSearchModule {
                 this.resetFilters();
             });
         }
+        
+        // Lade "Zuletzt verwendet"
+        this.loadRecentDocuments();
         
         // Initial: Lade alle Dokumente (ohne Query)
         this.performSearch();
@@ -123,10 +131,11 @@ export class DocumentSearchModule {
         document.getElementById('filter-orphaned-only').checked = false;
         document.getElementById('document-search-input').value = '';
         
-        this.performSearch();
+        this.currentPage = 1;
+        this.performSearch(1);
     }
     
-    async performSearch() {
+    async performSearch(page = 1) {
         const searchInput = document.getElementById('document-search-input');
         const resultsContainer = document.getElementById('document-search-results');
         
@@ -137,13 +146,19 @@ export class DocumentSearchModule {
         const query = searchInput.value.trim();
         const filters = this.getFilters();
         
+        // Pagination-Parameter hinzufügen
+        filters.limit = this.pageSize;
+        filters.offset = (page - 1) * this.pageSize;
+        this.currentPage = page;
+        
         // Loading-State
         resultsContainer.innerHTML = '<div class="loading">Suche läuft...</div>';
         
         try {
             const results = await window.API.searchDocuments(query, filters);
             this.currentResults = results || [];
-            this.renderResults(this.currentResults);
+            this.totalResults = results.length; // TODO: API sollte total_count zurückgeben
+            this.renderResults(this.currentResults, page);
         } catch (error) {
             console.error('Document search failed:', error);
             resultsContainer.innerHTML = `
@@ -154,9 +169,21 @@ export class DocumentSearchModule {
         }
     }
     
-    renderResults(documents) {
+    renderResults(documents, page = 1) {
         const container = document.getElementById('document-search-results');
         if (!container) return;
+        
+        // Verstecke "Zuletzt verwendet" wenn Suche aktiv ist
+        const recentSection = document.getElementById('document-recent-section');
+        if (recentSection) {
+            const query = document.getElementById('document-search-input')?.value.trim() || '';
+            const hasFilters = Object.keys(this.getFilters()).length > 0;
+            if (query || hasFilters) {
+                recentSection.style.display = 'none';
+            } else {
+                recentSection.style.display = 'block';
+            }
+        }
         
         if (!documents || documents.length === 0) {
             container.innerHTML = `
@@ -167,6 +194,9 @@ export class DocumentSearchModule {
             return;
         }
         
+        const totalPages = Math.ceil(this.totalResults / this.pageSize);
+        const hasMore = documents.length === this.pageSize; // Annahme: wenn genau pageSize Ergebnisse, gibt es mehr
+        
         const html = `
             <div class="document-results-header">
                 <div class="results-count">${documents.length} Dokument${documents.length !== 1 ? 'e' : ''} gefunden</div>
@@ -174,6 +204,7 @@ export class DocumentSearchModule {
             <div class="document-results-list">
                 ${documents.map(doc => this.renderDocumentCard(doc)).join('')}
             </div>
+            ${this.renderPagination(page, totalPages, hasMore)}
         `;
         
         container.innerHTML = html;
@@ -253,12 +284,19 @@ export class DocumentSearchModule {
                             'email_thread': 'E-Mail-Thread'
                         };
                         const entityLabel = entityLabels[att.entity_type] || att.entity_type;
-                        const roleText = att.role ? ` (${Utils.escapeHtml(att.role)})` : '';
+                        
+                        // Zeige Klarname, falls vorhanden, sonst nur Entity-Type
+                        let displayText = entityLabel;
+                        if (att.entity_name) {
+                            displayText = `${Utils.escapeHtml(att.entity_name)} (${entityLabel})`;
+                        }
+                        
+                        const roleText = att.role ? ` - ${Utils.escapeHtml(att.role)}` : '';
                         return `
                             <a href="#" class="document-attachment-link" 
                                data-entity-type="${Utils.escapeHtml(att.entity_type)}" 
                                data-entity-uuid="${Utils.escapeHtml(att.entity_uuid)}">
-                                ${Utils.escapeHtml(entityLabel)}${roleText}
+                                ${displayText}${roleText}
                             </a>
                         `;
                     }).join(', ')}
@@ -270,6 +308,34 @@ export class DocumentSearchModule {
         const tagsHtml = tags.length > 0
             ? `<div class="document-tags">${tags.map(tag => `<span class="tag">${Utils.escapeHtml(tag)}</span>`).join('')}</div>`
             : '';
+        
+        // Button-Logik: Ansehen nur für PDFs und Bilder
+        const canDownload = doc.scan_status === 'clean';
+        const canPreview = canDownload && (doc.mime_detected === 'application/pdf' || doc.mime_detected?.startsWith('image/'));
+        
+        let actionButtons = '';
+        if (canDownload) {
+            if (canPreview) {
+                // Ansehen + Download für PDFs und Bilder
+                actionButtons = `
+                    <button class="btn btn-primary btn-sm btn-view-document" data-document-uuid="${doc.document_uuid}">
+                        👁️ Ansehen
+                    </button>
+                    <button class="btn btn-secondary btn-sm btn-download-document" data-document-uuid="${doc.document_uuid}">
+                        ⬇️ Download
+                    </button>
+                `;
+            } else {
+                // Nur Download für andere Dateitypen
+                actionButtons = `
+                    <button class="btn btn-secondary btn-sm btn-download-document" data-document-uuid="${doc.document_uuid}">
+                        ⬇️ Download
+                    </button>
+                `;
+            }
+        } else {
+            actionButtons = `<span class="text-muted">Dokument nicht verfügbar (Status: ${doc.scan_status})</span>`;
+        }
         
         return `
             <div class="document-card" data-document-uuid="${doc.document_uuid}">
@@ -301,16 +367,7 @@ export class DocumentSearchModule {
                 </div>
                 
                 <div class="document-card-footer">
-                    ${doc.scan_status === 'clean' ? `
-                        <button class="btn btn-primary btn-sm btn-view-document" data-document-uuid="${doc.document_uuid}">
-                            👁️ Ansehen
-                        </button>
-                        <button class="btn btn-secondary btn-sm btn-download-document" data-document-uuid="${doc.document_uuid}">
-                            ⬇️ Download
-                        </button>
-                    ` : `
-                        <span class="text-muted">Dokument nicht verfügbar (Status: ${doc.scan_status})</span>
-                    `}
+                    ${actionButtons}
                 </div>
             </div>
         `;
@@ -328,8 +385,61 @@ export class DocumentSearchModule {
         return `${size.toFixed(1)} ${units[unitIndex]}`;
     }
     
+    async loadRecentDocuments() {
+        await this.recentListModule.loadRecentList(
+            'document',
+            'document-recent-list',
+            (doc) => `
+                <div class="document-recent-item" data-document-uuid="${doc.document_uuid || doc.uuid}" style="padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+                    <h4 style="margin: 0 0 0.25rem 0; font-size: 0.875rem; color: var(--text);">${Utils.escapeHtml(doc.title || 'Unbenannt')}</h4>
+                    ${doc.file_extension ? `<p style="margin: 0; color: var(--text-light); font-size: 0.75rem;">${Utils.escapeHtml(doc.file_extension.toUpperCase())}</p>` : ''}
+                </div>
+            `,
+            (documentUuid) => {
+                // Öffne Dokument-Detail oder zeige in neuem Tab
+                this.viewDocument(documentUuid);
+            },
+            10
+        );
+    }
+    
+    renderPagination(currentPage, totalPages, hasMore) {
+        if (totalPages <= 1 && !hasMore) {
+            return '';
+        }
+        
+        const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+        const nextDisabled = !hasMore && currentPage >= totalPages ? 'disabled' : '';
+        
+        return `
+            <div class="document-pagination" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); display: flex; justify-content: center; align-items: center; gap: 1rem;">
+                <button class="btn btn-secondary btn-sm ${prevDisabled}" 
+                        ${prevDisabled ? 'disabled' : ''} 
+                        onclick="window.app.documentSearch.performSearch(${currentPage - 1})">
+                    ← Zurück
+                </button>
+                <span class="pagination-info" style="color: var(--text-light);">
+                    Seite ${currentPage}${hasMore ? '+' : totalPages > 1 ? ` von ${totalPages}` : ''}
+                </span>
+                <button class="btn btn-secondary btn-sm ${nextDisabled}" 
+                        ${nextDisabled ? 'disabled' : ''} 
+                        onclick="window.app.documentSearch.performSearch(${currentPage + 1})">
+                    Weiter →
+                </button>
+            </div>
+        `;
+    }
+    
     async downloadDocument(documentUuid) {
         try {
+            // Track Access
+            const user = await window.API.getCurrentUser();
+            if (user && user.user_id) {
+                await window.API.trackDocumentAccess(documentUuid, user.user_id, 'recent');
+                // Aktualisiere "Zuletzt verwendet" Liste
+                this.loadRecentDocuments();
+            }
+            
             const url = `/tom3/public/api/documents/${documentUuid}/download`;
             window.open(url, '_blank');
         } catch (error) {
@@ -340,6 +450,14 @@ export class DocumentSearchModule {
     
     async viewDocument(documentUuid) {
         try {
+            // Track Access
+            const user = await window.API.getCurrentUser();
+            if (user && user.user_id) {
+                await window.API.trackDocumentAccess(documentUuid, user.user_id, 'recent');
+                // Aktualisiere "Zuletzt verwendet" Liste
+                this.loadRecentDocuments();
+            }
+            
             const url = `/tom3/public/api/documents/${documentUuid}/view`;
             window.open(url, '_blank');
         } catch (error) {

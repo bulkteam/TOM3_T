@@ -7,10 +7,10 @@
 
 return [
     'mysql' => [
-        'host' => $_ENV['MYSQL_HOST'] ?? 'localhost',
-        'port' => (int)($_ENV['MYSQL_PORT'] ?? 3306),
+        'host' => $_ENV['MYSQL_HOST'] ?? '127.0.0.1',
+        'port' => (int)($_ENV['MYSQL_PORT'] ?? 3307), // Docker MariaDB Standard-Port
         'dbname' => $_ENV['MYSQL_DBNAME'] ?? 'tom',
-        'user' => $_ENV['MYSQL_USER'] ?? 'root',
+        'user' => $_ENV['MYSQL_USER'] ?? 'tomcat',
         'password' => $_ENV['MYSQL_PASSWORD'] ?? '',
         'charset' => 'utf8mb4'
     ],

@@ -41,8 +41,14 @@ if ($existingTask) {
     Write-Host "Alter Task entfernt." -ForegroundColor Yellow
 }
 
-# Task-Action erstellen
-$action = New-ScheduledTaskAction -Execute $phpPath -Argument "`"$scriptPath`" --verbose"
+# VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
+$vbsWrapper = Join-Path $PSScriptRoot "scan-blob-worker.vbs"
+if (Test-Path $vbsWrapper) {
+    $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsWrapper`""
+} else {
+    # Fallback: PHP direkt (kann kurz aufblinken)
+    $action = New-ScheduledTaskAction -Execute $phpPath -Argument "`"$scriptPath`""
+}
 
 # Task-Trigger: Alle 5 Minuten
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 365)
@@ -55,6 +61,12 @@ $settings = New-ScheduledTaskSettingsSet `
     -RunOnlyIfNetworkAvailable:$false `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
+# Task-Principal (als aktueller Benutzer, aber läuft auch ohne eingeloggten Benutzer)
+$principal = New-ScheduledTaskPrincipal `
+    -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType ServiceAccount `
+    -RunLevel Highest
+
 # Task registrieren
 try {
     Register-ScheduledTask `
@@ -62,17 +74,20 @@ try {
         -Action $action `
         -Trigger $trigger `
         -Settings $settings `
-        -Description "TOM3 ClamAV Scan Worker - Verarbeitet Scan-Jobs für Dokumente" `
-        -User "SYSTEM" `
-        -RunLevel Highest | Out-Null
+        -Principal $principal `
+        -Description "TOM3 ClamAV Scan Worker - Verarbeitet Scan-Jobs für Dokumente" | Out-Null
     
     Write-Host "Task '$taskName' erfolgreich erstellt!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Konfiguration:" -ForegroundColor Cyan
     Write-Host "  - Name: $taskName"
-    Write-Host "  - Script: $scriptPath"
+    if (Test-Path $vbsWrapper) {
+        Write-Host "  - Script: $scriptPath (über VBScript-Wrapper - unsichtbar)" -ForegroundColor Green
+    } else {
+        Write-Host "  - Script: $scriptPath (direkt - kann kurz aufblinken)" -ForegroundColor Yellow
+    }
     Write-Host "  - Intervall: Alle 5 Minuten"
-    Write-Host "  - User: SYSTEM (höchste Rechte)"
+    Write-Host "  - User: $env:USERDOMAIN\$env:USERNAME (sichtbar und überwachbar)"
     Write-Host ""
     Write-Host "Status prüfen:" -ForegroundColor Cyan
     Write-Host "  Get-ScheduledTask -TaskName '$taskName' | Get-ScheduledTaskInfo"

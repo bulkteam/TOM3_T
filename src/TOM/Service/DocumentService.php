@@ -10,6 +10,7 @@ use TOM\Service\BaseEntityService;
 use TOM\Service\Document\BlobService;
 use TOM\Infrastructure\Document\FileTypeValidator;
 use TOM\Infrastructure\Document\ClamAvService;
+use TOM\Infrastructure\Access\AccessTrackingService;
 
 /**
  * DocumentService
@@ -21,12 +22,14 @@ class DocumentService extends BaseEntityService
     private BlobService $blobService;
     private FileTypeValidator $fileTypeValidator;
     private ?ClamAvService $clamAvService = null;
+    private AccessTrackingService $accessTrackingService;
     
     public function __construct(?PDO $db = null)
     {
         parent::__construct($db);
         $this->blobService = new BlobService($db);
         $this->fileTypeValidator = new FileTypeValidator();
+        $this->accessTrackingService = new AccessTrackingService($db);
     }
     
     /**
@@ -119,7 +122,7 @@ class DocumentService extends BaseEntityService
             
             // Jobs enqueuen (async processing)
             $this->enqueueScan($blobResult['blob_uuid']);
-            // $this->enqueueExtraction($document['document_uuid']); // Später
+            $this->enqueueExtraction($document['document_uuid']);
             
             return [
                 'document_uuid' => $document['document_uuid'],
@@ -540,8 +543,22 @@ class DocumentService extends BaseEntityService
         $sql = "
             SELECT da.attachment_uuid, da.entity_type, da.entity_uuid, 
                    da.role, da.description, da.created_at as attached_at,
-                   da.created_by_user_id
+                   da.created_by_user_id,
+                   -- Entity-Namen via LEFT JOINs
+                   COALESCE(
+                       org.name,
+                       person.display_name,
+                       project.name,
+                       case_item.title,
+                       task.title,
+                       NULL
+                   ) as entity_name
             FROM document_attachments da
+            LEFT JOIN org ON da.entity_type = 'org' AND da.entity_uuid = org.org_uuid
+            LEFT JOIN person ON da.entity_type = 'person' AND da.entity_uuid = person.person_uuid
+            LEFT JOIN project ON da.entity_type = 'project' AND da.entity_uuid = project.project_uuid
+            LEFT JOIN case_item ON da.entity_type = 'case' AND da.entity_uuid = case_item.case_uuid
+            LEFT JOIN task ON da.entity_type = 'task' AND da.entity_uuid = task.task_uuid
             WHERE da.document_uuid = :document_uuid
             ORDER BY da.created_at DESC
         ";
@@ -726,6 +743,7 @@ class DocumentService extends BaseEntityService
         
         $tenantId = 1; // TODO: Multi-Tenancy
         $limit = (int)($filters['limit'] ?? 50);
+        $offset = (int)($filters['offset'] ?? 0);
         
         // Normalisiere Query (trim)
         $query = trim($query);
@@ -879,14 +897,15 @@ class DocumentService extends BaseEntityService
         }
         
         // Sortierung nach Relevanz
-        $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit";
+        $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit OFFSET :offset";
         $params['limit'] = $limit;
+        $params['offset'] = $offset;
         
         $stmt = $this->db->prepare($sql);
         
-        // Parameter binden (limit als int)
+        // Parameter binden (limit und offset als int)
         foreach ($params as $key => $value) {
-            if ($key === 'limit') {
+            if ($key === 'limit' || $key === 'offset') {
                 $stmt->bindValue(':' . $key, $value, PDO::PARAM_INT);
             } else {
                 $stmt->bindValue(':' . $key, $value);
@@ -925,6 +944,7 @@ class DocumentService extends BaseEntityService
     {
         $tenantId = 1;
         $limit = (int)($filters['limit'] ?? 50);
+        $offset = (int)($filters['offset'] ?? 0);
         
         // Wenn Query leer oder '*', zeige alle Dokumente (nur mit Filtern)
         $useFulltext = !empty($query) && $query !== '*';
@@ -1071,12 +1091,13 @@ class DocumentService extends BaseEntityService
             }
         }
         
-        $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit";
+        $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit OFFSET :offset";
         $params['limit'] = $limit;
+        $params['offset'] = $offset;
         
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => $value) {
-            if ($key === 'limit') {
+            if ($key === 'limit' || $key === 'offset') {
                 $stmt->bindValue(':' . $key, $value, PDO::PARAM_INT);
             } else {
                 $stmt->bindValue(':' . $key, $value);
@@ -1144,6 +1165,39 @@ class DocumentService extends BaseEntityService
         }
     }
     
+    /**
+     * Enqueued einen Extraction-Job für ein Document
+     * 
+     * @param string $documentUuid
+     */
+    private function enqueueExtraction(string $documentUuid): void
+    {
+        try {
+            $eventUuid = UuidHelper::generate($this->db);
+            
+            $stmt = $this->db->prepare("
+                INSERT INTO outbox_event (
+                    event_uuid, aggregate_type, aggregate_uuid, event_type, payload
+                ) VALUES (
+                    :event_uuid, 'document', :document_uuid, 'DocumentExtractionRequested', :payload
+                )
+            ");
+            
+            $stmt->execute([
+                'event_uuid' => $eventUuid,
+                'document_uuid' => $documentUuid,
+                'payload' => json_encode([
+                    'document_uuid' => $documentUuid,
+                    'job_type' => 'extract_text',
+                    'created_at' => date('Y-m-d H:i:s')
+                ])
+            ]);
+        } catch (\Exception $e) {
+            // Fehler beim Enqueuen nicht kritisch - loggen und weitermachen
+            error_log("Fehler beim Enqueuen von Extraction-Job: " . $e->getMessage());
+        }
+    }
+    
     private function logAuditAction(string $entityType, string $entityUuid, string $action, ?array $metadata, ?string $userId): void
     {
         try {
@@ -1173,5 +1227,58 @@ class DocumentService extends BaseEntityService
             // Audit-Fehler sollten nicht den Haupt-Flow blockieren
             error_log("Document audit trail error: " . $e->getMessage());
         }
+    }
+    
+    /**
+     * Protokolliert den Zugriff auf ein Dokument (für "Zuletzt angesehen")
+     */
+    public function trackAccess(string $userId, string $documentUuid, string $accessType = 'recent'): void
+    {
+        $this->accessTrackingService->trackAccess('document', $userId, $documentUuid, $accessType);
+    }
+    
+    /**
+     * Holt die zuletzt angesehenen Dokumente für einen Benutzer
+     * 
+     * @param string $userId User-ID
+     * @param int $limit Anzahl der Einträge
+     * @return array Dokumente mit Blob-Informationen
+     */
+    public function getRecentDocuments(string $userId, int $limit = 10): array
+    {
+        $recent = $this->accessTrackingService->getRecentEntities('document', $userId, $limit);
+        
+        // Erweitere mit Blob-Informationen (wie bei getDocument)
+        foreach ($recent as &$doc) {
+            // Lade Blob-Informationen
+            $stmt = $this->db->prepare("
+                SELECT b.sha256, b.size_bytes, b.mime_detected, b.scan_status, b.scan_at,
+                       b.file_extension, b.original_filename
+                FROM blobs b
+                WHERE b.blob_uuid = :blob_uuid
+            ");
+            $stmt->execute(['blob_uuid' => $doc['current_blob_uuid'] ?? null]);
+            $blob = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($blob) {
+                $doc = array_merge($doc, $blob);
+            }
+            
+            // JSON-Felder dekodieren
+            if ($doc['tags']) {
+                $doc['tags'] = json_decode($doc['tags'], true) ?: [];
+            }
+            if ($doc['source_metadata']) {
+                $doc['source_metadata'] = json_decode($doc['source_metadata'], true) ?: [];
+            }
+            if ($doc['extraction_meta']) {
+                $doc['extraction_meta'] = json_decode($doc['extraction_meta'], true) ?: [];
+            }
+            
+            // Lade Attachments (für Anzeige)
+            $doc['attachments'] = $this->getDocumentAttachments($doc['document_uuid']);
+        }
+        
+        return $recent;
     }
 }

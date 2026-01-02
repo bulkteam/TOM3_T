@@ -58,7 +58,8 @@ class MonitoringDashboard {
                 this.loadEventTypes(),
                 this.loadDuplicateCheckResults(),
                 this.loadActivityLog(),
-                this.loadClamAvStatus()
+                this.loadClamAvStatus(),
+                this.loadScheduledTasks()
             ]);
         } catch (error) {
             console.error('Error loading monitoring data:', error);
@@ -724,6 +725,173 @@ class MonitoringDashboard {
                 </div>
             </div>
         `).join('');
+    }
+
+    async loadScheduledTasks() {
+        const container = document.getElementById('scheduled-tasks-list');
+        if (!container) return;
+        
+        container.innerHTML = '<div class="loading">Lade Scheduled Tasks...</div>';
+        
+        try {
+            const data = await window.API.getScheduledTasksStatus();
+            
+            if (data.error) {
+                container.innerHTML = `<div class="empty-state">${this.escapeHtml(data.error)}</div>`;
+                return;
+            }
+            
+            const tasks = data.tasks || [];
+            
+            if (tasks.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><p>Keine Tasks gefunden</p></div>';
+                return;
+            }
+            
+            // Sortiere Tasks: Zuerst erforderliche, dann nach Status
+            const sortedTasks = [...tasks].sort((a, b) => {
+                if (a.required && !b.required) return -1;
+                if (!a.required && b.required) return 1;
+                
+                const statusOrder = { 'error': 0, 'warning': 1, 'ok': 2, 'unknown': 3 };
+                return (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3);
+            });
+            
+            let html = '<div class="scheduled-tasks-grid">';
+            
+            sortedTasks.forEach(task => {
+                const statusIcon = {
+                    'ok': '✅',
+                    'warning': '⚠️',
+                    'error': '❌',
+                    'unknown': '❓'
+                }[task.status] || '❓';
+                
+                const statusClass = `task-status-${task.status}`;
+                const requiredBadge = task.required ? '<span class="task-required-badge">Pflicht</span>' : '';
+                
+                // Formatiere letzte Ausführung
+                let lastRunText = 'Nie';
+                if (task.last_run_time && task.last_run_time !== 'null' && task.last_run_time !== '') {
+                    try {
+                        // PowerShell gibt Format "yyyy-MM-dd HH:mm:ss" zurück
+                        // Konvertiere zu Date-Objekt
+                        const dateStr = task.last_run_time.replace(' ', 'T');
+                        const lastRun = new Date(dateStr);
+                        
+                        if (!isNaN(lastRun.getTime())) {
+                            const minutesAgo = Math.floor((Date.now() - lastRun.getTime()) / 60000);
+                            if (minutesAgo < 0) {
+                                lastRunText = 'In der Zukunft';
+                            } else if (minutesAgo < 60) {
+                                lastRunText = `vor ${minutesAgo} Min`;
+                            } else if (minutesAgo < 1440) {
+                                lastRunText = `vor ${Math.floor(minutesAgo / 60)} Std`;
+                            } else {
+                                const days = Math.floor(minutesAgo / 1440);
+                                lastRunText = `vor ${days} Tag${days !== 1 ? 'en' : ''}`;
+                            }
+                        } else {
+                            lastRunText = task.last_run_time;
+                        }
+                    } catch (e) {
+                        lastRunText = task.last_run_time || 'Nie';
+                    }
+                }
+                
+                // Formatiere nächste Ausführung
+                let nextRunText = 'Unbekannt';
+                if (task.next_run_time && task.next_run_time !== 'null' && task.next_run_time !== '') {
+                    try {
+                        // PowerShell gibt Format "yyyy-MM-dd HH:mm:ss" zurück
+                        const dateStr = task.next_run_time.replace(' ', 'T');
+                        const nextRun = new Date(dateStr);
+                        
+                        if (!isNaN(nextRun.getTime())) {
+                            nextRunText = nextRun.toLocaleString('de-DE', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                        } else {
+                            nextRunText = task.next_run_time;
+                        }
+                    } catch (e) {
+                        nextRunText = task.next_run_time || 'Unbekannt';
+                    }
+                }
+                
+                html += `
+                    <div class="scheduled-task-card ${statusClass}">
+                        <div class="task-header">
+                            <div class="task-name">
+                                ${statusIcon} ${this.escapeHtml(task.name)}
+                                ${requiredBadge}
+                            </div>
+                            <div class="task-status-badge ${statusClass}">${this.escapeHtml(task.message)}</div>
+                        </div>
+                        <div class="task-description">${this.escapeHtml(task.description)}</div>
+                        <div class="task-details">
+                            <div class="task-detail-item">
+                                <span class="task-detail-label">Status:</span>
+                                <span class="task-detail-value">${this.escapeHtml(task.state || 'Unknown')}</span>
+                            </div>
+                            <div class="task-detail-item">
+                                <span class="task-detail-label">Letzte Ausführung:</span>
+                                <span class="task-detail-value">${lastRunText}</span>
+                            </div>
+                            ${task.next_run_time ? `
+                                <div class="task-detail-item">
+                                    <span class="task-detail-label">Nächste Ausführung:</span>
+                                    <span class="task-detail-value">${nextRunText}</span>
+                                </div>
+                            ` : ''}
+                            ${task.last_task_result !== null && task.last_task_result !== undefined && task.last_task_result !== 0 && task.last_task_result !== 267009 ? `
+                                <div class="task-detail-item task-error">
+                                    <span class="task-detail-label">Fehlercode:</span>
+                                    <span class="task-detail-value">${task.last_task_result}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Zeige Zusammenfassung
+            if (data.total_tasks > 0 || data.debug) {
+                html = `
+                    <div class="scheduled-tasks-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Gesamt:</span>
+                            <span class="summary-value">${data.total_tasks}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Laufend:</span>
+                            <span class="summary-value" style="color: #10b981;">${data.running_tasks}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Gestoppt:</span>
+                            <span class="summary-value" style="color: #ef4444;">${data.stopped_tasks}</span>
+                        </div>
+                        ${data.missing_required_tasks && data.missing_required_tasks.length > 0 ? `
+                            <div class="summary-item summary-error">
+                                <span class="summary-label">Fehlende Tasks:</span>
+                                <span class="summary-value">${data.missing_required_tasks.join(', ')}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` + html;
+            }
+            
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading scheduled tasks:', error);
+            container.innerHTML = '<div class="empty-state">Fehler beim Laden</div>';
+        }
     }
 
     escapeHtml(text) {

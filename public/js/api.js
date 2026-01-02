@@ -73,6 +73,10 @@ class TOM3API {
             }
             
             if (!response.ok) {
+                // Bei 404 mit leerem Array als Fallback (für Endpoints die noch nicht existieren)
+                if (response.status === 404 && url.includes('/recent')) {
+                    return [];
+                }
                 throw new Error(data.error || data.message || `HTTP ${response.status}`);
             }
             
@@ -638,6 +642,10 @@ class TOM3API {
     async getClamAvStatus() {
         return this.request('/monitoring/clamav');
     }
+
+    async getScheduledTasksStatus() {
+        return this.request('/monitoring/scheduled-tasks');
+    }
     
     async getRecentPersons(userId = 'default_user', limit = 10) {
         return this.request(`/persons/recent?user_id=${userId}&limit=${limit}`);
@@ -748,6 +756,9 @@ class TOM3API {
         if (filters.limit) {
             params.append('limit', filters.limit);
         }
+        if (filters.offset) {
+            params.append('offset', filters.offset);
+        }
         
         return this.request(`/documents/search?${params.toString()}`);
     }
@@ -761,6 +772,34 @@ class TOM3API {
         // Wird bereits in searchDocuments mitgeliefert, aber für direkten Zugriff:
         const doc = await this.getDocument(documentUuid);
         return doc.attachments || [];
+    }
+    
+    /**
+     * Zuletzt angesehene Dokumente abrufen
+     * @param {string} userId User-ID
+     * @param {number} limit Anzahl der Einträge
+     * @returns {Promise<Array>}
+     */
+    async getRecentDocuments(userId = 'default_user', limit = 10) {
+        return this.request(`/documents/recent?user_id=${userId}&limit=${limit}`);
+    }
+    
+    /**
+     * Dokument-Zugriff protokollieren (für "Zuletzt angesehen")
+     * @param {string} documentUuid
+     * @param {string} userId User-ID
+     * @param {string} accessType 'recent' | 'favorite' | 'tag'
+     * @returns {Promise<Object>}
+     */
+    async trackDocumentAccess(documentUuid, userId = 'default_user', accessType = 'recent') {
+        return this.request('/documents/track', {
+            method: 'POST',
+            body: {
+                document_uuid: documentUuid,
+                user_id: userId,
+                access_type: accessType
+            }
+        });
     }
 }
 

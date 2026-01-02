@@ -13,10 +13,23 @@ if (!defined('TOM3_AUTOLOADED')) {
 use TOM\Infrastructure\Auth\AuthService;
 
 /**
- * Prüft ob MySQL auf Port 3306 antwortet
+ * Prüft ob MySQL/MariaDB erreichbar ist
+ * Verwendet die Konfiguration aus config/database.php (Port 3307 für Docker)
  */
 function isMySQLRunning(): bool {
-    $connection = @fsockopen('localhost', 3306, $errno, $errstr, 2);
+    // Lade Datenbank-Konfiguration
+    $configFile = __DIR__ . '/../config/database.php';
+    if (!file_exists($configFile)) {
+        return false;
+    }
+    
+    $config = require $configFile;
+    $dbConfig = $config['mysql'] ?? [];
+    
+    $host = $dbConfig['host'] ?? '127.0.0.1';
+    $port = $dbConfig['port'] ?? 3307; // Docker MariaDB Standard-Port
+    
+    $connection = @fsockopen($host, $port, $errno, $errstr, 2);
     if ($connection) {
         fclose($connection);
         return true;
@@ -138,10 +151,10 @@ if (!isMySQLRunning()) {
                     'MySQL nicht verfügbar',
                     'Die MySQL-Datenbank ist nicht erreichbar. Die Anwendung kann nicht gestartet werden.',
                     [
-                        'Starte MySQL über das XAMPP Control Panel',
-                        'Führe das Recovery-Script aus: scripts\\ensure-mysql-running.bat',
-                        'Prüfe ob Port 3306 blockiert ist',
-                        'Prüfe die MySQL-Logs: C:\\xampp\\mysql\\data\\mysql_error.log'
+                        'Starte Docker MariaDB: cd C:\\dev\\mariadb-docker && docker compose up -d',
+                        'Prüfe Container-Status: docker compose ps',
+                        'Prüfe ob Port 3307 erreichbar ist (Docker MariaDB)',
+                        'Prüfe Docker-Logs: docker logs mariadb104'
                     ]
                 );
             }
@@ -151,9 +164,10 @@ if (!isMySQLRunning()) {
                 'MySQL nicht verfügbar',
                 'Die MySQL-Datenbank ist nicht erreichbar. Die Anwendung kann nicht gestartet werden.',
                 [
-                    'Starte MySQL über das XAMPP Control Panel',
-                    'Prüfe ob Port 3306 blockiert ist',
-                    'Prüfe die MySQL-Logs: C:\\xampp\\mysql\\data\\mysql_error.log'
+                    'Starte Docker MariaDB: cd C:\\dev\\mariadb-docker && docker compose up -d',
+                    'Prüfe Container-Status: docker compose ps',
+                    'Prüfe ob Port 3307 erreichbar ist (Docker MariaDB)',
+                    'Prüfe Docker-Logs: docker logs mariadb104'
                 ]
             );
         }
@@ -163,9 +177,9 @@ if (!isMySQLRunning()) {
             'MySQL nicht verfügbar',
             'Die MySQL-Datenbank ist nicht erreichbar. Die Anwendung kann nicht gestartet werden.',
             [
-                'Stelle sicher, dass MySQL läuft',
-                'Prüfe ob Port 3306 erreichbar ist',
-                'Prüfe die MySQL-Konfiguration'
+                'Stelle sicher, dass Docker MariaDB läuft',
+                'Prüfe ob Port 3307 erreichbar ist (Docker MariaDB)',
+                'Prüfe die Datenbank-Konfiguration in config/database.php'
             ]
         );
     }

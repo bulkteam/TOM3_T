@@ -112,41 +112,67 @@ class BlobScanWorker
         
         $this->log("Verarbeite Scan-Job für Blob: {$blobUuid}");
         
-        // 1) Hole Blob-Informationen
-        $blob = $this->getBlob($blobUuid);
-        if (!$blob) {
-            throw new \RuntimeException("Blob nicht gefunden: {$blobUuid}");
-        }
-        
-        // 2) Idempotency: Prüfe, ob bereits gescannt
-        if (in_array($blob['scan_status'], ['clean', 'infected', 'unsupported'])) {
-            $this->log("Blob bereits gescannt (Status: {$blob['scan_status']}) - überspringe");
+        try {
+            // 1) Hole Blob-Informationen
+            $blob = $this->getBlob($blobUuid);
+            if (!$blob) {
+                $this->log("FEHLER: Blob nicht gefunden: {$blobUuid}");
+                $this->markBlobAsError($blobUuid, "Blob nicht gefunden");
+                $this->markJobProcessed($eventUuid);
+                return;
+            }
+            
+            // 2) Idempotency: Prüfe, ob bereits gescannt
+            if (in_array($blob['scan_status'], ['clean', 'infected', 'unsupported', 'error'])) {
+                $this->log("Blob bereits gescannt (Status: {$blob['scan_status']}) - überspringe");
+                $this->markJobProcessed($eventUuid);
+                return;
+            }
+            
+            // 3) Hole Datei-Pfad
+            $filePath = $this->blobService->getBlobFilePath($blobUuid);
+            if (!file_exists($filePath)) {
+                $this->log("FEHLER: Datei nicht gefunden: {$filePath}");
+                $this->markBlobAsError($blobUuid, "Datei nicht gefunden: {$filePath}");
+                $this->markJobProcessed($eventUuid);
+                return;
+            }
+            
+            // 4) Scan durchführen
+            $this->log("Starte Scan für: {$filePath}");
+            $scanResult = $this->clamAvService->scan($filePath);
+            
+            // 5) Update Blob-Status
+            $this->updateBlobScanStatus($blobUuid, $scanResult);
+            
+            // 6) Wenn infected: Blockiere alle zugehörigen Documents
+            if ($scanResult['status'] === 'infected') {
+                $this->blockDocumentsForBlob($blobUuid, $scanResult);
+            }
+            
+            // 7) Job als verarbeitet markieren
             $this->markJobProcessed($eventUuid);
-            return;
+            
+            $this->log("Scan abgeschlossen: Status = {$scanResult['status']}");
+            
+        } catch (\Exception $e) {
+            // Bei Fehler: Markiere Blob als Error und logge ausführlich
+            $errorMsg = $e->getMessage();
+            $this->log("FEHLER beim Scan für Blob {$blobUuid}: {$errorMsg}");
+            $this->log("Stack Trace: " . $e->getTraceAsString());
+            
+            try {
+                $this->markBlobAsError($blobUuid, $errorMsg);
+            } catch (\Exception $updateError) {
+                $this->log("FEHLER beim Markieren des Blobs als Error: " . $updateError->getMessage());
+            }
+            
+            // Job trotzdem als verarbeitet markieren, damit er nicht endlos wiederholt wird
+            $this->markJobProcessed($eventUuid);
+            
+            // Exception weiterwerfen, damit sie in processJobs() geloggt wird
+            throw $e;
         }
-        
-        // 3) Hole Datei-Pfad
-        $filePath = $this->blobService->getBlobFilePath($blobUuid);
-        if (!file_exists($filePath)) {
-            throw new \RuntimeException("Datei nicht gefunden: {$filePath}");
-        }
-        
-        // 4) Scan durchführen
-        $this->log("Starte Scan für: {$filePath}");
-        $scanResult = $this->clamAvService->scan($filePath);
-        
-        // 5) Update Blob-Status
-        $this->updateBlobScanStatus($blobUuid, $scanResult);
-        
-        // 6) Wenn infected: Blockiere alle zugehörigen Documents
-        if ($scanResult['status'] === 'infected') {
-            $this->blockDocumentsForBlob($blobUuid, $scanResult);
-        }
-        
-        // 7) Job als verarbeitet markieren
-        $this->markJobProcessed($eventUuid);
-        
-        $this->log("Scan abgeschlossen: Status = {$scanResult['status']}");
     }
     
     /**
@@ -181,15 +207,29 @@ class BlobScanWorker
             WHERE blob_uuid = :blob_uuid
         ");
         
-        $stmt->execute([
+        $result = $stmt->execute([
             'blob_uuid' => $blobUuid,
             'status' => $scanResult['status'],
             'result' => json_encode($scanResult)
         ]);
+        
+        if (!$result) {
+            $errorInfo = $stmt->errorInfo();
+            throw new \RuntimeException("UPDATE fehlgeschlagen für Blob {$blobUuid}: " . json_encode($errorInfo));
+        }
+        
+        $rowsAffected = $stmt->rowCount();
+        if ($rowsAffected === 0) {
+            throw new \RuntimeException("UPDATE hat keine Zeilen aktualisiert für Blob {$blobUuid} - Blob existiert möglicherweise nicht");
+        }
+        
+        $this->log("Blob-Status aktualisiert: {$blobUuid} → {$scanResult['status']} ({$rowsAffected} Zeile(n))");
     }
     
     /**
      * Blockiert alle Documents, die auf einen infizierten Blob verweisen
+     * 
+     * Hinweis: Nur aktive Dokumente werden blockiert (gelöschte werden ignoriert)
      */
     private function blockDocumentsForBlob(string $blobUuid, array $scanResult): void
     {
@@ -208,6 +248,40 @@ class BlobScanWorker
             
             // TODO: Admin-Benachrichtigung
             // TODO: Audit-Log
+        }
+    }
+    
+    /**
+     * Markiert Blob als Error
+     */
+    private function markBlobAsError(string $blobUuid, string $errorMessage): void
+    {
+        $stmt = $this->db->prepare("
+            UPDATE blobs
+            SET scan_status = 'error',
+                scan_engine = 'clamav',
+                scan_at = NOW(),
+                scan_result = :result
+            WHERE blob_uuid = :blob_uuid
+        ");
+        
+        $result = $stmt->execute([
+            'blob_uuid' => $blobUuid,
+            'result' => json_encode([
+                'status' => 'error',
+                'error' => $errorMessage,
+                'timestamp' => date('Y-m-d H:i:s')
+            ])
+        ]);
+        
+        if (!$result) {
+            $errorInfo = $stmt->errorInfo();
+            $this->log("WARNUNG: Fehler beim Markieren des Blobs als Error: " . json_encode($errorInfo));
+        } else {
+            $rowsAffected = $stmt->rowCount();
+            if ($rowsAffected === 0) {
+                $this->log("WARNUNG: UPDATE hat keine Zeilen aktualisiert beim Markieren als Error für Blob {$blobUuid}");
+            }
         }
     }
     
@@ -259,8 +333,15 @@ if (php_sapi_name() === 'cli') {
         }
     }
     
-    $worker = new BlobScanWorker($maxJobs, $verbose);
-    $processed = $worker->processJobs();
-    
-    exit($processed > 0 ? 0 : 1);
+    try {
+        $worker = new BlobScanWorker($maxJobs, $verbose);
+        $processed = $worker->processJobs();
+        
+        // Exit 0 = Erfolg (Jobs verarbeitet ODER keine Jobs vorhanden - beides ist OK)
+        exit(0);
+    } catch (\Exception $e) {
+        // Exit 1 = Echter Fehler
+        error_log("BlobScanWorker Fehler: " . $e->getMessage());
+        exit(1);
+    }
 }

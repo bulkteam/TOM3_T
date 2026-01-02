@@ -14,7 +14,7 @@ export class RecentListModule {
     /**
      * Lädt und rendert eine "Zuletzt angesehen" Liste
      * 
-     * @param {string} entityType 'org' | 'person'
+     * @param {string} entityType 'org' | 'person' | 'document'
      * @param {string} containerId ID des Container-Elements (z.B. 'org-recent-list' oder 'person-recent-list')
      * @param {Function} renderItem Callback-Funktion zum Rendern eines einzelnen Items
      * @param {Function} onClickHandler Callback-Funktion für Klick-Events
@@ -31,7 +31,14 @@ export class RecentListModule {
                 return;
             }
             
-            const recent = await window.API.getRecentEntities(entityType, user.user_id, limit);
+            // Verwende spezifische API für Dokumente, generische für Org/Person
+            let recent;
+            if (entityType === 'document') {
+                recent = await window.API.getRecentDocuments(user.user_id, limit);
+            } else {
+                recent = await window.API.getRecentEntities(entityType, user.user_id, limit);
+            }
+            
             if (!recent || recent.length === 0) {
                 container.innerHTML = '';
                 return;
@@ -40,17 +47,24 @@ export class RecentListModule {
             container.innerHTML = recent.map(item => renderItem(item)).join('');
             
             // Event-Listener für Klicks hinzufügen
-            const uuidAttr = entityType === 'org' ? 'orgUuid' : 'personUuid';
+            const uuidAttrMap = {
+                'org': 'orgUuid',
+                'person': 'personUuid',
+                'document': 'documentUuid'
+            };
+            const uuidAttr = uuidAttrMap[entityType] || `${entityType}Uuid`;
             container.querySelectorAll(`[data-${entityType}-uuid]`).forEach(element => {
                 element.addEventListener('click', () => {
-                    const uuid = element.dataset[uuidAttr];
+                    const uuid = element.dataset[uuidAttr] || element.dataset[`${entityType}Uuid`];
                     if (uuid && onClickHandler) {
                         onClickHandler(uuid);
                     }
                 });
             });
         } catch (error) {
-            console.error(`Error loading recent ${entityType}s:`, error);
+            // Bei Fehlern einfach leeren Container anzeigen (keine Fehlermeldung)
+            console.warn(`Could not load recent ${entityType}s:`, error.message);
+            container.innerHTML = '';
         }
     }
 }

@@ -33,9 +33,9 @@ $entityType = $parts[0] ?? null; // 'org' | 'person'
 $action = $parts[1] ?? null; // 'recent' | 'track'
 
 // Validiere Entity-Typ
-if (!in_array($entityType, ['org', 'person'])) {
+if (!in_array($entityType, ['org', 'person', 'document'])) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid entity type. Must be "org" or "person"']);
+    echo json_encode(['error' => 'Invalid entity type. Must be "org", "person" or "document"']);
     exit;
 }
 
@@ -72,13 +72,20 @@ if ($action === 'recent') {
     }
     
     $data = json_decode(file_get_contents('php://input'), true);
-    $entityUuid = $data[$entityType . '_uuid'] ?? null;
+    // Unterstütze verschiedene UUID-Feldnamen
+    $uuidFieldMap = [
+        'org' => 'org_uuid',
+        'person' => 'person_uuid',
+        'document' => 'document_uuid'
+    ];
+    $uuidField = $uuidFieldMap[$entityType] ?? $entityType . '_uuid';
+    $entityUuid = $data[$uuidField] ?? null;
     $userId = AuthHelper::getCurrentUserId() ?? $data['user_id'] ?? 'default_user';
     $accessType = $data['access_type'] ?? 'recent';
     
     if (!$entityUuid) {
         http_response_code(400);
-        echo json_encode(['error' => $entityType . '_uuid required']);
+        echo json_encode(['error' => $uuidField . ' required']);
         exit;
     }
     

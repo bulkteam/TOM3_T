@@ -7,9 +7,13 @@
   - **Alternative:** XAMPP MySQL oder native MySQL-Installation
 - **Neo4j** 4.4+ (optional, für Graph-Intelligence)
 - **PHP** 8.1+ mit Extensions:
-  - `pdo`
-  - `pdo_mysql`
-  - `json`
+  - `pdo` und `pdo_mysql` (Datenbank)
+  - `json` (API)
+  - `zip` (ERFORDERLICH für DOCX/XLSX-Extraktion)
+  - `fileinfo` (MIME-Type-Erkennung)
+  - `gd` (optional, für Bildverarbeitung)
+  
+  **WICHTIG:** Siehe [INSTALLATION-WINDOWS.md](INSTALLATION-WINDOWS.md) für die Aktivierung der Extensions in `php.ini`.
 - **Composer** (für PHP-Dependencies)
 - **Apache** mit mod_rewrite (oder Nginx)
 

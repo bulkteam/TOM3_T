@@ -262,31 +262,94 @@ Select-String -Path "src\**\*.php" -Pattern "3306|localhost.*mysql" -Recurse
 
 **Sollte keine Treffer zeigen** (außer in Kommentaren oder Dokumentation)
 
-## Automatischer Start beim Systemstart (optional)
+## Automatischer Start beim Systemstart
 
 ### Docker Desktop Auto-Start
 
 **Docker Desktop** sollte so konfiguriert sein, dass es beim Windows-Start automatisch startet:
 - Docker Desktop → Settings → General → ✅ "Start Docker Desktop when you log in"
 
-### MariaDB Container Auto-Start
+### Container Restart-Policy: `restart: unless-stopped`
 
-Die `docker-compose.yml` enthält bereits:
+Die `docker-compose.yml` enthält für alle Services (mariadb, phpmyadmin, clamav):
 
 ```yaml
 restart: unless-stopped
 ```
 
-Das bedeutet:
-- Container startet automatisch, wenn Docker läuft
-- Container startet automatisch nach System-Neustart (wenn Docker Auto-Start aktiviert ist)
+**Was bedeutet das?**
 
-**Manuell starten (falls Auto-Start nicht gewünscht):**
+✅ **Sobald Docker Desktop wieder läuft, startet Docker diese Container automatisch wieder** – außer du hast sie vorher bewusst gestoppt.
 
+**Konkret:**
+- Nach einem **PC-Neustart**: Container starten automatisch, sobald Docker Desktop läuft
+- Nach einem **Docker-Neustart**: Container starten automatisch wieder
+- Nach einem **manuellen Stopp** (`docker stop ...` oder `docker compose stop`): Container starten **nicht** automatisch beim nächsten Docker-Start
+
+### Nach einem PC-Neustart
+
+**Standard-Prozedur:**
+
+1. **Docker Desktop starten** (falls es nicht automatisch startet)
+   - Container sollten dank `restart: unless-stopped` automatisch wieder laufen
+
+2. **Status prüfen:**
+   ```powershell
+   docker ps
+   ```
+
+   **Erwartete Ausgabe:**
+   ```
+   CONTAINER ID   IMAGE                  STATUS                        PORTS                                         NAMES
+   a6e57edf8614   clamav/clamav:latest   Up X minutes (healthy)        0.0.0.0:3310->3310/tcp                        tom3-clamav
+   76c3034f8e1d   phpmyadmin:latest      Up X minutes                  0.0.0.0:8081->80/tcp                          phpmyadmin
+   aab58b58ee00   mariadb:10.4.32        Up X minutes (healthy)        0.0.0.0:3307->3306/tcp                        mariadb104
+   ```
+
+   ✅ Alle Container sollten `Up` und `healthy` (bei mariadb/clamav) sein.
+
+3. **Falls Container nicht automatisch gestartet sind:**
+   ```powershell
+   cd C:\dev\mariadb-docker
+   docker compose up -d
+   ```
+
+### Wenn Container manuell gestoppt wurden
+
+**Wichtig:** Wenn du Container absichtlich gestoppt hast (z.B. mit `docker stop ...` oder `docker compose stop`), startet `restart: unless-stopped` sie beim nächsten Docker-Start **nicht** automatisch.
+
+**Container wieder starten:**
+
+**Option 1: Alle Container starten (empfohlen):**
 ```powershell
 cd C:\dev\mariadb-docker
 docker compose up -d
 ```
+
+**Option 2: Einzelne Container starten:**
+```powershell
+docker start mariadb104
+docker start phpmyadmin
+docker start tom3-clamav
+```
+
+### Zusammenfassung: PC-Neustart
+
+**Normaler Ablauf:**
+1. ✅ Docker Desktop starten (falls nicht automatisch)
+2. ✅ Container laufen automatisch (dank `restart: unless-stopped`)
+3. ✅ Status prüfen: `docker ps`
+
+**Falls Container nicht laufen:**
+```powershell
+cd C:\dev\mariadb-docker
+docker compose up -d
+```
+
+**Merksatz:**
+- `restart: unless-stopped` = Container starten automatisch, außer sie wurden manuell gestoppt
+- Nach PC-Neustart: Nur Docker Desktop starten reicht (Container starten automatisch)
+- Nach manuellem Stopp: Container müssen manuell wieder gestartet werden
 
 ## Troubleshooting
 

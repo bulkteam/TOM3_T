@@ -150,6 +150,37 @@ Du solltest das Neo4j Browser-Interface sehen.
 
 ## Teil 3: TOM3 konfigurieren
 
+### Schritt 0: PHP-Extensions aktivieren (PFLICHT)
+
+**WICHTIG:** Für die Dokumenten-Funktionalität müssen folgende PHP-Extensions aktiviert sein:
+
+1. **Öffne `php.ini`** (meist `C:\xampp\php\php.ini`)
+   - Finde die Datei mit: `php --ini` oder `php -r "echo php_ini_loaded_file();"`
+
+2. **Aktiviere folgende Extensions:**
+   ```ini
+   ; Suche nach diesen Zeilen und entferne das ; (Kommentar entfernen):
+   
+   extension=zip      ; Zeile ~962 - ERFORDERLICH für DOCX/XLSX-Extraktion
+   extension=gd       ; Zeile ~931 - Optional, für Bildverarbeitung
+   extension=fileinfo ; Zeile ~930 - Meist bereits aktiviert
+   ```
+
+3. **Apache/PHP neu starten:**
+   - XAMPP Control Panel: Apache stoppen → Apache starten
+   - Oder PowerShell (als Administrator):
+     ```powershell
+     Stop-Service -Name Apache2.4 -ErrorAction SilentlyContinue
+     Start-Service -Name Apache2.4 -ErrorAction SilentlyContinue
+     ```
+
+4. **Verifizierung:**
+   ```powershell
+   php -r "echo 'ZIP: ' . (extension_loaded('zip') ? 'OK' : 'FEHLT') . PHP_EOL; echo 'GD: ' . (extension_loaded('gd') ? 'OK' : 'FEHLT') . PHP_EOL;"
+   ```
+
+**Weitere Informationen:** Siehe [DOCUMENT-TEXT-EXTRACTION.md](DOCUMENT-TEXT-EXTRACTION.md) für Details zu den Extensions.
+
 ### Schritt 1: Datenbank-Konfiguration
 
 **WICHTIG:** Secrets müssen über Umgebungsvariablen gesetzt werden. Siehe [SECURITY-IMPROVEMENTS.md](SECURITY-IMPROVEMENTS.md) für Details.

@@ -57,7 +57,7 @@ services:
       - CLAMAV_NO_FRESHCLAM=false  # FreshClam aktivieren (automatische Updates)
       - CLAMAV_NO_CLAMD=false       # ClamAV Daemon aktivieren
     ports:
-      - "3310:3310"  # ClamAV Socket (für clamdscan)
+      - "127.0.0.1:3310:3310"  # ClamAV Socket (nur localhost, sicherer)
     healthcheck:
       test: ["CMD", "clamdscan", "--version"]
       interval: 30s
@@ -96,7 +96,7 @@ services:
       - CLAMAV_NO_FRESHCLAM=false
       - CLAMAV_NO_CLAMD=false
     ports:
-      - "3310:3310"
+      - "127.0.0.1:3310:3310"  # Nur localhost (PHP auf Host braucht Port-Mapping)
     healthcheck:
       test: ["CMD", "clamdscan", "--version"]
       interval: 30s
@@ -126,7 +126,7 @@ services:
   clamav:
     # ... wie oben ...
     ports:
-      - "3310:3310"  # Socket-Port
+      - "127.0.0.1:3310:3310"  # Socket-Port (nur localhost)
 ```
 
 **PHP ClamAvService:**
@@ -223,7 +223,7 @@ $command = sprintf(
          - CLAMAV_NO_FRESHCLAM=false
          - CLAMAV_NO_CLAMD=false
        ports:
-         - "3310:3310"
+         - "127.0.0.1:3310:3310"  # Nur localhost (sicherer)
        healthcheck:
          test: ["CMD", "clamdscan", "--version"]
          interval: 30s
@@ -271,6 +271,44 @@ tom3-clamav    clamav/clamav      Up (healthy)
 **Alternative (ohne clamdscan auf Host):**
 - Volume-Mount für Uploads
 - PHP ruft `docker exec tom3-clamav clamdscan ...` auf
+
+## Sicherheit: Port-Mapping
+
+### Warum Port-Mapping nötig ist
+
+**❌ `expose: 3310` reicht NICHT!**
+
+Da PHP auf dem **Host** läuft (nicht in einem Container), ist Port-Mapping **erforderlich**:
+- `expose: 3310` macht Ports nur für **andere Container** sichtbar
+- **Host-zu-Container**-Kommunikation benötigt Port-Mapping
+- Ohne Port-Mapping kann PHP (Host) nicht auf ClamAV (Container) zugreifen
+
+### Sicherere Port-Konfiguration
+
+**Aktuell (weniger sicher):**
+```yaml
+ports:
+  - "3310:3310"  # Bindet auf 0.0.0.0:3310 (von überall erreichbar)
+```
+
+**Empfohlen (sicherer):**
+```yaml
+ports:
+  - "127.0.0.1:3310:3310"  # Nur localhost erreichbar
+```
+
+**Vorteil:**
+- ✅ ClamAV ist nur von `localhost` erreichbar
+- ✅ Nicht von außen (andere Netzwerk-Interfaces) erreichbar
+- ✅ Funktioniert weiterhin für PHP auf Host (`127.0.0.1:3310`)
+
+**Wann `expose` statt Port-Mapping:**
+- Nur wenn **beide Services in Containern** laufen
+- Beispiel: PHP-Container → ClamAV-Container (dann reicht `expose: 3310`)
+
+**Für TOM3:**
+- ✅ Port-Mapping **behalten** (PHP auf Host)
+- ✅ Auf `127.0.0.1:3310:3310` **einschränken** (Sicherheit)
 
 ## Zusammenfassung
 

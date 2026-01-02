@@ -1,6 +1,6 @@
 # TOM3 - Dokumenten-Upload-Service Status
 
-## ✅ Implementierungs-Status (Stand: 2026-01-01)
+## ✅ Implementierungs-Status (Stand: 2026-01-02)
 
 ### Phase 1: MVP - Grundfunktionalität ✅
 
@@ -50,13 +50,13 @@
 - ⏳ Admin-Benachrichtigung bei Infected (Production)
 - ⏳ Scan-Timeout & Retry-Logik (Production)
 
-### Phase 3: Enrichment ⏳
+### Phase 3: Enrichment ✅
 
-**Status:** Geplant, nicht kritisch für MVP
+**Status:** Vollständig implementiert
 
-- ⏳ Text-Extraktion (PDF, DOCX)
-- ⏳ OCR (optional)
-- ⏳ Klassifikation (optional)
+- ✅ Text-Extraktion (PDF, DOCX, DOC, XLSX, TXT, CSV, HTML)
+- ✅ OCR (optional - benötigt Tesseract)
+- ⏳ Klassifikation (optional - später)
 
 ### Phase 4: Erweiterte Features ⏳
 
@@ -137,10 +137,12 @@
    - ClamAV Integration
    - Async Processing
 
-4. **Enrichment** (Phase 3)
-   - Text-Extraktion
-   - OCR
+4. **Enrichment** (Phase 3) ✅
+   - ✅ Text-Extraktion (PDF, DOCX, DOC, XLSX, TXT, CSV, HTML)
+   - ✅ OCR (optional - benötigt Tesseract)
+   - ✅ Extract Text Worker (Windows Task Scheduler)
 
 ---
 
-*Status erstellt: 2026-01-01*
+*Status erstellt: 2026-01-01*  
+*Aktualisiert: 2026-01-02 (Text-Extraktion implementiert)*

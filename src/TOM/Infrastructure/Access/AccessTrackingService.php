@@ -21,30 +21,35 @@ class AccessTrackingService
     private const ACCESS_TABLE_MAP = [
         'org' => 'user_org_access',
         'person' => 'user_person_access',
+        'document' => 'user_document_access',
     ];
     
     // Mapping von Entity-Typen zu UUID-Feldnamen in den Access-Tabellen
     private const UUID_FIELD_MAP = [
         'org' => 'org_uuid',
         'person' => 'person_uuid',
+        'document' => 'document_uuid',
     ];
     
     // Mapping von Entity-Typen zu Haupttabellen
     private const ENTITY_TABLE_MAP = [
         'org' => 'org',
         'person' => 'person',
+        'document' => 'documents',
     ];
     
     // Mapping von Entity-Typen zu Alias-Namen für JOINs
     private const ENTITY_ALIAS_MAP = [
         'org' => 'o',
         'person' => 'p',
+        'document' => 'd',
     ];
     
     // Mapping von Entity-Typen zu Access-Alias-Namen für JOINs
     private const ACCESS_ALIAS_MAP = [
         'org' => 'uoa',
         'person' => 'upa',
+        'document' => 'uda',
     ];
     
     public function __construct(?PDO $db = null)
@@ -55,7 +60,7 @@ class AccessTrackingService
     /**
      * Protokolliert den Zugriff auf eine Entität
      * 
-     * @param string $entityType 'org' | 'person'
+     * @param string $entityType 'org' | 'person' | 'document'
      * @param string $userId User-ID
      * @param string $entityUuid UUID der Entität
      * @param string $accessType 'recent' | 'favorite' | 'tag'
@@ -128,7 +133,7 @@ class AccessTrackingService
     /**
      * Holt die zuletzt angesehenen Entitäten für einen Benutzer
      * 
-     * @param string $entityType 'org' | 'person'
+     * @param string $entityType 'org' | 'person' | 'document'
      * @param string $userId User-ID
      * @param int $limit Anzahl der Einträge
      * @return array
