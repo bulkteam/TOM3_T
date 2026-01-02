@@ -35,16 +35,17 @@ export class OrgFormsModule {
         // Setup Form-Submit (ohne cloneNode, damit Event-Listener erhalten bleiben)
         this.setupCreateOrgForm();
         
-        // Setup Branchen-Auswahl (NACH setupCreateOrgForm, damit keine Listener verloren gehen)
-        const mainSelect = document.getElementById('org-create-industry-main');
-        const subSelect = document.getElementById('org-create-industry-sub');
+        // Setup Branchen-Auswahl (3-stufige Hierarchie)
+        const level1Select = document.getElementById('org-create-industry-level1');
+        const level2Select = document.getElementById('org-create-industry-level2');
+        const level3Select = document.getElementById('org-create-industry-level3');
         
-        if (mainSelect && subSelect) {
-            // Wie im Edit-Modus: Abhängigkeit setzen und Hauptbranchen laden
-            Utils.setupIndustryDependency(mainSelect, subSelect, false); // false = kein Klonen (wie im Edit-Modus)
-            await Utils.loadIndustryMainClasses(mainSelect);
+        if (level1Select && level2Select && level3Select) {
+            // 3-stufige Abhängigkeit setzen
+            Utils.setupIndustry3LevelDependency(level1Select, level2Select, level3Select, false);
+            await Utils.loadIndustryLevel1(level1Select);
         } else {
-            console.error('[OrgForms] Industry selects not found!', { mainSelect, subSelect });
+            console.error('[OrgForms] Industry selects not found!', { level1Select, level2Select, level3Select });
         }
         
         // Website-URL-Normalisierung

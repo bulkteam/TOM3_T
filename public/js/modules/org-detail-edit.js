@@ -30,34 +30,46 @@ export class OrgDetailEditModule {
             accountOwnerInput.style.display = 'block';
         }
         
-        // Branche-Felder anzeigen
+        // Branche-Felder anzeigen (3-stufige Hierarchie)
         const industryValue = document.getElementById('org-field-industry');
-        const industryMainInput = document.getElementById('org-input-industry_main');
-        const industrySubInput = document.getElementById('org-input-industry_sub');
+        const industryLevel1Input = document.getElementById('org-input-industry_level1');
+        const industryLevel2Input = document.getElementById('org-input-industry_level2');
+        const industryLevel3Input = document.getElementById('org-input-industry_level3');
         
-        if (industryValue && industryMainInput && industrySubInput) {
+        if (industryValue && industryLevel1Input && industryLevel2Input && industryLevel3Input) {
             industryValue.style.display = 'none';
-            const industryInputContainer = industryMainInput.parentElement;
+            const industryInputContainer = industryLevel1Input.parentElement;
             if (industryInputContainer) {
                 industryInputContainer.style.display = 'block';
             }
             
-            // Setze Abhängigkeit (ohne Klonen, da Element nur einmal erstellt wird)
-            const mainInput = Utils.setupIndustryDependency(industryMainInput, industrySubInput, false);
+            // Setze 3-stufige Abhängigkeit (ohne Klonen, da Element nur einmal erstellt wird)
+            const { level1, level2 } = Utils.setupIndustry3LevelDependency(
+                industryLevel1Input, 
+                industryLevel2Input, 
+                industryLevel3Input, 
+                false
+            );
             
-            // Lade Hauptbranchen
-            if (mainInput) {
-                await Utils.loadIndustryMainClasses(mainInput);
+            // Lade Level 1 Branchenbereiche
+            if (level1) {
+                await Utils.loadIndustryLevel1(level1);
                 
                 // Setze aktuelle Werte
-                const currentMainUuid = industryMainInput.dataset.currentMainUuid;
-                const currentSubUuid = industrySubInput.dataset.currentSubUuid;
-                if (currentMainUuid) {
-                    mainInput.value = currentMainUuid;
-                    if (currentMainUuid) {
-                        await Utils.loadIndustrySubClasses(currentMainUuid, industrySubInput);
-                        if (currentSubUuid) {
-                            industrySubInput.value = currentSubUuid;
+                const currentLevel1Uuid = industryLevel1Input.dataset.currentLevel1Uuid;
+                const currentLevel2Uuid = industryLevel2Input.dataset.currentLevel2Uuid;
+                const currentLevel3Uuid = industryLevel3Input.dataset.currentLevel3Uuid;
+                
+                if (currentLevel1Uuid) {
+                    level1.value = currentLevel1Uuid;
+                    await Utils.loadIndustryLevel2(currentLevel1Uuid, industryLevel2Input);
+                    
+                    if (currentLevel2Uuid) {
+                        industryLevel2Input.value = currentLevel2Uuid;
+                        await Utils.loadIndustryLevel3(currentLevel2Uuid, industryLevel3Input);
+                        
+                        if (currentLevel3Uuid) {
+                            industryLevel3Input.value = currentLevel3Uuid;
                         }
                     }
                 }
@@ -99,10 +111,10 @@ export class OrgDetailEditModule {
         
         // Branche-Felder verstecken
         const industryValue = document.getElementById('org-field-industry');
-        const industryMainInput = document.getElementById('org-input-industry_main');
-        if (industryValue && industryMainInput) {
+        const industryLevel1Input = document.getElementById('org-input-industry_level1');
+        if (industryValue && industryLevel1Input) {
             industryValue.style.display = 'block';
-            const industryInputContainer = industryMainInput.parentElement;
+            const industryInputContainer = industryLevel1Input.parentElement;
             if (industryInputContainer) {
                 industryInputContainer.style.display = 'none';
             }
@@ -177,8 +189,12 @@ export class OrgDetailEditModule {
             website: document.getElementById('org-input-website')?.value || null,
             notes: document.getElementById('org-input-notes')?.value || null,
             account_owner_user_id: selectedAccountOwnerId,
-            industry_main_uuid: document.getElementById('org-input-industry_main')?.value || null,
-            industry_sub_uuid: document.getElementById('org-input-industry_sub')?.value || null,
+            industry_level1_uuid: document.getElementById('org-input-industry_level1')?.value || null,
+            industry_level2_uuid: document.getElementById('org-input-industry_level2')?.value || null,
+            industry_level3_uuid: document.getElementById('org-input-industry_level3')?.value || null,
+            // Rückwärtskompatibilität
+            industry_main_uuid: document.getElementById('org-input-industry_level1')?.value || null,
+            industry_sub_uuid: document.getElementById('org-input-industry_level2')?.value || null,
             revenue_range: document.getElementById('org-input-revenue_range')?.value || null,
             employee_count: document.getElementById('org-input-employee_count')?.value || null
         };

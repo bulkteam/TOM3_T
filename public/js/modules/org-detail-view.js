@@ -236,15 +236,21 @@ export class OrgDetailViewModule {
                         <div class="org-detail-item">
                             <strong>Branche:</strong>
                             <div class="org-detail-value" id="org-field-industry">
-                                ${org.industry_main_name ? `${Utils.escapeHtml(org.industry_main_name)}${org.industry_sub_name ? ' / ' + Utils.escapeHtml(org.industry_sub_name) : ''}` : '<span class="org-detail-empty">-</span>'}
+                                ${org.industry_level1_name || org.industry_main_name ? 
+                                    `${Utils.escapeHtml(org.industry_level1_name || org.industry_main_name || '')}${org.industry_level2_name || org.industry_sub_name ? ' / ' + Utils.escapeHtml(org.industry_level2_name || org.industry_sub_name || '') : ''}${org.industry_level3_name ? ' / ' + Utils.escapeHtml(org.industry_level3_name) : ''}` 
+                                    : '<span class="org-detail-empty">-</span>'}
                             </div>
                             <div class="org-detail-input" style="display: none;">
-                                <select id="org-input-industry_main" style="width: 100%; margin-bottom: 0.5rem;">
+                                <select id="org-input-industry_level1" style="width: 100%; margin-bottom: 0.5rem;" required>
                                     <option value="">-- Bitte wählen --</option>
                                     <!-- Wird dynamisch geladen -->
                                 </select>
-                                <select id="org-input-industry_sub" style="width: 100%;">
-                                    <option value="">-- Zuerst Hauptbranche wählen --</option>
+                                <select id="org-input-industry_level2" style="width: 100%; margin-bottom: 0.5rem;" required>
+                                    <option value="">-- Zuerst Branchenbereich wählen --</option>
+                                    <!-- Wird dynamisch geladen -->
+                                </select>
+                                <select id="org-input-industry_level3" style="width: 100%;">
+                                    <option value="">-- Zuerst Branche wählen (optional) --</option>
                                     <!-- Wird dynamisch geladen -->
                                 </select>
                             </div>

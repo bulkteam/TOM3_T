@@ -112,14 +112,20 @@ body {
     margin: 0;
 }
 
+.nav-menu-item {
+    margin: 0;
+}
+
 .nav-link {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0.75rem 1.5rem;
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
     transition: all 0.2s;
     border-left: 3px solid transparent;
+    cursor: pointer;
 }
 
 .nav-link:hover {
@@ -137,6 +143,48 @@ body {
 .nav-link .icon {
     margin-right: 0.75rem;
     font-size: 1.1rem;
+}
+
+.nav-arrow {
+    margin-left: auto;
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-menu-item.expanded .nav-arrow {
+    transform: rotate(180deg);
+}
+
+/* Untermenü */
+.nav-submenu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.nav-menu-item.expanded .nav-submenu {
+    max-height: 500px;
+    transition: max-height 0.3s ease-in;
+}
+
+.nav-submenu li {
+    margin: 0;
+}
+
+.nav-submenu .nav-link {
+    padding-left: 3rem;
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+    font-size: 0.9375rem;
+}
+
+.nav-submenu .nav-link .icon {
+    font-size: 1rem;
 }
 
 /* Main Content */

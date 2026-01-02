@@ -127,6 +127,7 @@ class DocumentService extends BaseEntityService
             return [
                 'document_uuid' => $document['document_uuid'],
                 'attachment_uuid' => $attachment['attachment_uuid'],
+                'blob_uuid' => $blobResult['blob_uuid'], // Für Import-Service
                 'version_group_uuid' => $document['version_group_uuid'],
                 'version_number' => $document['version_number'],
                 'status' => 'processing',

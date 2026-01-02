@@ -1,0 +1,116 @@
+# TOM3 - Workflow Template: QUALIFY_COMPANY
+# Angepasst an TOM-Architektur (case_item, task, engine, owner_role)
+
+workflows:
+  - key: QUALIFY_COMPANY
+    version: 1
+    description: "Automatischer Qualifizierungs-Workflow für neue Organisationen"
+    
+    # Trigger: Wann wird dieser Workflow gestartet?
+    trigger:
+      event: org.created
+      condition: null  # Immer bei org.created
+    
+    # Case-Erstellung
+    open_case:
+      case_type: QUALIFY_COMPANY
+      engine: inside_sales  # TOM Engine
+      phase: QUALIFY-A  # TOM Phase (kann später erweitert werden)
+      owner_role: inside_sales  # TOM Role
+      owner_queue: INSIDE_SALES  # CRM Queue (optional)
+      priority: NORMAL
+      title: "Qualifizierung: {{org.name}}"
+      description: "Automatisch erstellter Qualifizierungs-Vorgang"
+    
+    # Stage Transition beim Öffnen
+    stage_transition_on_open:
+      from: UNVERIFIED
+      to: QUALIFYING
+      reason_code: CASE_OPENED
+      reason_note: "Qualifizierungs-Vorgang eröffnet"
+    
+    # Tasks aus Template erstellen
+    tasks:
+      # Sales Ops Tasks
+      - task_type: OPS_DATA_CHECK
+        title: "Basisdaten prüfen / Dedupe"
+        assigned_queue: SALES_OPS
+        assignee_role: ops  # TOM Role
+        due_in_days: 1
+        priority: HIGH
+        
+      - task_type: ADD_CONTACT_POINTS
+        title: "Telefon/Webseite/Domain ergänzen"
+        assigned_queue: SALES_OPS
+        assignee_role: ops
+        due_in_days: 2
+        priority: NORMAL
+        
+      # Inside Sales Tasks
+      - task_type: FIRST_OUTREACH
+        title: "Erstkontakt versuchen"
+        assigned_queue: INSIDE_SALES
+        assignee_role: inside_sales
+        due_in_days: 2
+        priority: NORMAL
+        
+      - task_type: IDENTIFY_CONTACT
+        title: "Ansprechpartner ermitteln"
+        assigned_queue: INSIDE_SALES
+        assignee_role: inside_sales
+        due_in_days: 5
+        priority: NORMAL
+        
+      - task_type: FIT_ASSESSMENT
+        title: "Fit/Branche/Use-Case prüfen"
+        assigned_queue: INSIDE_SALES
+        assignee_role: inside_sales
+        due_in_days: 7
+        priority: NORMAL
+        
+      - task_type: CHECK_RELATION_SIGNALS
+        title: "Beziehungs-Signale prüfen (Konzern/Empfehlung/Berater)"
+        assigned_queue: INSIDE_SALES
+        assignee_role: inside_sales
+        due_in_days: 7
+        priority: NORMAL
+    
+    # Completion Rules (für automatische Case-Abschlüsse)
+    completion_rules:
+      qualified_lead:
+        company_stage: QUALIFIED_LEAD
+        case_outcome_code: QUALIFIED
+        requires:
+          - at_least_one_activity_of_type: [CALL, EMAIL, MEETING]
+          - next_step_present: true  # follow_up_at oder expliziter Next Step
+          - guard_check: true  # Serverseitige Guard-Prüfung
+        
+      disqualified:
+        company_stage: DISQUALIFIED
+        case_outcome_code: DISQUALIFIED
+        requires:
+          - disqualify_reason_code_present: true
+        
+      dormant:
+        company_stage: DORMANT
+        case_outcome_code: DORMANT
+        requires:
+          - next_step_present: true  # Wiedervorlage vorhanden
+          - dormant_reason_code_present: true
+
+# ============================================================================
+# Zukünftige Workflows (später implementieren)
+# ============================================================================
+
+# - key: WORK_LEAD
+#   version: 1
+#   description: "Konkreter Lead für Outside Sales"
+#   trigger:
+#     event: case.closed
+#     condition: case_type == QUALIFY_COMPANY AND outcome_code == QUALIFIED
+#   open_case:
+#     case_type: WORK_LEAD
+#     engine: outside_sales
+#     owner_role: outside_sales
+#     owner_queue: OUTSIDE_SALES
+#   ...

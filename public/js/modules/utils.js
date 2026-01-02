@@ -239,7 +239,183 @@ export const Utils = {
     },
     
     /**
-     * Setzt die Branchen-Abhängigkeit zwischen Haupt- und Unterbranche
+     * Lädt Level 1 Branchen (Branchenbereiche)
+     */
+    async loadIndustryLevel1(level1SelectElement) {
+        try {
+            const industries = await window.API.getIndustries(null, null, 1);
+            if (!level1SelectElement) {
+                console.error('Level 1 select element not provided');
+                return;
+            }
+            
+            level1SelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            industries.forEach(industry => {
+                const option = document.createElement('option');
+                option.value = industry.industry_uuid;
+                option.textContent = industry.name;
+                level1SelectElement.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading industry level 1:', error);
+        }
+    },
+    
+    /**
+     * Lädt Level 2 Branchen basierend auf Level 1
+     */
+    async loadIndustryLevel2(parentUuid, level2SelectElement) {
+        try {
+            if (!parentUuid) {
+                if (level2SelectElement) {
+                    level2SelectElement.innerHTML = '<option value="">-- Zuerst Branchenbereich wählen --</option>';
+                    level2SelectElement.disabled = true;
+                }
+                return;
+            }
+            
+            const industries = await window.API.getIndustries(parentUuid, null, 2);
+            if (!level2SelectElement) {
+                console.error('Level 2 select element not provided');
+                return;
+            }
+            
+            level2SelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            level2SelectElement.disabled = false;
+            level2SelectElement.required = true; // Level 2 ist required
+            
+            if (industries && industries.length > 0) {
+                industries.forEach(industry => {
+                    const option = document.createElement('option');
+                    option.value = industry.industry_uuid;
+                    option.textContent = industry.name;
+                    level2SelectElement.appendChild(option);
+                });
+            } else {
+                level2SelectElement.innerHTML = '<option value="">Keine Branchen verfügbar</option>';
+            }
+        } catch (error) {
+            console.error('Error loading industry level 2:', error);
+            if (level2SelectElement) {
+                level2SelectElement.innerHTML = '<option value="">Fehler beim Laden</option>';
+                level2SelectElement.disabled = true;
+            }
+        }
+    },
+    
+    /**
+     * Lädt Level 3 Unterbranchen basierend auf Level 2
+     */
+    async loadIndustryLevel3(parentUuid, level3SelectElement) {
+        try {
+            if (!parentUuid) {
+                if (level3SelectElement) {
+                    level3SelectElement.innerHTML = '<option value="">-- Zuerst Branche wählen --</option>';
+                    level3SelectElement.disabled = true;
+                }
+                return;
+            }
+            
+            const industries = await window.API.getIndustries(parentUuid, null, 3);
+            if (!level3SelectElement) {
+                console.error('Level 3 select element not provided');
+                return;
+            }
+            
+            level3SelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            level3SelectElement.disabled = false;
+            level3SelectElement.required = false; // Level 3 ist optional
+            
+            if (industries && industries.length > 0) {
+                industries.forEach(industry => {
+                    const option = document.createElement('option');
+                    option.value = industry.industry_uuid;
+                    option.textContent = industry.name;
+                    level3SelectElement.appendChild(option);
+                });
+            } else {
+                level3SelectElement.innerHTML = '<option value="">Keine Unterbranchen verfügbar</option>';
+            }
+        } catch (error) {
+            console.error('Error loading industry level 3:', error);
+            if (level3SelectElement) {
+                level3SelectElement.innerHTML = '<option value="">Fehler beim Laden</option>';
+                level3SelectElement.disabled = true;
+            }
+        }
+    },
+    
+    /**
+     * Setzt die 3-stufige Branchen-Abhängigkeit
+     * @param {HTMLElement} level1SelectElement - Das Select-Element für Level 1 (Branchenbereich)
+     * @param {HTMLElement} level2SelectElement - Das Select-Element für Level 2 (Branche)
+     * @param {HTMLElement} level3SelectElement - Das Select-Element für Level 3 (Unterbranche)
+     * @param {boolean} cloneElement - Ob das Element geklont werden soll (verhindert mehrfache Listener)
+     */
+    setupIndustry3LevelDependency(level1SelectElement, level2SelectElement, level3SelectElement, cloneElement = false) {
+        if (!level1SelectElement || !level2SelectElement || !level3SelectElement) {
+            console.error('[Utils] All three select elements must be provided');
+            return null;
+        }
+        
+        // Stelle sicher, dass Level 2 und 3 initial deaktiviert sind
+        level2SelectElement.disabled = true;
+        level2SelectElement.innerHTML = '<option value="">-- Zuerst Branchenbereich wählen --</option>';
+        level2SelectElement.required = true; // Level 2 ist required
+        level3SelectElement.disabled = true;
+        level3SelectElement.innerHTML = '<option value="">-- Zuerst Branche wählen --</option>';
+        level3SelectElement.required = false; // Level 3 ist optional
+        
+        let targetLevel1 = level1SelectElement;
+        let targetLevel2 = level2SelectElement;
+        
+        // Entferne alte Event-Listener durch Klonen, wenn gewünscht
+        if (cloneElement) {
+            const newLevel1 = level1SelectElement.cloneNode(true);
+            level1SelectElement.parentNode.replaceChild(newLevel1, level1SelectElement);
+            targetLevel1 = newLevel1;
+            
+            const newLevel2 = level2SelectElement.cloneNode(true);
+            level2SelectElement.parentNode.replaceChild(newLevel2, level2SelectElement);
+            targetLevel2 = newLevel2;
+        }
+        
+        // Event-Listener für Level 1 Änderung
+        const level1Handler = async (e) => {
+            const parentUuid = e.target.value;
+            const currentLevel2 = document.getElementById(level2SelectElement.id);
+            const currentLevel3 = document.getElementById(level3SelectElement.id);
+            
+            // Reset Level 3
+            if (currentLevel3) {
+                currentLevel3.innerHTML = '<option value="">-- Zuerst Branche wählen --</option>';
+                currentLevel3.disabled = true;
+            }
+            
+            // Lade Level 2
+            if (currentLevel2) {
+                await Utils.loadIndustryLevel2(parentUuid, currentLevel2);
+            }
+        };
+        
+        // Event-Listener für Level 2 Änderung
+        const level2Handler = async (e) => {
+            const parentUuid = e.target.value;
+            const currentLevel3 = document.getElementById(level3SelectElement.id);
+            
+            if (currentLevel3) {
+                await Utils.loadIndustryLevel3(parentUuid, currentLevel3);
+            }
+        };
+        
+        targetLevel1.addEventListener('change', level1Handler);
+        targetLevel2.addEventListener('change', level2Handler);
+        
+        return { level1: targetLevel1, level2: targetLevel2 };
+    },
+    
+    /**
+     * Setzt die Branchen-Abhängigkeit zwischen Haupt- und Unterbranche (Rückwärtskompatibilität)
      * @param {HTMLElement} mainSelectElement - Das Select-Element für Hauptbranchen
      * @param {HTMLElement} subSelectElement - Das Select-Element für Unterbranchen
      * @param {boolean} cloneElement - Ob das Element geklont werden soll (verhindert mehrfache Listener)

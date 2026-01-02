@@ -15,6 +15,7 @@ import { MonitoringModule } from './modules/monitoring.js';
 import { DocumentUploadModule } from './modules/document-upload.js';
 import { DocumentListModule } from './modules/document-list.js';
 import { DocumentSearchModule } from './modules/document-search.js';
+import { ImportModule } from './modules/import.js';
 import { Utils } from './modules/utils.js';
 
 class TOM3App {
@@ -34,12 +35,14 @@ class TOM3App {
         this.documentUpload = new DocumentUploadModule(this);
         this.documentList = new DocumentListModule(this);
         this.documentSearch = new DocumentSearchModule(this);
+        this.import = new ImportModule(this);
         
         // Module-Referenz für Zugriff von anderen Modulen
         this.modules = {
             documentUpload: this.documentUpload,
             documentList: this.documentList,
-            documentSearch: this.documentSearch
+            documentSearch: this.documentSearch,
+            import: this.import
         };
         
         this.init();
@@ -83,7 +86,20 @@ class TOM3App {
         await this.auth.loadCurrentUser();
         this.setupEventListeners();
         this.setupNavigation();
+        // Expandiere das Menü für die aktuelle Seite
+        this.expandMenuForPage(this.currentPage);
         this.navigateTo(this.currentPage, false);
+    }
+    
+    expandMenuForPage(page) {
+        // Finde das übergeordnete Menü für diese Seite
+        const navLink = document.querySelector(`[data-page="${page}"]`);
+        if (navLink) {
+            const menuItem = navLink.closest('.nav-menu-item');
+            if (menuItem) {
+                menuItem.classList.add('expanded');
+            }
+        }
     }
     
     setupEventListeners() {
@@ -105,19 +121,33 @@ class TOM3App {
     }
 
     setupNavigation() {
-        // Navigation-Links mit Event-Listenern versehen
-        document.querySelectorAll('.nav-link').forEach(link => {
-            // Überspringe Links ohne data-page (z.B. externe Links wie Monitoring)
-            if (!link.dataset.page) {
-                return;
-            }
-            
-            const newLink = link.cloneNode(true);
-            link.parentNode.replaceChild(newLink, link);
-            
-            newLink.addEventListener('click', (e) => {
+        // Hauptmenüpunkte (Expand/Collapse)
+        document.querySelectorAll('.nav-parent').forEach(parentLink => {
+            parentLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                const page = newLink.dataset.page;
+                const menuItem = parentLink.closest('.nav-menu-item');
+                if (menuItem) {
+                    // Toggle expand/collapse
+                    if (menuItem.classList.contains('expanded')) {
+                        menuItem.classList.remove('expanded');
+                    } else {
+                        // Schließe alle anderen Menüs
+                        document.querySelectorAll('.nav-menu-item.expanded').forEach(item => {
+                            if (item !== menuItem) {
+                                item.classList.remove('expanded');
+                            }
+                        });
+                        menuItem.classList.add('expanded');
+                    }
+                }
+            });
+        });
+        
+        // Untermenü-Links (Navigation)
+        document.querySelectorAll('.nav-child').forEach(childLink => {
+            childLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                const page = childLink.dataset.page;
                 if (page) {
                     this.navigateTo(page);
                     // Update URL hash
@@ -139,13 +169,18 @@ class TOM3App {
     }
 
     navigateTo(page, storePage = true) {
-        // Update navigation
+        // Update navigation - nur Untermenü-Links aktivieren
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
         });
         const navLink = document.querySelector(`[data-page="${page}"]`);
         if (navLink) {
             navLink.classList.add('active');
+            // Expandiere das übergeordnete Menü, falls vorhanden
+            const menuItem = navLink.closest('.nav-menu-item');
+            if (menuItem) {
+                menuItem.classList.add('expanded');
+            }
         }
 
         // Update pages
@@ -178,6 +213,11 @@ class TOM3App {
             case 'projects':
                 // this.loadProjects();
                 break;
+            case 'import':
+                if (this.import) {
+                    this.import.init();
+                }
+                break;
             case 'orgs':
                 if (this.orgSearch) {
                     this.orgSearch.init();
@@ -195,6 +235,9 @@ class TOM3App {
                 if (this.documentSearch) {
                     this.documentSearch.init();
                 }
+                break;
+            case 'import':
+                // Import-Seite - noch nicht implementiert
                 break;
             case 'admin':
                 if (this.admin) {
@@ -328,6 +371,9 @@ class TOM3App {
 // Initialize app
 const app = new TOM3App();
 window.app = app;
+
+
+
 
 
 

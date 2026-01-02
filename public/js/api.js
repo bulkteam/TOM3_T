@@ -476,14 +476,18 @@ class TOM3API {
         return this.request(`/orgs/recent?user_id=${userId}&limit=${limit}`);
     }
     
-    async getIndustries(parentUuid = null, mainClassesOnly = false) {
+    async getIndustries(parentUuid = null, mainClassesOnly = false, level = null) {
         const params = new URLSearchParams();
+        if (level !== null) {
+            params.append('level', level);
+        }
         if (parentUuid) {
             params.append('parent_uuid', parentUuid);
         }
         if (mainClassesOnly) {
             params.append('main_classes_only', 'true');
         }
+        
         const query = params.toString();
         return this.request(`/industries${query ? '?' + query : ''}`);
     }

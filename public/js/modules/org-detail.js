@@ -54,14 +54,24 @@ export class OrgDetailModule extends EntityDetailBaseModule {
                     console.warn('Could not load account owners for edit:', error);
                 }
                 
-                // Setze aktuelle Branchen-Werte für Edit-Modus
-                const industryMainInput = modalBody.querySelector('#org-input-industry_main');
-                const industrySubInput = modalBody.querySelector('#org-input-industry_sub');
-                if (industryMainInput && org.industry_main_uuid) {
-                    industryMainInput.dataset.currentMainUuid = org.industry_main_uuid;
+                // Setze aktuelle Branchen-Werte für Edit-Modus (3-stufige Hierarchie)
+                const industryLevel1Input = modalBody.querySelector('#org-input-industry_level1');
+                const industryLevel2Input = modalBody.querySelector('#org-input-industry_level2');
+                const industryLevel3Input = modalBody.querySelector('#org-input-industry_level3');
+                
+                // Verwende Level-Werte oder fallback auf alte Werte (Rückwärtskompatibilität)
+                const level1Uuid = org.industry_level1_uuid || org.industry_main_uuid;
+                const level2Uuid = org.industry_level2_uuid || org.industry_sub_uuid;
+                const level3Uuid = org.industry_level3_uuid;
+                
+                if (industryLevel1Input && level1Uuid) {
+                    industryLevel1Input.dataset.currentLevel1Uuid = level1Uuid;
                 }
-                if (industrySubInput && org.industry_sub_uuid) {
-                    industrySubInput.dataset.currentSubUuid = org.industry_sub_uuid;
+                if (industryLevel2Input && level2Uuid) {
+                    industryLevel2Input.dataset.currentLevel2Uuid = level2Uuid;
+                }
+                if (industryLevel3Input && level3Uuid) {
+                    industryLevel3Input.dataset.currentLevel3Uuid = level3Uuid;
                 }
                 
                 // Setze Tab-Navigation

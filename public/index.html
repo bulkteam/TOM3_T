@@ -6,6 +6,7 @@
     <title>TOM3 - Vorgangssteuerung</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/monitoring.css">
+    <link rel="stylesheet" href="css/import-wizard.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -23,34 +24,78 @@
                 <a href="logout.php" class="logout-link">Abmelden</a>
             </div>
             <ul class="nav-menu">
-                <li><a href="#dashboard" class="nav-link active" data-page="dashboard">
-                    <span class="icon">📊</span> Dashboard
-                </a></li>
-                <li><a href="#cases" class="nav-link" data-page="cases">
-                    <span class="icon">📋</span> Vorgänge
-                </a></li>
-                <li><a href="#projects" class="nav-link" data-page="projects">
-                    <span class="icon">📁</span> Projekte
-                </a></li>
-                <li><a href="#orgs" class="nav-link" data-page="orgs">
-                    <span class="icon">🏢</span> Organisationen
-                </a></li>
-                <li><a href="#accounts" class="nav-link" data-page="accounts">
-                    <span class="icon">👥</span> Meine Kunden
-                </a></li>
-                <li><a href="#persons" class="nav-link" data-page="persons">
-                    <span class="icon">👤</span> Personen
-                </a></li>
-                <li><a href="#documents" class="nav-link" data-page="documents">
-                    <span class="icon">📄</span> Dokumente
-                </a></li>
-                <li><a href="#monitoring" class="nav-link" data-page="monitoring">
-                    <span class="icon">🔍</span> Monitoring
-                </a></li>
-                <li id="admin-menu-item" style="display: none;">
-                    <a href="#admin" class="nav-link" data-page="admin">
-                        <span class="icon">⚙️</span> Admin
+                <!-- Dashboard -->
+                <li class="nav-menu-item">
+                    <a href="#" class="nav-link nav-parent" data-menu="dashboard">
+                        <span class="icon">📊</span> Dashboard
+                        <span class="nav-arrow">▾</span>
                     </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#accounts" class="nav-link nav-child" data-page="accounts">
+                            <span class="icon">👥</span> Meine Kunden
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <!-- Prozesse -->
+                <li class="nav-menu-item">
+                    <a href="#" class="nav-link nav-parent" data-menu="prozesse">
+                        <span class="icon">⚙️</span> Prozesse
+                        <span class="nav-arrow">▾</span>
+                    </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#cases" class="nav-link nav-child" data-page="cases">
+                            <span class="icon">📋</span> Vorgänge
+                        </a></li>
+                        <li><a href="#projects" class="nav-link nav-child" data-page="projects">
+                            <span class="icon">📁</span> Projekte
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <!-- Stammdaten -->
+                <li class="nav-menu-item">
+                    <a href="#" class="nav-link nav-parent" data-menu="stammdaten">
+                        <span class="icon">📚</span> Stammdaten
+                        <span class="nav-arrow">▾</span>
+                    </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#orgs" class="nav-link nav-child" data-page="orgs">
+                            <span class="icon">🏢</span> Organisationen
+                        </a></li>
+                        <li><a href="#persons" class="nav-link nav-child" data-page="persons">
+                            <span class="icon">👤</span> Personen
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <!-- Service -->
+                <li class="nav-menu-item">
+                    <a href="#" class="nav-link nav-parent" data-menu="service">
+                        <span class="icon">🔧</span> Service
+                        <span class="nav-arrow">▾</span>
+                    </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#import" class="nav-link nav-child" data-page="import">
+                            <span class="icon">📥</span> Import
+                        </a></li>
+                        <li><a href="#documents" class="nav-link nav-child" data-page="documents">
+                            <span class="icon">📄</span> Dokumente
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <!-- Admin -->
+                <li class="nav-menu-item" id="admin-menu-item" style="display: none;">
+                    <a href="#" class="nav-link nav-parent" data-menu="admin">
+                        <span class="icon">⚙️</span> Admin
+                        <span class="nav-arrow">▾</span>
+                    </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#monitoring" class="nav-link nav-child" data-page="monitoring">
+                            <span class="icon">🔍</span> Monitoring
+                        </a></li>
+                    </ul>
                 </li>
             </ul>
         </nav>
@@ -615,16 +660,23 @@
 
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label for="org-create-industry-main">Branche (Hauptklasse)</label>
-                                    <select id="org-create-industry-main" name="industry_main_uuid">
+                                    <label for="org-create-industry-level1">Branchenbereich (Level 1) <span class="required">*</span></label>
+                                    <select id="org-create-industry-level1" name="industry_level1_uuid" required>
                                         <option value="">-- Bitte wählen --</option>
                                     </select>
                                 </div>
 
                                 <div class="form-group">
-                                    <label for="org-create-industry-sub">Branche (Unterklasse)</label>
-                                    <select id="org-create-industry-sub" name="industry_sub_uuid" disabled>
-                                        <option value="">-- Zuerst Hauptklasse wählen --</option>
+                                    <label for="org-create-industry-level2">Branche (Level 2) <span class="required">*</span></label>
+                                    <select id="org-create-industry-level2" name="industry_level2_uuid" disabled required>
+                                        <option value="">-- Zuerst Branchenbereich wählen --</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="org-create-industry-level3">Unterbranche (Level 3) <span class="text-muted">(optional)</span></label>
+                                    <select id="org-create-industry-level3" name="industry_level3_uuid" disabled>
+                                        <option value="">-- Zuerst Branche wählen --</option>
                                     </select>
                                 </div>
                             </div>
@@ -1139,6 +1191,11 @@
                         <div id="duplicates-list" class="duplicates-list"></div>
                     </section>
                 </div>
+            </div>
+
+            <!-- Import Page -->
+            <div id="page-import" class="page">
+                <!-- Wird dynamisch von ImportModule gerendert -->
             </div>
         </main>
     </div>

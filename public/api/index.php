@@ -96,6 +96,9 @@ try {
     
     // Route to appropriate handler
     switch ($resource) {
+        case 'import':
+            require __DIR__ . '/import.php';
+            break;
         case 'cases':
             require __DIR__ . '/cases.php';
             break;

@@ -93,12 +93,14 @@ class OrgService extends BaseEntityService
             INSERT INTO org (
                 org_uuid, name, org_kind, external_ref, 
                 industry, industry_main_uuid, industry_sub_uuid,
+                industry_level1_uuid, industry_level2_uuid, industry_level3_uuid,
                 revenue_range, employee_count, website, notes, status,
                 account_owner_user_id, account_owner_since
             )
             VALUES (
                 :org_uuid, :name, :org_kind, :external_ref,
                 :industry, :industry_main_uuid, :industry_sub_uuid,
+                :industry_level1_uuid, :industry_level2_uuid, :industry_level3_uuid,
                 :revenue_range, :employee_count, :website, :notes, :status,
                 :account_owner_user_id, :account_owner_since
             )
@@ -116,8 +118,11 @@ class OrgService extends BaseEntityService
             'org_kind' => $data['org_kind'] ?? 'other',
             'external_ref' => $data['external_ref'] ?? null,
             'industry' => $data['industry'] ?? null,
-            'industry_main_uuid' => $data['industry_main_uuid'] ?? null,
-            'industry_sub_uuid' => $data['industry_sub_uuid'] ?? null,
+            'industry_main_uuid' => $data['industry_main_uuid'] ?? $data['industry_level1_uuid'] ?? null, // Rückwärtskompatibilität
+            'industry_sub_uuid' => $data['industry_sub_uuid'] ?? $data['industry_level2_uuid'] ?? null, // Rückwärtskompatibilität
+            'industry_level1_uuid' => $data['industry_level1_uuid'] ?? $data['industry_main_uuid'] ?? null, // Neue 3-stufige Hierarchie
+            'industry_level2_uuid' => $data['industry_level2_uuid'] ?? $data['industry_sub_uuid'] ?? null,
+            'industry_level3_uuid' => $data['industry_level3_uuid'] ?? null,
             'revenue_range' => $data['revenue_range'] ?? null,
             'employee_count' => $data['employee_count'] ?? null,
             'website' => $data['website'] ?? null,
@@ -149,10 +154,16 @@ class OrgService extends BaseEntityService
                 o.*,
                 i_main.name as industry_main_name,
                 i_sub.name as industry_sub_name,
+                i_level1.name as industry_level1_name,
+                i_level2.name as industry_level2_name,
+                i_level3.name as industry_level3_name,
                 u.name as account_owner_name
             FROM org o
             LEFT JOIN industry i_main ON o.industry_main_uuid = i_main.industry_uuid
             LEFT JOIN industry i_sub ON o.industry_sub_uuid = i_sub.industry_uuid
+            LEFT JOIN industry i_level1 ON o.industry_level1_uuid = i_level1.industry_uuid
+            LEFT JOIN industry i_level2 ON o.industry_level2_uuid = i_level2.industry_uuid
+            LEFT JOIN industry i_level3 ON o.industry_level3_uuid = i_level3.industry_uuid
             LEFT JOIN users u ON o.account_owner_user_id = u.user_id
             WHERE o.org_uuid = :uuid
         ");
@@ -170,7 +181,7 @@ class OrgService extends BaseEntityService
             $data['website'] = UrlHelper::normalize($data['website']);
         }
         
-        $allowedFields = ['name', 'org_kind', 'external_ref', 'industry', 'industry_main_uuid', 'industry_sub_uuid', 'revenue_range', 'employee_count', 'website', 'notes', 'status', 'account_owner_user_id', 'account_owner_since'];
+        $allowedFields = ['name', 'org_kind', 'external_ref', 'industry', 'industry_main_uuid', 'industry_sub_uuid', 'industry_level1_uuid', 'industry_level2_uuid', 'industry_level3_uuid', 'revenue_range', 'employee_count', 'website', 'notes', 'status', 'account_owner_user_id', 'account_owner_since'];
         $updates = [];
         $params = ['uuid' => $orgUuid];
         
@@ -608,9 +619,9 @@ class OrgService extends BaseEntityService
             $params['country'] = $filters['country'];
         }
         
-        // Filter nach Branche (über industry_main_uuid oder industry_sub_uuid)
+        // Filter nach Branche (über alle Level für Rückwärtskompatibilität)
         if (!empty($filters['industry'])) {
-            $sql .= " AND (o.industry_main_uuid = :industry OR o.industry_sub_uuid = :industry)";
+            $sql .= " AND (o.industry_main_uuid = :industry OR o.industry_sub_uuid = :industry OR o.industry_level1_uuid = :industry OR o.industry_level2_uuid = :industry OR o.industry_level3_uuid = :industry)";
             $params['industry'] = $filters['industry'];
         }
         
@@ -868,6 +879,19 @@ class OrgService extends BaseEntityService
         if ($org['industry_sub_uuid'] && empty($org['industry_sub_name'])) {
             $subIndustry = $this->getIndustryByUuid($org['industry_sub_uuid']);
             $org['industry_sub_name'] = $subIndustry['name'] ?? null;
+        }
+        // 3-stufige Hierarchie
+        if ($org['industry_level1_uuid'] && empty($org['industry_level1_name'])) {
+            $level1Industry = $this->getIndustryByUuid($org['industry_level1_uuid']);
+            $org['industry_level1_name'] = $level1Industry['name'] ?? null;
+        }
+        if ($org['industry_level2_uuid'] && empty($org['industry_level2_name'])) {
+            $level2Industry = $this->getIndustryByUuid($org['industry_level2_uuid']);
+            $org['industry_level2_name'] = $level2Industry['name'] ?? null;
+        }
+        if ($org['industry_level3_uuid'] && empty($org['industry_level3_name'])) {
+            $level3Industry = $this->getIndustryByUuid($org['industry_level3_uuid']);
+            $org['industry_level3_name'] = $level3Industry['name'] ?? null;
         }
         
         return $org;
@@ -1257,6 +1281,22 @@ class OrgService extends BaseEntityService
         
         // Branche (Unterklasse)
         if ($field === 'industry_sub_uuid' && $value) {
+            $industry = $this->getIndustryByUuid($value);
+            return $industry ? $industry['name'] : $value;
+        }
+        
+        // 3-stufige Hierarchie
+        if ($field === 'industry_level1_uuid' && $value) {
+            $industry = $this->getIndustryByUuid($value);
+            return $industry ? $industry['name'] : $value;
+        }
+        
+        if ($field === 'industry_level2_uuid' && $value) {
+            $industry = $this->getIndustryByUuid($value);
+            return $industry ? $industry['name'] : $value;
+        }
+        
+        if ($field === 'industry_level3_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
             return $industry ? $industry['name'] : $value;
         }
