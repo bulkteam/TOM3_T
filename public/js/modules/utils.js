@@ -189,7 +189,8 @@ export const Utils = {
             industries.forEach(industry => {
                 const option = document.createElement('option');
                 option.value = industry.industry_uuid;
-                option.textContent = industry.name;
+                const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = displayName;
                 mainSelectElement.appendChild(option);
             });
         } catch (error) {
@@ -223,7 +224,8 @@ export const Utils = {
                 industries.forEach(industry => {
                     const option = document.createElement('option');
                     option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
+                    const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = displayName;
                     subSelectElement.appendChild(option);
                 });
             } else {
@@ -241,6 +243,10 @@ export const Utils = {
     /**
      * Lädt Level 1 Branchen (Branchenbereiche)
      */
+    /**
+     * Lädt Level 1 Industries in ein Select-Element
+     * @param {HTMLElement} level1SelectElement - Das Select-Element
+     */
     async loadIndustryLevel1(level1SelectElement) {
         try {
             const industries = await window.API.getIndustries(null, null, 1);
@@ -253,7 +259,8 @@ export const Utils = {
             industries.forEach(industry => {
                 const option = document.createElement('option');
                 option.value = industry.industry_uuid;
-                option.textContent = industry.name;
+                const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = displayName;
                 level1SelectElement.appendChild(option);
             });
         } catch (error) {
@@ -288,7 +295,8 @@ export const Utils = {
                 industries.forEach(industry => {
                     const option = document.createElement('option');
                     option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
+                    const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = displayName;
                     level2SelectElement.appendChild(option);
                 });
             } else {
@@ -330,7 +338,8 @@ export const Utils = {
                 industries.forEach(industry => {
                     const option = document.createElement('option');
                     option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
+                    const displayName = industry.display_name || industry.name_short || industry.name;
+                    option.textContent = displayName;
                     level3SelectElement.appendChild(option);
                 });
             } else {

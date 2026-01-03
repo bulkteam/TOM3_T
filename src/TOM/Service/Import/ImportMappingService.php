@@ -20,9 +20,9 @@ class ImportMappingService
         // 1. Grunddaten
         'name' => ['firmenname', 'name', 'unternehmen', 'company', 'firma', 'firma1', 'firmapdf', 'namen'],
         'website' => ['website', 'url', 'homepage', 'web'],
-        'industry_level1' => ['oberkategorie', 'hauptbranche', 'branchenbereich', 'branche', 'industry', 'sektor'],
-        'industry_level2' => ['branche', 'subbranche', 'unterbranche', 'kategorie'],
-        'industry_level3' => ['unterbranche', 'spezialisierung', 'detailbranche'],
+        'industry_level1' => ['hauptbranche', 'branchenbereich', 'industry', 'sektor'],
+        'industry_level2' => ['oberkategorie', 'branche', 'subbranche', 'unterbranche'],
+        'industry_level3' => ['kategorie', 'unterbranche', 'spezialisierung', 'detailbranche'],
         // Rückwärtskompatibilität
         'industry_main' => ['oberkategorie', 'hauptbranche', 'branche', 'industry', 'sektor'],
         'industry_sub' => ['subbranche', 'unterbranche', 'kategorie'],

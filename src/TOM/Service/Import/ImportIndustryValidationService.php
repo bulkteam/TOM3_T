@@ -110,15 +110,25 @@ class ImportIndustryValidationService
             }
         }
         
-        // Prüfe Level 1 (Branchenbereiche)
+        // NEUE LOGIK: "Oberkategorie" wird auf Level 2 gesucht, nicht Level 1!
+        // Wenn level1Col leer ist, aber level2Col gefüllt, dann ist "Oberkategorie" in level2Col
+        // In diesem Fall: Suche level2Values auf Level 2 (ohne Level 1 Einschränkung)
+        
+        // Prüfe Level 1 (Branchenbereiche) - nur wenn wirklich Level 1 Werte vorhanden
         if (!empty($level1Values)) {
             $result['main'] = $this->checkIndustries($level1Values, true);
         }
         
-        // Prüfe Level 2 (Branchen) - nur wenn Level 1 vorhanden ist
+        // Prüfe Level 2 (Branchen)
+        // WICHTIG: Wenn "Oberkategorie" auf Level 2 gemappt wurde, suche auf allen Level 2 Branchen
         if (!empty($level2Values)) {
-            // Prüfe Level 2 unter den gefundenen Level 1 Branchen
-            $result['sub'] = $this->checkIndustriesLevel2($level2Values, $result['main'] ?? []);
+            if (empty($level1Values) && !empty($level2Col)) {
+                // "Oberkategorie" wurde auf Level 2 gemappt → Suche auf allen Level 2 Branchen
+                $result['sub'] = $this->checkIndustriesLevel2WithoutParent($level2Values);
+            } else {
+                // Normale Suche: Level 2 unter den gefundenen Level 1 Branchen
+                $result['sub'] = $this->checkIndustriesLevel2($level2Values, $result['main'] ?? []);
+            }
         }
         
         // Prüfe Level 3 (Unterbranchen) - optional, nur wenn Level 2 vorhanden ist
@@ -127,9 +137,12 @@ class ImportIndustryValidationService
             $result['level3'] = $this->checkIndustriesLevel3($level3Values, $result['sub'] ?? []);
         }
         
-        // Prüfe Kombinationen: Wenn Level 1 gefunden, prüfe passende Level 2 und 3
+        // Prüfe Kombinationen: Wenn Level 1 gefunden ODER Level 2 gefunden (dann Level 1 ableiten)
         if (!empty($combinations)) {
-            $result['combinations'] = $this->checkCombinations3Level($combinations, $result['main']);
+            $result['combinations'] = $this->checkCombinations3Level($combinations, $result['main'], $result['sub']);
+        } else if (!empty($level2Values) && !empty($result['sub']['found'])) {
+            // Fallback: Wenn keine Kombinationen, aber Level 2 gefunden, versuche Level 1 abzuleiten
+            $result['combinations'] = $this->deriveCombinationsFromLevel2($level2Values, $level3Values, $result['sub']);
         }
         
         // Prüfe Konsistenz: Wenn verschiedene Level 1 oder Level 2 Werte vorhanden sind
@@ -253,17 +266,138 @@ class ImportIndustryValidationService
                 // Suche ähnliche Branchen (Fuzzy Match)
                 $bestMatch = $this->findSimilarIndustry($excelIndustry, $dbIndustries);
                 
-                $missing[] = [
-                    'excel_value' => $excelIndustry,
-                    'similarity' => $bestMatch['similarity'] ?? 0,
-                    'suggestion' => $bestMatch['industry'] ?? null
-                ];
-                
-                if ($bestMatch['similarity'] > 0.7) {
+                // Wenn Ähnlichkeit > 0.7, als "found" behandeln (nicht als "missing")
+                if ($bestMatch['similarity'] > 0.7 && $bestMatch['industry']) {
+                    $found[] = [
+                        'excel_value' => $excelIndustry,
+                        'db_industry' => $bestMatch['industry'],
+                        'similarity' => $bestMatch['similarity']
+                    ];
                     $suggestions[] = [
                         'excel_value' => $excelIndustry,
                         'suggested' => $bestMatch['industry'],
                         'similarity' => $bestMatch['similarity']
+                    ];
+                } else {
+                    $missing[] = [
+                        'excel_value' => $excelIndustry,
+                        'similarity' => $bestMatch['similarity'] ?? 0,
+                        'suggestion' => $bestMatch['industry'] ?? null
+                    ];
+                }
+            }
+        }
+        
+        return [
+            'found' => $found,
+            'missing' => $missing,
+            'suggestions' => $suggestions
+        ];
+    }
+    
+    /**
+     * Prüft Level 2 Branchen auf allen Level 2 Branchen (ohne Level 1 Einschränkung)
+     * Wird verwendet, wenn "Oberkategorie" auf Level 2 gemappt wurde
+     */
+    private function checkIndustriesLevel2WithoutParent(array $level2Values): array
+    {
+        // Lade ALLE Level 2 Branchen (ohne Parent-Einschränkung)
+        $stmt = $this->db->prepare("
+            SELECT industry_uuid, name, code, parent_industry_uuid
+            FROM industry
+            WHERE parent_industry_uuid IS NOT NULL
+        ");
+        $stmt->execute();
+        $dbLevel2Industries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Filtere nur Level 2 (nicht Level 3)
+        $level2Only = [];
+        foreach ($dbLevel2Industries as $industry) {
+            // Prüfe, ob Parent ein Level 1 ist (parent_industry_uuid IS NULL beim Parent)
+            $parentStmt = $this->db->prepare("SELECT parent_industry_uuid FROM industry WHERE industry_uuid = :uuid");
+            $parentStmt->execute(['uuid' => $industry['parent_industry_uuid']]);
+            $parent = $parentStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($parent && $parent['parent_industry_uuid'] === null) {
+                $level2Only[] = $industry;
+            }
+        }
+        
+        return $this->checkIndustriesAgainstList($level2Values, $level2Only);
+    }
+    
+    /**
+     * Prüft Branchenwerte gegen eine gegebene Liste von Branchen
+     */
+    private function checkIndustriesAgainstList(array $industryNames, array $dbIndustries): array
+    {
+        $found = [];
+        $missing = [];
+        $suggestions = [];
+        
+        // Normalisiere DB-Branchen (lowercase für Vergleich) + Code-Map
+        $dbIndustryMap = [];
+        $dbCodeMap = [];
+        foreach ($dbIndustries as $industry) {
+            $normalized = mb_strtolower(trim($industry['name']));
+            $dbIndustryMap[$normalized] = $industry;
+            
+            // Auch Code-Mapping (z.B. "C20" → "C20 - Herstellung...")
+            if (!empty($industry['code'])) {
+                $codeNormalized = mb_strtolower(trim($industry['code']));
+                $dbCodeMap[$codeNormalized] = $industry;
+            }
+        }
+        
+        // Prüfe jede Excel-Branche
+        foreach ($industryNames as $excelIndustry) {
+            $normalized = mb_strtolower(trim($excelIndustry));
+            $foundIndustry = null;
+            
+            // 1. Exakter Match nach Name
+            if (isset($dbIndustryMap[$normalized])) {
+                $foundIndustry = $dbIndustryMap[$normalized];
+            }
+            // 2. Match nach Code
+            elseif (isset($dbCodeMap[$normalized])) {
+                $foundIndustry = $dbCodeMap[$normalized];
+            }
+            // 3. Teilstring-Match im Code
+            else {
+                foreach ($dbCodeMap as $code => $industry) {
+                    if (strpos($code, $normalized) === 0 || strpos($normalized, $code) === 0) {
+                        $foundIndustry = $industry;
+                        break;
+                    }
+                }
+            }
+            
+            if ($foundIndustry) {
+                $found[] = [
+                    'excel_value' => $excelIndustry,
+                    'db_industry' => $foundIndustry
+                ];
+            } else {
+                // Suche ähnliche Branchen (Fuzzy Match)
+                $bestMatch = $this->findSimilarIndustry($excelIndustry, $dbIndustries);
+                
+                // Wenn Ähnlichkeit > 0.7, als "found" behandeln (nicht als "missing")
+                if ($bestMatch['similarity'] > 0.7 && $bestMatch['industry']) {
+                    $found[] = [
+                        'excel_value' => $excelIndustry,
+                        'db_industry' => $bestMatch['industry'],
+                        'similarity' => $bestMatch['similarity']
+                    ];
+                    $suggestions[] = [
+                        'excel_value' => $excelIndustry,
+                        'suggested' => $bestMatch['industry'],
+                        'similarity' => $bestMatch['similarity']
+                    ];
+                } else {
+                    $missing[] = [
+                        'excel_value' => $excelIndustry,
+                        'similarity' => $bestMatch['similarity'] ?? 0,
+                        'suggestion' => $bestMatch['industry'] ?? null
                     ];
                 }
             }
@@ -561,9 +695,10 @@ class ImportIndustryValidationService
      * 
      * @param array $combinations Excel-Kombinationen: ['Level1' => ['Level2' => ['Level3', ...], ...]]
      * @param array $level1Result Ergebnis der Level 1 Prüfung
+     * @param array $level2Result Ergebnis der Level 2 Prüfung (optional, für Ableitung von Level 1)
      * @return array Kombinations-Vorschläge
      */
-    private function checkCombinations3Level(array $combinations, array $level1Result): array
+    private function checkCombinations3Level(array $combinations, array $level1Result, array $level2Result = []): array
     {
         $suggestions = [];
         
@@ -612,6 +747,37 @@ class ImportIndustryValidationService
                 if ($found['excel_value'] === $excelLevel1) {
                     $dbLevel1 = $found['db_industry'];
                     break;
+                }
+            }
+            
+            // Wenn Level 1 nicht gefunden, aber Level 2 gefunden: Leite Level 1 aus Level 2 ab
+            if (!$dbLevel1 && !empty($level2Result['found'])) {
+                foreach ($level2Data as $excelLevel2 => $excelLevel3s) {
+                    // Suche Level 2 in gefundenen
+                    foreach ($level2Result['found'] as $level2Found) {
+                        if ($level2Found['excel_value'] === $excelLevel2) {
+                            $level2Industry = $level2Found['db_industry'];
+                            // Hole Parent (Level 1) von Level 2
+                            if (!empty($level2Industry['parent_industry_uuid'])) {
+                                $parentStmt = $this->db->prepare("
+                                    SELECT industry_uuid, name, code
+                                    FROM industry
+                                    WHERE industry_uuid = :uuid AND parent_industry_uuid IS NULL
+                                ");
+                                $parentStmt->execute(['uuid' => $level2Industry['parent_industry_uuid']]);
+                                $parent = $parentStmt->fetch(PDO::FETCH_ASSOC);
+                                if ($parent) {
+                                    $dbLevel1 = $parent;
+                                    // Aktualisiere level1Result für diese Kombination
+                                    $level1Result['found'][] = [
+                                        'excel_value' => $excelLevel1,
+                                        'db_industry' => $parent
+                                    ];
+                                    break 2; // Breche beide Loops
+                                }
+                            }
+                        }
+                    }
                 }
             }
             
@@ -746,6 +912,85 @@ class ImportIndustryValidationService
                         'excel_subs' => $excelSubs,
                         'db_main' => $dbMain,
                         'sub_matches' => $subMatches
+                    ];
+                }
+            }
+        }
+        
+        return $suggestions;
+    }
+    
+    /**
+     * Leitet Kombinationen aus Level 2 ab, wenn Level 1 nicht direkt gefunden wurde
+     * 
+     * @param array $level2Values Excel Level 2 Werte (z.B. ["Chemieindustrie"])
+     * @param array $level3Values Excel Level 3 Werte (optional)
+     * @param array $level2Result Ergebnis der Level 2 Prüfung
+     * @return array Kombinations-Vorschläge
+     */
+    private function deriveCombinationsFromLevel2(array $level2Values, array $level3Values, array $level2Result): array
+    {
+        $suggestions = [];
+        
+        // Für jeden gefundenen Level 2: Hole Parent (Level 1)
+        foreach ($level2Result['found'] as $level2Found) {
+            $level2Industry = $level2Found['db_industry'];
+            $excelLevel2 = $level2Found['excel_value'];
+            
+            if (!empty($level2Industry['parent_industry_uuid'])) {
+                // Hole Parent (Level 1)
+                $parentStmt = $this->db->prepare("
+                    SELECT industry_uuid, name, code
+                    FROM industry
+                    WHERE industry_uuid = :uuid AND parent_industry_uuid IS NULL
+                ");
+                $parentStmt->execute(['uuid' => $level2Industry['parent_industry_uuid']]);
+                $dbLevel1 = $parentStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($dbLevel1) {
+                    // Lade Level 3 Optionen für diesen Level 2
+                    $level3Stmt = $this->db->prepare("
+                        SELECT industry_uuid, name, code
+                        FROM industry
+                        WHERE parent_industry_uuid = :level2_uuid
+                    ");
+                    $level3Stmt->execute(['level2_uuid' => $level2Industry['industry_uuid']]);
+                    $availableLevel3 = $level3Stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    $level3Matches = [];
+                    $level3NeedsCreation = [];
+                    
+                    // Prüfe Level 3 Werte
+                    foreach ($level3Values as $excelLevel3) {
+                        $bestLevel3Match = $this->findSimilarIndustry($excelLevel3, $availableLevel3);
+                        
+                        if ($bestLevel3Match['industry'] && $bestLevel3Match['similarity'] > 0.6) {
+                            $level3Matches[] = [
+                                'excel_value' => $excelLevel3,
+                                'db_industry' => $bestLevel3Match['industry'],
+                                'similarity' => $bestLevel3Match['similarity']
+                            ];
+                        } else {
+                            $level3NeedsCreation[] = [
+                                'excel_value' => $excelLevel3,
+                                'parent_level2_uuid' => $level2Industry['industry_uuid']
+                            ];
+                        }
+                    }
+                    
+                    // Erstelle Kombinations-Vorschlag
+                    $suggestions[] = [
+                        'excel_level1' => $dbLevel1['name'], // Verwende DB-Name als Excel-Wert (da nicht direkt in Excel)
+                        'db_level1' => $dbLevel1,
+                        'excel_level2' => $excelLevel2,
+                        'level2_matches' => [[
+                            'excel_value' => $excelLevel2,
+                            'db_industry' => $level2Industry,
+                            'similarity' => 1.0
+                        ]],
+                        'excel_level3s' => $level3Values,
+                        'level3_matches' => $level3Matches,
+                        'level3_needs_creation' => $level3NeedsCreation
                     ];
                 }
             }

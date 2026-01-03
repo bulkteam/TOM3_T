@@ -1,11 +1,11 @@
 <?php
 /**
- * Bereinigt Duplikate in der Industry-Tabelle
+ * Bereinigt Duplikate in der Industry-Tabelle (umgekehrte Strategie)
  * 
  * Strategie:
- * - Behalte die offiziellen WZ-Namen (Format: "CXX - Beschreibung")
- * - Entferne die kurzen Namen (z.B. "Chemie", "Maschinenbau")
- * - Prüfe, ob die kurzen Namen in Verwendung sind (Referenzen)
+ * - Behalte die KURZEN Namen (z.B. "Chemie", "Maschinenbau")
+ * - Entferne die langen offiziellen WZ-Namen (Format: "CXX - Beschreibung")
+ * - Grund: Kurze Namen matchen besser mit Excel-Werten wie "Chemieindustrie"
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -15,7 +15,7 @@ use TOM\Infrastructure\Database\DatabaseConnection;
 
 $db = DatabaseConnection::getInstance();
 
-echo "=== Bereinige Industry-Duplikate ===\n\n";
+echo "=== Bereinige Industry-Duplikate (umgekehrte Strategie) ===\n\n";
 
 // Dry-Run Modus (nur anzeigen, nicht löschen)
 $dryRun = !isset($argv[1]) || $argv[1] !== '--execute';
@@ -69,7 +69,7 @@ foreach ($duplicates as $dup) {
     $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Entscheide, welche behalten werden sollen
-    // Bevorzuge: Offizielle WZ-Namen (Format: "CXX - Beschreibung")
+    // Bevorzuge: KURZE Namen (NICHT im Format "CXX - Beschreibung")
     $officialEntries = [];
     $shortEntries = [];
     
@@ -82,22 +82,22 @@ foreach ($duplicates as $dup) {
         }
     }
     
-    // Wenn es offizielle Einträge gibt, behalte diese
-    if (!empty($officialEntries)) {
-        echo "  ✅ Behalte offizielle WZ-Namen:\n";
-        foreach ($officialEntries as $entry) {
+    // Wenn es kurze Einträge gibt, behalte diese
+    if (!empty($shortEntries)) {
+        echo "  ✅ Behalte kurze Namen:\n";
+        foreach ($shortEntries as $entry) {
             echo "    - {$entry['name']} [{$entry['industry_uuid']}]\n";
             $toKeep[] = $entry['industry_uuid'];
         }
         
-        echo "  ❌ Entferne kurze Namen:\n";
-        foreach ($shortEntries as $entry) {
+        echo "  ❌ Entferne lange offizielle WZ-Namen:\n";
+        foreach ($officialEntries as $entry) {
             echo "    - {$entry['name']} [{$entry['industry_uuid']}]\n";
             $toDelete[] = $entry['industry_uuid'];
         }
     } else {
-        // Wenn keine offiziellen Einträge, behalte den ersten
-        echo "  ⚠️  Keine offiziellen WZ-Namen gefunden, behalte ersten Eintrag:\n";
+        // Wenn keine kurzen Einträge, behalte den ersten
+        echo "  ⚠️  Keine kurzen Namen gefunden, behalte ersten Eintrag:\n";
         echo "    - {$entries[0]['name']} [{$entries[0]['industry_uuid']}]\n";
         $toKeep[] = $entries[0]['industry_uuid'];
         

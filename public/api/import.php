@@ -15,6 +15,10 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Service\Import\OrgImportService;
+use TOM\Service\Import\ImportStagingService;
+use TOM\Service\Import\IndustryDecisionService;
+use TOM\Service\Import\ImportCommitService;
+use TOM\Service\Import\ImportTemplateService;
 use TOM\Service\DocumentService;
 use TOM\Service\Document\BlobService;
 use TOM\Infrastructure\Auth\AuthHelper;
@@ -48,6 +52,7 @@ try {
     
     $action = $parts[0] ?? null;
     $id = $parts[1] ?? null;
+    $subAction = $parts[2] ?? null; // Für verschachtelte Pfade wie staging/{uuid}/industry-decision
     
     $importService = new OrgImportService();
     $documentService = new DocumentService();
@@ -68,9 +73,23 @@ try {
                 // Speichert Mapping-Konfiguration
                 handleSaveMapping($importService, $id, $userId);
             } elseif ($action === 'staging') {
-                // POST /api/import/staging
-                // Importiert in Staging
-                handleImportToStaging($importService, $id, $userId);
+                if ($id && $subAction === 'industry-decision') {
+                    // POST /api/import/staging/{staging_uuid}/industry-decision
+                    $stagingService = new ImportStagingService();
+                    $decisionService = new IndustryDecisionService();
+                    handleIndustryDecision($decisionService, $id, $userId);
+                } elseif ($id) {
+                    // POST /api/import/staging/{batch_uuid}
+                    // Importiert in Staging (nutzt neuen ImportStagingService)
+                    $stagingService = new ImportStagingService();
+                    handleImportToStaging($stagingService, $id, $userId);
+                } else {
+                    jsonResponse(['error' => 'Invalid endpoint'], 400);
+                }
+            } elseif ($action === 'batch' && $id && $subAction === 'commit') {
+                // POST /api/import/batch/{batch_uuid}/commit
+                $commitService = new \TOM\Service\Import\ImportCommitService();
+                handleCommitBatch($commitService, $id, $userId);
             } else {
                 jsonResponse(['error' => 'Invalid endpoint'], 400);
             }
@@ -78,11 +97,27 @@ try {
             
         case 'GET':
             if ($action === 'batch' && $id) {
-                // GET /api/import/batch/{batch_uuid}
-                handleGetBatch($importService, $id);
+                if ($subAction === 'staging-rows') {
+                    // GET /api/import/batch/{batch_uuid}/staging-rows
+                    $stagingService = new ImportStagingService();
+                    handleGetBatchStagingRows($stagingService, $id);
+                } else {
+                    // GET /api/import/batch/{batch_uuid}
+                    handleGetBatch($importService, $id);
+                }
             } elseif ($action === 'staging' && $id) {
-                // GET /api/import/staging/{batch_uuid}
-                handleGetStaging($importService, $id);
+                // GET /api/import/staging/{staging_uuid}
+                // Holt einzelne Staging-Row (nicht Batch)
+                $stagingService = new ImportStagingService();
+                handleGetStagingRow($stagingService, $id);
+            } elseif ($action === 'templates') {
+                // GET /api/import/templates
+                $templateService = new ImportTemplateService();
+                handleListTemplates($templateService, $id); // $id = import_type (optional)
+            } elseif ($action === 'template' && $id) {
+                // GET /api/import/template/{template_uuid}
+                $templateService = new ImportTemplateService();
+                handleGetTemplate($templateService, $id);
             } else {
                 jsonResponse(['error' => 'Invalid endpoint'], 400);
             }
@@ -159,10 +194,30 @@ function handleImportUpload($documentService, $importService, $blobService, $use
         // 3. Aktualisiere Batch mit file_hash
         $importService->updateBatchFileHash($batchUuid, $filePath);
         
-        // 4. Analysiere Excel
-        $analysis = $importService->analyzeExcel($filePath);
+        // 4. Analysiere Excel (mit Template-Matching)
+        $importType = 'ORG_ONLY'; // TODO: Aus Request oder Config
+        $analysis = $importService->analyzeExcel($filePath, $importType);
         
-        // 5. Activity-Log: Datei hochgeladen
+        // 5. Speichere Template-Matching-Ergebnisse in Batch
+        if (!empty($analysis['template_match'])) {
+            $templateMatch = $analysis['template_match'];
+            $db = \TOM\Infrastructure\Database\DatabaseConnection::getInstance();
+            $stmt = $db->prepare("
+                UPDATE org_import_batch
+                SET detected_header_row = :header_row,
+                    detected_template_uuid = :template_uuid,
+                    detected_template_score = :score
+                WHERE batch_uuid = :batch_uuid
+            ");
+            $stmt->execute([
+                'batch_uuid' => $batchUuid,
+                'header_row' => $analysis['header_row'] ?? null,
+                'template_uuid' => $templateMatch['template']['template_uuid'] ?? null,
+                'score' => $templateMatch['score'] ?? null
+            ]);
+        }
+        
+        // 6. Activity-Log: Datei hochgeladen
         $activityLogService = new ActivityLogService();
         $activityLogService->logActivity(
             (string)$userIdInt,
@@ -243,19 +298,95 @@ function handleSaveMapping($importService, $batchUuid, $userId) {
 }
 
 /**
- * Importiert in Staging
+ * Importiert in Staging (nutzt neuen ImportStagingService)
  */
-function handleImportToStaging($importService, $batchUuid, $userId) {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $filePath = $data['file_path'] ?? null;
-    
-    if (!$filePath || !file_exists($filePath)) {
-        jsonResponse(['error' => 'File not found'], 404);
-        return;
-    }
-    
+function handleImportToStaging($stagingService, $batchUuid, $userId) {
     try {
-        $stats = $importService->importToStaging($batchUuid, $filePath);
+        // Hole Batch-Details
+        $importService = new OrgImportService();
+        $batch = $importService->getBatch($batchUuid);
+        
+        if (!$batch) {
+            jsonResponse(['error' => 'Batch not found'], 404);
+            return;
+        }
+        
+        // Hole file_path aus DocumentService/BlobService
+        // Suche nach Document für diesen Batch
+        $db = \TOM\Infrastructure\Database\DatabaseConnection::getInstance();
+        $stmt = $db->prepare("
+            SELECT d.current_blob_uuid as blob_uuid
+            FROM document_attachments da
+            JOIN documents d ON da.document_uuid = d.document_uuid
+            WHERE da.entity_type = 'import_batch'
+            AND da.entity_uuid = :batch_uuid
+            ORDER BY da.created_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute(['batch_uuid' => $batchUuid]);
+        $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$doc || !$doc['blob_uuid']) {
+            jsonResponse(['error' => 'File not found for batch'], 404);
+            return;
+        }
+        
+        // Hole Datei-Pfad über BlobService
+        $blobService = new BlobService();
+        $filePath = $blobService->getBlobFilePath($doc['blob_uuid']);
+        
+        if (!$filePath || !file_exists($filePath)) {
+            jsonResponse(['error' => 'File not found on disk'], 404);
+            return;
+        }
+        
+        // Importiere in Staging
+        $stats = $stagingService->stageBatch($batchUuid, $filePath);
+        
+        // Prüfe, ob Daten importiert wurden
+        if (($stats['imported'] ?? 0) === 0 && ($stats['total_rows'] ?? 0) > 0) {
+            // Alle Zeilen hatten Fehler
+            jsonResponse([
+                'error' => 'Import failed',
+                'message' => 'Keine Zeilen konnten importiert werden. Bitte prüfen Sie die Fehler.',
+                'stats' => $stats
+            ], 400);
+            return;
+        }
+        
+        // Activity-Log
+        $activityLogService = new ActivityLogService();
+        $activityLogService->logActivity(
+            (string)$userId,
+            'import',
+            'import_batch',
+            $batchUuid,
+            [
+                'action' => 'staging_import',
+                'rows_total' => $stats['total_rows'] ?? 0,
+                'rows_imported' => $stats['imported'] ?? 0,
+                'rows_errors' => $stats['errors'] ?? 0,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]
+        );
+        
+        // Prüfe, ob Daten importiert wurden
+        if (($stats['imported'] ?? 0) === 0) {
+            // Keine Zeilen importiert - zeige Fehlerdetails
+            $errorMessage = 'Keine Zeilen konnten importiert werden.';
+            if (!empty($stats['errors_detail'])) {
+                $firstError = $stats['errors_detail'][0];
+                $errorMessage .= ' Erster Fehler (Zeile ' . ($firstError['row'] ?? '?') . '): ' . ($firstError['error'] ?? 'Unbekannt');
+            }
+            
+            jsonResponse([
+                'error' => 'Import failed',
+                'message' => $errorMessage,
+                'stats' => $stats
+            ], 400);
+            return;
+        }
+        
         jsonResponse([
             'success' => true,
             'stats' => $stats
@@ -289,9 +420,235 @@ function handleGetBatch($importService, $batchUuid) {
 }
 
 /**
- * Holt Staging-Daten
+ * Holt einzelne Staging-Row (GET /api/import/staging/{staging_uuid})
  */
-function handleGetStaging($importService, $batchUuid) {
-    // TODO: Implementierung
-    jsonResponse(['error' => 'Not implemented'], 501);
+function handleGetStagingRow($stagingService, $stagingUuid) {
+    try {
+        $row = $stagingService->getStagingRow($stagingUuid);
+        
+        if (!$row) {
+            jsonResponse(['error' => 'Staging row not found'], 404);
+            return;
+        }
+        
+        jsonResponse([
+            'staging_uuid' => $row['staging_uuid'],
+            'batch_uuid' => $row['import_batch_uuid'],
+            'row_number' => $row['row_number'],
+            'raw_data' => json_decode($row['raw_data'], true),
+            'mapped_data' => json_decode($row['mapped_data'], true),
+            'industry_resolution' => json_decode($row['industry_resolution'] ?? '{}', true),
+            'validation_status' => $row['validation_status'],
+            'validation_errors' => json_decode($row['validation_errors'] ?? '[]', true),
+            'review_status' => $row['disposition'] ?? 'pending', // Map disposition to review_status for frontend
+            'review_notes' => $row['review_notes'] ?? null,
+            'duplicate_status' => $row['duplicate_status'] ?? 'unknown',
+            'duplicate_summary' => isset($row['duplicate_summary']) ? json_decode($row['duplicate_summary'] ?? 'null', true) : null,
+            'import_status' => $row['import_status']
+        ]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to get staging row',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Holt alle Staging-Rows für einen Batch (GET /api/import/batch/{batch_uuid}/staging-rows)
+ */
+function handleGetBatchStagingRows($stagingService, $batchUuid) {
+    try {
+        $reviewStatus = $_GET['review_status'] ?? null;
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : null;
+        $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : null;
+        
+        $rows = $stagingService->getStagingRowsForBatch($batchUuid, $reviewStatus, $limit, $offset);
+        
+        jsonResponse([
+            'rows' => $rows,
+            'count' => count($rows)
+        ]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to get staging rows',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Verarbeitet Industry-Entscheidung (POST /api/import/staging/{staging_uuid}/industry-decision)
+ */
+function handleIndustryDecision($decisionService, $stagingUuid, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    if (empty($data)) {
+        jsonResponse(['error' => 'Request body required'], 400);
+        return;
+    }
+    
+    try {
+        $result = $decisionService->applyDecision($stagingUuid, $data, (string)$userId);
+        jsonResponse($result);
+    } catch (\RuntimeException $e) {
+        $errorCode = $e->getMessage();
+        
+        if ($errorCode === 'INCONSISTENT_PARENT') {
+            jsonResponse([
+                'error' => 'INCONSISTENT_PARENT',
+                'message' => 'Die gewählte Branche (Level 2) gehört nicht zum gewählten Branchenbereich (Level 1).'
+            ], 409);
+        } elseif ($errorCode === 'L3_CREATE_REQUIRES_CONFIRMED_L2') {
+            jsonResponse([
+                'error' => 'L3_CREATE_REQUIRES_CONFIRMED_L2',
+                'message' => 'Level 3 kann nur erstellt werden, wenn Level 2 bestätigt wurde.'
+            ], 400);
+        } elseif ($errorCode === 'L3_NAME_REQUIRED') {
+            jsonResponse([
+                'error' => 'L3_NAME_REQUIRED',
+                'message' => 'Name für neue Level 3 Branche ist erforderlich.'
+            ], 400);
+        } elseif ($errorCode === 'L3_UUID_REQUIRED') {
+            jsonResponse([
+                'error' => 'L3_UUID_REQUIRED',
+                'message' => 'UUID für bestehende Level 3 Branche ist erforderlich.'
+            ], 400);
+        } else {
+            // Unbekannter Fehler - logge Details
+            error_log("IndustryDecision Error: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString());
+            jsonResponse([
+                'error' => 'Decision failed',
+                'message' => $e->getMessage(),
+                'error_code' => $errorCode
+            ], 500);
+        }
+    } catch (Exception $e) {
+        // Allgemeiner Fehler - logge Details
+        error_log("IndustryDecision Exception: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString());
+        jsonResponse([
+            'error' => 'Decision failed',
+            'message' => $e->getMessage(),
+            'type' => get_class($e)
+        ], 500);
+    }
+}
+
+/**
+ * Listet Templates
+ */
+function handleListTemplates($templateService, $importType) {
+    try {
+        $templates = $templateService->listTemplates($importType, true);
+        jsonResponse(['templates' => $templates]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to list templates',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Holt Template
+ */
+function handleGetTemplate($templateService, $templateUuid) {
+    try {
+        $template = $templateService->getTemplate($templateUuid);
+        if (!$template) {
+            jsonResponse(['error' => 'Template not found'], 404);
+            return;
+        }
+        jsonResponse(['template' => $template]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to get template',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Erstellt Template
+ */
+function handleCreateTemplate($templateService, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    if (empty($data['name']) || empty($data['mapping_config'])) {
+        jsonResponse(['error' => 'name and mapping_config required'], 400);
+        return;
+    }
+    
+    try {
+        $templateUuid = $templateService->createTemplate(
+            $data['name'],
+            $data['import_type'] ?? 'ORG_ONLY',
+            $data['mapping_config'],
+            $userId,
+            $data['is_default'] ?? false
+        );
+        jsonResponse(['template_uuid' => $templateUuid, 'success' => true]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to create template',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Aktualisiert Template
+ */
+function handleUpdateTemplate($templateService, $templateUuid, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    try {
+        $templateService->updateTemplate(
+            $templateUuid,
+            $data['name'] ?? null,
+            $data['mapping_config'] ?? null,
+            $userId,
+            $data['is_default'] ?? null
+        );
+        jsonResponse(['success' => true]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to update template',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Committet Batch (POST /api/import/batch/{batch_uuid}/commit)
+ */
+function handleCommitBatch($commitService, $batchUuid, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    $mode = $data['mode'] ?? 'APPROVED_ONLY';
+    $startWorkflows = $data['start_workflows'] ?? true;
+    $dryRun = $data['dry_run'] ?? false;
+    
+    if ($dryRun) {
+        // TODO: Validierung ohne Commit
+        jsonResponse([
+            'error' => 'Dry-run not implemented yet',
+            'message' => 'Dry-run wird später implementiert'
+        ], 501);
+        return;
+    }
+    
+    try {
+        $result = $commitService->commitBatch($batchUuid, (string)$userId, $startWorkflows);
+        
+        jsonResponse([
+            'batch_uuid' => $batchUuid,
+            'result' => $result
+        ]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Commit failed',
+            'message' => $e->getMessage()
+        ], 500);
+    }
 }

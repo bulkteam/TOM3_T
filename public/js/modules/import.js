@@ -1,6 +1,6 @@
 /**
- * TOM3 - Import Module
- * Nutzt zentralisierten DocumentService für Upload
+ * TOM3 - Import Module (Neu - Clean Slate)
+ * Nutzt serverseitige State-Engine für Industry-Entscheidungen
  */
 
 import { Utils } from './utils.js';
@@ -9,8 +9,9 @@ export class ImportModule {
     constructor(app) {
         this.app = app;
         this.currentBatch = null;
-        this.currentStep = 1; // 1: Upload, 2: Mapping, 3: Review
-        this.industryDecisions = {}; // Speichert Entscheidungen: {excel_value: {decision, industry_uuid}}
+        this.currentStep = 1; // 1: Upload, 2: Mapping, 3: Branchen-Prüfung, 4: Review
+        this.stagingRows = []; // Cache für Staging-Rows
+        this.stagingImported = false; // Flag: Wurde bereits in Staging importiert?
     }
     
     /**
@@ -35,7 +36,7 @@ export class ImportModule {
             </div>
             
             <div class="import-wizard">
-                <!-- Wizard-Navigation (oben) -->
+                <!-- Wizard-Navigation -->
                 <div class="wizard-navigation">
                     <div class="wizard-step-indicator ${this.currentStep === 1 ? 'active' : ''} ${this.currentStep > 1 ? 'completed' : ''}" data-step="1">
                         <div class="step-indicator-number">1</div>
@@ -47,8 +48,13 @@ export class ImportModule {
                         <div class="step-indicator-label">Mapping</div>
                     </div>
                     <div class="wizard-step-connector"></div>
-                    <div class="wizard-step-indicator ${this.currentStep === 3 ? 'active' : ''}" data-step="3">
+                    <div class="wizard-step-indicator ${this.currentStep === 3 ? 'active' : ''} ${this.currentStep > 3 ? 'completed' : ''}" data-step="3">
                         <div class="step-indicator-number">3</div>
+                        <div class="step-indicator-label">Branchen-Prüfung</div>
+                    </div>
+                    <div class="wizard-step-connector"></div>
+                    <div class="wizard-step-indicator ${this.currentStep === 4 ? 'active' : ''}" data-step="4">
+                        <div class="step-indicator-number">4</div>
                         <div class="step-indicator-label">Review & Freigabe</div>
                     </div>
                 </div>
@@ -88,7 +94,7 @@ export class ImportModule {
                 <!-- Schritt 2: Mapping -->
                 <div class="wizard-step ${this.currentStep === 2 ? 'active' : ''}" data-step="2" style="display: none;">
                     <div class="step-header">
-                        <h3>Schritt 2 von 3: Mapping konfigurieren</h3>
+                        <h3>Schritt 2 von 4: Spalten-Mapping</h3>
                     </div>
                     <div class="step-content">
                         <div id="mapping-configurator">
@@ -99,29 +105,53 @@ export class ImportModule {
                             <button type="button" class="btn btn-secondary" onclick="window.app.import.goToStep(1)">
                                 ← Zurück
                             </button>
+                            <button type="button" class="btn btn-secondary" id="save-template-btn" onclick="window.app.import.saveAsTemplate()" style="display: none;">
+                                💾 Als Template speichern
+                            </button>
                             <button type="button" class="btn btn-primary" id="save-mapping-btn" onclick="window.app.import.saveMapping()">
-                                Mapping speichern & Weiter →
+                                Mapping speichern →
                             </button>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Schritt 3: Review -->
+                <!-- Schritt 3: Branchen-Prüfung -->
                 <div class="wizard-step ${this.currentStep === 3 ? 'active' : ''}" data-step="3" style="display: none;">
                     <div class="step-header">
-                        <h3>Schritt 3 von 3: Review & Freigabe</h3>
+                        <h3>Schritt 3 von 4: Branchen-Prüfung</h3>
                     </div>
                     <div class="step-content">
-                        <div id="staging-preview">
-                            <p>Lädt Vorschau...</p>
+                        <div id="industry-check-content">
+                            <p>Lädt Branchen-Vorschläge...</p>
                         </div>
                         
                         <div class="form-actions">
                             <button type="button" class="btn btn-secondary" onclick="window.app.import.goToStep(2)">
                                 ← Zurück
                             </button>
-                            <button type="button" class="btn btn-primary" id="approve-btn" onclick="window.app.import.approveImport()">
-                                ✅ Freigeben & Importieren
+                            <button type="button" class="btn btn-primary" id="confirm-industries-btn" onclick="window.app.import.confirmAllIndustries()" style="display: none;">
+                                Branchen bestätigen →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Schritt 4: Review -->
+                <div class="wizard-step ${this.currentStep === 4 ? 'active' : ''}" data-step="4" style="display: none;">
+                    <div class="step-header">
+                        <h3>Schritt 4 von 4: Review & Freigabe</h3>
+                    </div>
+                    <div class="step-content">
+                        <div id="review-content">
+                            <p>Lädt Staging-Daten...</p>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="window.app.import.goToStep(3)">
+                                ← Zurück zur Branchen-Prüfung
+                            </button>
+                            <button type="button" class="btn btn-primary" id="commit-btn" onclick="window.app.import.commitBatch()" style="display: none;">
+                                Importieren →
                             </button>
                         </div>
                     </div>
@@ -131,12 +161,12 @@ export class ImportModule {
     }
     
     /**
-     * Event-Handler einrichten
+     * Setup Event Handlers
      */
     setupEventHandlers() {
-        const form = document.getElementById('import-upload-form');
-        if (form) {
-            form.addEventListener('submit', (e) => {
+        const uploadForm = document.getElementById('import-upload-form');
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.handleUpload();
             });
@@ -144,38 +174,71 @@ export class ImportModule {
     }
     
     /**
-     * Upload-Handler (nutzt zentralisierten DocumentService)
+     * Gehe zu Schritt
+     */
+    goToStep(step) {
+        this.currentStep = step;
+        
+        // Update Indicators
+        document.querySelectorAll('.wizard-step-indicator').forEach((indicator, index) => {
+            const stepNum = index + 1;
+            indicator.classList.remove('active', 'completed');
+            if (stepNum === step) {
+                indicator.classList.add('active');
+            } else if (stepNum < step) {
+                indicator.classList.add('completed');
+            }
+        });
+        
+        // Show/Hide Steps
+        document.querySelectorAll('.wizard-step').forEach((stepEl, index) => {
+            const stepNum = index + 1;
+            if (stepNum === step) {
+                stepEl.classList.add('active');
+                stepEl.style.display = 'block';
+            } else {
+                stepEl.classList.remove('active');
+                stepEl.style.display = 'none';
+            }
+        });
+        
+        // Load step content
+        if (step === 2 && this.currentBatch) {
+            this.renderMappingStep();
+        } else if (step === 3 && this.currentBatch) {
+            this.renderIndustryCheckStep();
+        } else if (step === 4 && this.currentBatch) {
+            this.renderReviewStep();
+        }
+    }
+    
+    /**
+     * Upload Handler
      */
     async handleUpload() {
         const fileInput = document.getElementById('import-file');
-        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-            Utils.showError('Bitte wählen Sie eine Datei aus');
+        if (!fileInput || !fileInput.files[0]) {
+            Utils.showError('Bitte wählen Sie eine Datei aus.');
             return;
         }
         
-        const file = fileInput.files[0];
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', fileInput.files[0]);
         
-        // Zeige Progress
         const progressDiv = document.getElementById('upload-progress');
         const progressFill = document.getElementById('upload-progress-fill');
         const progressText = document.getElementById('upload-progress-text');
         const errorDiv = document.getElementById('upload-error');
-        const uploadBtn = document.getElementById('upload-btn');
         
         progressDiv.style.display = 'block';
         errorDiv.style.display = 'none';
-        uploadBtn.disabled = true;
+        progressFill.style.width = '0%';
+        progressText.textContent = 'Wird hochgeladen...';
         
         try {
-            // Upload über zentralisierten DocumentService (via Import-API)
             const response = await fetch('/tom3/public/api/import/upload', {
                 method: 'POST',
-                body: formData,
-                headers: {
-                    // Kein Content-Type setzen - Browser setzt automatisch mit Boundary
-                }
+                body: formData
             });
             
             if (!response.ok) {
@@ -184,52 +247,22 @@ export class ImportModule {
             }
             
             const result = await response.json();
+            this.currentBatch = result.batch_uuid;
+            this.analysis = result.analysis || {};
+            this.templateMatch = result.analysis?.template_match || null;
             
-            // Speichere Batch-UUID und Document-UUID
-            this.currentBatch = {
-                batch_uuid: result.batch_uuid,
-                document_uuid: result.document_uuid,
-                blob_uuid: result.blob_uuid,
-                analysis: result.analysis
-            };
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Upload erfolgreich!';
             
-            // Prüfe Branchen-Konsistenz und zeige Warnung falls nötig
-            if (result.analysis.industry_validation && result.analysis.industry_validation.consistency) {
-                const consistency = result.analysis.industry_validation.consistency;
-                if (!consistency.is_consistent && consistency.warning) {
-                    // Zeige Warnung vor Mapping-Schritt
-                    const warningHtml = `
-                        <div class="alert alert-warning" style="margin: 1rem 0; padding: 1rem; border: 2px solid #ffc107; background-color: #fff3cd;">
-                            <h5>⚠️ Warnung: Inkonsistente Branchendaten</h5>
-                            <p><strong>${consistency.warning}</strong></p>
-                            <p>Die Branchenfelder werden beim Import leer gelassen und müssen anschließend manuell nachgetragen werden.</p>
-                            <button type="button" class="btn btn-primary" onclick="this.parentElement.style.display='none'; window.app.import.goToStep(2); window.app.import.renderMappingStep(window.app.import.currentBatch.analysis);">
-                                Verstanden, weiter zum Mapping
-                            </button>
-                        </div>
-                    `;
-                    
-                    // Zeige Warnung im Upload-Bereich
-                    const uploadContainer = document.getElementById('import-step-1');
-                    if (uploadContainer) {
-                        const existingWarning = uploadContainer.querySelector('.alert-warning');
-                        if (existingWarning) {
-                            existingWarning.remove();
-                        }
-                        uploadContainer.insertAdjacentHTML('beforeend', warningHtml);
-                    }
-                }
-            }
-            
-            // Weiter zu Schritt 2 (Mapping)
-            this.goToStep(2);
-            this.renderMappingStep(result.analysis);
-            
-            // Lade Hauptbranchen für Dropdowns (nur wenn konsistent)
-            if (!result.analysis.industry_validation || 
-                !result.analysis.industry_validation.consistency || 
-                result.analysis.industry_validation.consistency.is_consistent) {
-                this.loadMainIndustries();
+            // Prüfe Template-Vorschlag
+            if (this.templateMatch && this.templateMatch.template && this.templateMatch.decision !== 'NO_MATCH') {
+                // Zeige Template-Vorschlag
+                this.showTemplateSuggestion();
+            } else {
+                // Gehe direkt zu Schritt 2
+                setTimeout(() => {
+                    this.goToStep(2);
+                }, 500);
             }
             
         } catch (error) {
@@ -237,872 +270,899 @@ export class ImportModule {
             errorDiv.textContent = error.message || 'Upload fehlgeschlagen';
             errorDiv.style.display = 'block';
             progressDiv.style.display = 'none';
-        } finally {
-            uploadBtn.disabled = false;
         }
     }
     
     /**
-     * Rendert Mapping-Schritt (neue Struktur mit Beispielen)
+     * Rendert Mapping-Step
      */
-    renderMappingStep(analysis) {
-        const configurator = document.getElementById('mapping-configurator');
-        if (!configurator) return;
+    async renderMappingStep() {
+        const container = document.getElementById('mapping-configurator');
+        if (!container || !this.currentBatch) return;
         
-        if (!analysis || !analysis.mapping_suggestion) {
-            configurator.innerHTML = '<p class="error">Keine Mapping-Vorschläge verfügbar</p>';
-            return;
+        container.innerHTML = '<p>Lädt Mapping-Vorschlag...</p>';
+        
+        try {
+            // Verwende gespeicherte Analysis-Daten (aus Upload) oder lade neu
+            let analysis = this.analysis;
+            
+            if (!analysis || !analysis.mapping_suggestion) {
+                // Falls nicht vorhanden, hole Batch-Details
+                const batch = await window.API.request(`/import/batch/${this.currentBatch}`);
+                
+                // Analysis ist nicht in DB gespeichert, muss neu analysiert werden
+                // Für jetzt: Verwende mapping_config aus Batch, falls vorhanden
+                if (batch && batch.mapping_config) {
+                    // Konvertiere mapping_config zu mapping_suggestion Format
+                    analysis = {
+                        mapping_suggestion: this.convertMappingConfigToSuggestion(batch.mapping_config),
+                        industry_validation: null
+                    };
+                } else {
+                    throw new Error('Keine Analyse-Daten gefunden. Bitte laden Sie die Datei erneut hoch.');
+                }
+            }
+            
+            const mapping = analysis.mapping_suggestion || {};
+            
+            // NUR Mapping-UI (ohne Branchen-Prüfung - die kommt in Schritt 3)
+            let html = '<div class="mapping-section">';
+            html += this.renderMappingUI(mapping);
+            html += '</div>';
+            
+            container.innerHTML = html;
+            
+            // Zeige "Als Template speichern" Button (wenn Mapping vorhanden)
+            const saveTemplateBtn = document.getElementById('save-template-btn');
+            if (saveTemplateBtn && Object.keys(mapping.by_field || {}).length > 0) {
+                saveTemplateBtn.style.display = 'inline-block';
+            }
+            
+        } catch (error) {
+            console.error('Error loading mapping:', error);
+            container.innerHTML = `<p class="error">Fehler beim Laden: ${error.message}</p>`;
+        }
+    }
+    
+    /**
+     * Konvertiert mapping_config zu mapping_suggestion Format (für Anzeige)
+     */
+    convertMappingConfigToSuggestion(mappingConfig) {
+        // mapping_config hat Struktur: { columns: { field: { excel_column: 'A', ... } } }
+        // mapping_suggestion hat Struktur: { by_field: { field: [{ excel_column, excel_header, ... }] } }
+        
+        const byField = {};
+        const byColumn = {};
+        
+        if (mappingConfig.columns) {
+            Object.entries(mappingConfig.columns).forEach(([field, config]) => {
+                if (!byField[field]) {
+                    byField[field] = [];
+                }
+                
+                const candidate = {
+                    excel_column: config.excel_column || '',
+                    excel_header: config.excel_header || config.excel_column || '',
+                    confidence: config.confidence || 100,
+                    examples: config.examples || []
+                };
+                
+                byField[field].push(candidate);
+                
+                if (config.excel_column) {
+                    byColumn[config.excel_column] = {
+                        excel_column: config.excel_column,
+                        excel_header: config.excel_header || config.excel_column,
+                        tom_field: field,
+                        confidence: config.confidence || 100,
+                        examples: config.examples || []
+                    };
+                }
+            });
         }
         
-        const mapping = analysis.mapping_suggestion;
+        return { by_field: byField, by_column: byColumn };
+    }
+    
+    /**
+     * Rendert Mapping-UI (verbessertes Design)
+     */
+    renderMappingUI(mapping) {
+        let html = '<div class="mapping-configurator">';
+        html += '<div class="mapping-header">';
+        html += '<h4>📋 Spalten-Mapping</h4>';
+        html += '<p class="mapping-description">Ordnen Sie die Excel-Spalten den Systemfeldern zu:</p>';
+        html += '</div>';
+        
         const byField = mapping.by_field || {};
         const byColumn = mapping.by_column || {};
         
-        let html = '';
+        // Gruppiere Felder in logische Kategorien
+        // WICHTIG: Branchen-Felder werden hier NICHT angezeigt - die kommen in Schritt 3 (Branchen-Prüfung)
+        const fieldCategories = {
+            'Basis-Informationen': ['name', 'website', 'notes'],
+            'Adresse': ['address_street', 'address_postal_code', 'address_city', 'address_state'],
+            'Kontakt': ['email', 'phone', 'fax'],
+            'Weitere Daten': ['vat_id', 'revenue_range', 'employee_count']
+        };
         
-        // Branchen-Warnungen anzeigen
-        if (analysis.industry_validation) {
-            html += this.renderIndustryWarnings(analysis.industry_validation);
-            
-            // Wenn inkonsistent, Branchenfelder aus Mapping entfernen
-            if (analysis.industry_validation.consistency && !analysis.industry_validation.consistency.is_consistent) {
-                // Branchenfelder werden nicht gemappt
-                const industryFields = ['industry_level1', 'industry_level2', 'industry_level3', 'industry_main', 'industry_sub'];
-                industryFields.forEach(field => {
-                    if (byField[field]) {
-                        delete byField[field];
-                    }
-                });
-            }
-        }
-        
-        // Mapping pro TOM-Feld (mit mehreren Kandidaten)
+        // Zeige pro Kategorie
         html += '<div class="mapping-by-field">';
-        html += '<h4>📋 Mapping nach TOM-Feld</h4>';
         
-        const fieldOrder = ['name', 'website', 'industry_level1', 'industry_level2', 'industry_level3', 'address_street', 
-                           'address_postal_code', 'address_city', 'address_state', 'phone', 
-                           'fax', 'email', 'vat_id', 'employee_count', 'revenue_range', 'notes'];
-        
-        for (const field of fieldOrder) {
-            if (!byField[field]) continue;
+        for (const [category, fields] of Object.entries(fieldCategories)) {
+            const categoryFields = fields.filter(field => byField[field] && byField[field].length > 0);
+            if (categoryFields.length === 0) continue;
             
-            const candidates = byField[field];
-            html += this.renderFieldMapping(field, candidates);
+            html += `<div class="mapping-category">`;
+            html += `<h5 class="category-title">${category}</h5>`;
+            
+            for (const field of categoryFields) {
+                const candidates = byField[field];
+                if (candidates.length === 0) continue;
+                
+                html += `<div class="mapping-field-group">`;
+                html += `<label class="field-label"><strong>${this.getFieldLabel(field)}</strong></label>`;
+                
+                candidates.forEach((candidate, index) => {
+                    const isSelected = index === 0 && candidate.confidence >= 80;
+                    const confidenceClass = candidate.confidence >= 90 ? 'high' : candidate.confidence >= 70 ? 'medium' : 'low';
+                    
+                    html += `<div class="mapping-candidate ${isSelected ? 'selected' : ''}">`;
+                    html += `<input type="radio" name="mapping_${field}" value="${candidate.excel_column}" 
+                             id="mapping_${field}_${index}" ${isSelected ? 'checked' : ''}>`;
+                    html += `<label for="mapping_${field}_${index}" class="candidate-label">`;
+                    html += `<span class="candidate-header">${candidate.excel_header} <span class="column-badge">(${candidate.excel_column})</span></span>`;
+                    if (candidate.examples && candidate.examples.length > 0) {
+                        const uniqueExamples = [...new Set(candidate.examples.slice(0, 3))];
+                        html += `<span class="examples">Beispiele: ${uniqueExamples.join(', ')}</span>`;
+                    }
+                    html += `<span class="confidence-badge ${confidenceClass}">${candidate.confidence}%</span>`;
+                    html += `</label>`;
+                    html += `</div>`;
+                });
+                
+                html += `</div>`;
+            }
+            
+            html += `</div>`;
         }
         
         html += '</div>';
-        
-        // Alle Spalten (Übersicht)
-        html += '<div class="mapping-by-column">';
-        html += '<h4>📊 Alle Spalten</h4>';
-        html += '<table class="data-table">';
-        html += '<thead><tr><th>Spalte</th><th>Header</th><th>TOM-Feld</th><th>Konfidenz</th><th>Beispiele</th></tr></thead><tbody>';
-        
-        for (const [col, suggestion] of Object.entries(byColumn)) {
-            if (suggestion.ignore) continue;
-            
-            const confidence = suggestion.confidence || 0;
-            const examples = suggestion.examples || [];
-            const exampleStr = examples.length > 0 
-                ? examples.slice(0, 3).join(', ') + (examples.length > 3 ? '...' : '')
-                : '(keine)';
-            
-            html += `
-                <tr>
-                    <td><strong>${col}</strong></td>
-                    <td>${suggestion.excel_header || '-'}</td>
-                    <td>${suggestion.tom_field || '<em>(kein Mapping)</em>'}</td>
-                    <td><span class="confidence-badge ${confidence >= 80 ? 'high' : confidence >= 50 ? 'medium' : 'low'}">${confidence}%</span></td>
-                    <td><small>${exampleStr}</small></td>
-                </tr>
-            `;
-        }
-        
-        html += '</tbody></table></div>';
-        
-        configurator.innerHTML = html;
-    }
-    
-    /**
-     * Rendert Mapping für ein TOM-Feld (mit mehreren Kandidaten)
-     */
-    renderFieldMapping(field, candidates) {
-        const fieldLabels = {
-            'name': 'Name',
-            'website': 'Website',
-            'industry_level1': 'Branchenbereich (Level 1)',
-            'industry_level2': 'Branche (Level 2)',
-            'industry_level3': 'Unterbranche (Level 3)',
-            'industry_main': 'Hauptbranche',
-            'industry_sub': 'Subbranche',
-            'address_street': 'Straße',
-            'address_postal_code': 'PLZ',
-            'address_city': 'Ort',
-            'address_state': 'Bundesland',
-            'phone': 'Telefon',
-            'fax': 'Fax',
-            'email': 'E-Mail',
-            'vat_id': 'USt-ID',
-            'employee_count': 'Mitarbeiter',
-            'revenue_range': 'Umsatz',
-            'notes': 'Notizen'
-        };
-        
-        let html = `<div class="field-mapping-group" data-field="${field}">`;
-        html += `<h5>${fieldLabels[field] || field}</h5>`;
-        
-        if (candidates.length === 1) {
-            // Nur ein Kandidat
-            const candidate = candidates[0];
-            const examples = candidate.examples || [];
-            html += `
-                <div class="candidate-single">
-                    <label>
-                        <input type="radio" name="field_${field}" value="${candidate.excel_column}" checked>
-                        <strong>Spalte ${candidate.excel_column}</strong>: ${candidate.excel_header}
-                        <span class="confidence-badge ${candidate.confidence >= 80 ? 'high' : 'medium'}">${candidate.confidence}%</span>
-                    </label>
-                    ${examples.length > 0 ? `<div class="examples"><small>Beispiele: ${examples.slice(0, 3).join(', ')}</small></div>` : ''}
-                </div>
-            `;
-        } else {
-            // Mehrere Kandidaten - Auswahl
-            html += '<div class="candidates-multiple">';
-            html += '<p class="info">⚠️ Mehrere Spalten passen zu diesem Feld. Bitte wählen Sie die richtige:</p>';
-            
-            for (const candidate of candidates) {
-                const examples = candidate.examples || [];
-                html += `
-                    <div class="candidate-option">
-                        <label>
-                            <input type="radio" name="field_${field}" value="${candidate.excel_column}" ${candidate.confidence === candidates[0].confidence ? 'checked' : ''}>
-                            <strong>Spalte ${candidate.excel_column}</strong>: ${candidate.excel_header}
-                            <span class="confidence-badge ${candidate.confidence >= 80 ? 'high' : 'medium'}">${candidate.confidence}%</span>
-                        </label>
-                        ${examples.length > 0 ? `<div class="examples"><small>Beispiele: ${examples.slice(0, 3).join(', ')}</small></div>` : ''}
-                    </div>
-                `;
-            }
-            
-            html += '</div>';
-        }
-        
         html += '</div>';
         return html;
     }
     
     /**
-     * Rendert Branchen-Warnungen mit sequenziellem 3-Schritt-Prozess
+     * Rendert Industry-Warnings (neu: nutzt serverseitige State-Engine)
      */
     renderIndustryWarnings(validation) {
-        let html = '<div class="industry-warnings">';
-        html += '<h4>⚠️ Branchen-Prüfung</h4>';
-        
-        // Konsistenz-Warnung
-        if (validation.consistency && !validation.consistency.is_consistent) {
-            html += '<div class="alert alert-warning" style="margin: 1rem 0; padding: 1rem; border: 2px solid #ffc107; background-color: #fff3cd;">';
-            html += '<h5>⚠️ Inkonsistente Branchendaten</h5>';
-            html += `<p><strong>${validation.consistency.warning}</strong></p>`;
-            html += '<p>Die Branchenfelder werden beim Import leer gelassen und müssen anschließend manuell nachgetragen werden.</p>';
-            html += '</div>';
-            html += '</div>';
-            return html;
+        // Prüfe Konsistenz
+        const consistency = validation.consistency || {};
+        if (!consistency.is_consistent) {
+            return `
+                <div class="warning-section">
+                    <h4>⚠️ Branchen-Daten inkonsistent</h4>
+                    <p>Die Excel-Datei enthält unterschiedliche Branchenwerte. Das Branchen-Mapping wird übersprungen.</p>
+                    <p><strong>Gefundene Level 1 Werte:</strong> ${(consistency.unique_level1_values || []).join(', ')}</p>
+                    <p><strong>Gefundene Level 2 Werte:</strong> ${(consistency.unique_level2_values || []).join(', ')}</p>
+                    <p class="info">Branchen müssen nach dem Import manuell zugeordnet werden.</p>
+                </div>
+            `;
         }
         
-        html += '<p class="info">Bitte wählen Sie die Branchenhierarchie sequenziell aus:</p>';
+        // Zeige Kombinationen
+        const combinations = validation.combinations || [];
+        if (combinations.length === 0) {
+            return '<p class="info">Keine Branchenkombinationen in den Excel-Daten gefunden.</p>';
+        }
         
-        // Kombinations-Vorschläge (3-stufige Hierarchie) - Hauptfall
-        if (validation.combinations && validation.combinations.length > 0) {
-            for (const combo of validation.combinations) {
-                const comboId = `combo_${combo.excel_level1.replace(/[^a-zA-Z0-9]/g, '_')}_${combo.excel_level2.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                
-                html += `<div class="combination-item" id="${comboId}" style="border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 4px;">`;
-                html += `<div class="combination-header">`;
-                html += `<h5>Excel-Daten: ${combo.excel_level1} / ${combo.excel_level2}${combo.excel_level3s && combo.excel_level3s.length > 0 ? ' / ' + combo.excel_level3s.join(', ') : ''}</h5>`;
-                html += `</div>`;
-                
-                // Schritt 1: Branchenbereich (Level 1) - IMMER AKTIV
-                html += `<div class="industry-step" data-step="1" data-combo-id="${comboId}" style="margin: 1rem 0; padding: 1rem; background: #f9f9f9; border-radius: 4px;">`;
-                html += `<label><strong>1. Branchenbereich (Level 1) wählen:</strong></label>`;
-                html += `<select class="industry-level1-select" data-combo-id="${comboId}" data-excel-value="${combo.excel_level1}" onchange="window.app.import.onLevel1Selected('${comboId}', this.value, '${combo.excel_level1}')" style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">`;
-                html += `<option value="">-- Bitte wählen --</option>`;
-                
-                // Vorauswahl: Wenn Level 1 gefunden wurde
-                if (combo.db_level1) {
-                    html += `<option value="${combo.db_level1.industry_uuid}" selected>${combo.db_level1.name}</option>`;
-                }
-                
-                html += `</select>`;
-                
-                // Button zum Bestätigen von Level 1
-                html += `<button type="button" class="btn btn-sm btn-primary confirm-level1-btn" data-combo-id="${comboId}" onclick="window.app.import.confirmLevel1('${comboId}', '${combo.excel_level1}')" style="margin-top: 0.5rem;" ${combo.db_level1 ? '' : 'disabled'}>`;
-                html += `✅ Bestätigen`;
-                html += `</button>`;
-                html += `</div>`;
-                
-                // Schritt 2: Branche (Level 2) - INAKTIV bis Schritt 1 bestätigt
-                html += `<div class="industry-step" data-step="2" data-combo-id="${comboId}" style="display: none; margin: 1rem 0; padding: 1rem; background: #f0f0f0; border-radius: 4px; opacity: 0.5;">`;
-                html += `<label><strong>2. Branche (Level 2) wählen:</strong></label>`;
-                html += `<p class="info" style="font-size: 0.9em; color: #666;">Excel-Wert: <strong>${combo.excel_level2}</strong></p>`;
-                html += `<select class="industry-level2-select" data-combo-id="${comboId}" data-excel-value="${combo.excel_level2}" onchange="window.app.import.onLevel2Selected('${comboId}', this.value)" disabled style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">`;
-                html += `<option value="">-- Zuerst Branchenbereich bestätigen --</option>`;
-                
-                // Vorauswahl: Wenn Level 2 gefunden wurde
-                if (combo.level2_matches && combo.level2_matches.length > 0) {
-                    const level2Match = combo.level2_matches[0];
-                    html += `<option value="${level2Match.db_industry.industry_uuid}" selected>${level2Match.db_industry.name} (${(level2Match.similarity * 100).toFixed(0)}% ähnlich zu "${combo.excel_level2}")</option>`;
-                }
-                
-                html += `</select>`;
-                
-                // Button zum Bestätigen von Level 2
-                html += `<button type="button" class="btn btn-sm btn-primary confirm-level2-btn" data-combo-id="${comboId}" onclick="window.app.import.confirmLevel2('${comboId}', '${combo.excel_level2}')" style="margin-top: 0.5rem;" disabled>`;
-                html += `✅ Bestätigen`;
-                html += `</button>`;
-                html += `</div>`;
-                
-                // Schritt 3: Unterbranche (Level 3) - INAKTIV bis Schritt 2 bestätigt
-                if (combo.excel_level3s && combo.excel_level3s.length > 0) {
-                    for (const excelLevel3 of combo.excel_level3s) {
-                        const level3Match = combo.level3_matches?.find(m => m.excel_value === excelLevel3);
-                        const needsCreation = combo.level3_needs_creation?.find(m => m.excel_value === excelLevel3);
-                        
-                        html += `<div class="industry-step" data-step="3" data-combo-id="${comboId}" data-level3-value="${excelLevel3}" style="display: none; margin: 1rem 0; padding: 1rem; background: #f0f0f0; border-radius: 4px; opacity: 0.5;">`;
-                        html += `<label><strong>3. Unterbranche (Level 3) - "${excelLevel3}":</strong></label>`;
-                        
-                        // Dropdown mit allen vorhandenen Level 3 Werten
-                        html += `<select class="industry-level3-select" data-combo-id="${comboId}" data-level3-value="${excelLevel3}" onchange="window.app.import.useLevel3('${comboId}', '${excelLevel3}', this.value)" disabled style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">`;
-                        html += `<option value="">-- Zuerst Branche bestätigen --</option>`;
-                        html += `</select>`;
-                        
-                        // Option: Als neuen Eintrag übernehmen
-                        const parentLevel2Uuid = needsCreation?.parent_level2_uuid || combo.level2_matches?.[0]?.db_industry?.industry_uuid || '';
-                        html += `<div class="level3-actions" style="margin-top: 0.5rem;">`;
-                        html += `<button type="button" class="btn btn-sm btn-primary add-level3-btn" data-combo-id="${comboId}" data-level3-value="${excelLevel3}" data-parent-uuid="${parentLevel2Uuid}" onclick="window.app.import.addLevel3FromCombo('${comboId}', '${excelLevel3}', '${parentLevel2Uuid}')" disabled style="margin-top: 0.5rem;">`;
-                        html += `➕ Als neue Unterbranche übernehmen`;
-                        html += `</button>`;
-                        html += `</div>`;
-                        
-                        html += `</div>`;
-                    }
-                }
-                
-                html += `</div>`;
-            }
+        let html = '<div class="industry-warnings-section">';
+        html += '<div class="industry-header">';
+        html += '<div class="industry-header-icon">⚠️</div>';
+        html += '<div class="industry-header-text">';
+        html += '<h4>Branchen-Prüfung</h4>';
+        html += '<p class="industry-description">Bitte wählen Sie die Branchenhierarchie sequenziell aus:</p>';
+        html += '</div>';
+        html += '</div>';
+        
+        // Für jede Kombination
+        combinations.forEach((combo, index) => {
+            const comboId = `combo_${index}`;
+            html += this.renderIndustryCombination(comboId, combo);
+        });
+        
+        html += '</div>';
+        return html;
+    }
+    
+    /**
+     * Rendert Industry-Kombination (neu: sequenzielle 3-Level-Auswahl)
+     */
+    renderIndustryCombination(comboId, combo) {
+        // combo enthält: excel_level2, excel_level3, staging_uuid, count
+        // industry_resolution kommt aus Staging-Row (wird später geladen)
+        const stagingUuid = combo.staging_uuid || '';
+        
+        // Initialisiere mit leeren Werten (werden später aus Staging geladen)
+        // suggestions und decision werden erst nach loadStagingRowForCombination verfügbar sein
+        const suggestions = {}; // Wird später gefüllt
+        const decision = {}; // Wird später gefüllt
+        
+        // Level 1 (Branchenbereich)
+        const level1PreSelected = null; // Wird aus Staging geladen
+        const level1Uuid = null;
+        const level1Confirmed = false;
+        
+        // Level 2 (Branche)
+        const level2PreSelected = suggestions.level2_candidates?.[0] || null;
+        const level2Uuid = decision.level2_uuid || level2PreSelected?.industry_uuid || null;
+        const level2Confirmed = decision.level2_confirmed || false;
+        
+        // Level 3 (Unterbranche)
+        const level3PreSelected = suggestions.level3_candidates?.[0] || null;
+        const level3Uuid = decision.level3_uuid || null;
+        const level3Action = decision.level3_action || 'UNDECIDED';
+        
+        let html = `<div class="industry-combination" data-combo-id="${comboId}" data-staging-uuid="${stagingUuid}">`;
+        html += `<div class="combination-header">`;
+        html += `<div class="combination-excel-data">`;
+        html += `<span class="excel-label">Excel-Daten:</span> `;
+        // WICHTIG: Level 1 kommt NICHT aus Excel, nur Level 2 und Level 3
+        // Zeige nur die tatsächlich aus Excel stammenden Werte
+        html += `<span class="excel-value">`;
+        if (combo.excel_level2) {
+            html += `Level 2: ${combo.excel_level2}`;
+        }
+        if (combo.excel_level3) {
+            html += ` / Level 3: ${combo.excel_level3}`;
+        }
+        if (!combo.excel_level2 && !combo.excel_level3) {
+            html += `Keine Branchendaten gefunden`;
+        }
+        if (combo.count && combo.count > 1) {
+            html += ` <span class="count-badge">(${combo.count} Zeilen)</span>`;
+        }
+        html += `</span>`;
+        html += `<div class="excel-data-explanation">`;
+        html += `<small>Diese Werte wurden aus Ihrer Excel-Datei gelesen (Spalte D/E). `;
+        html += `Level 1 (Branchenbereich) wird automatisch aus Level 2 abgeleitet.</small>`;
+        html += `</div>`;
+        html += `</div>`;
+        html += `</div>`;
+        
+        // Lade Vorschläge (async) - zeige Loading-Hinweis
+        html += `<div class="loading-suggestions" id="loading_${comboId}">`;
+        html += `<small>💡 Lade Vorschläge...</small>`;
+        html += `</div>`;
+        // Lade asynchron (auch wenn stagingUuid leer ist, wird Fallback verwendet)
+        this.loadStagingRowForCombination(comboId, stagingUuid);
+        
+        // Level 2: Branche - WICHTIG: Dies ist der primäre Matching-Schritt!
+        // Level 2 kommt direkt aus Excel (Spalte D) und wird mit System-Level 2 verglichen
+        html += `<div class="industry-step" data-step="2" data-combo-id="${comboId}">`;
+        html += `<div class="excel-value-hint">Excel-Wert (Spalte D): <strong>${combo.excel_level2 || 'N/A'}</strong></div>`;
+        html += `<label class="step-label"><strong>1. Branche (Level 2) wählen:</strong></label>`;
+        html += `<div class="step-help-text">`;
+        html += `<small>Dieser Wert kommt direkt aus Ihrer Excel-Datei. Wenn ein Match gefunden wird, wird Level 1 (Branchenbereich) automatisch abgeleitet.</small>`;
+        html += `</div>`;
+        html += `<select class="industry-level2-select" data-combo-id="${comboId}" 
+                 onchange="window.app.import.onLevel2Selected('${comboId}', this.value)" 
+                 ${level2Confirmed ? 'disabled' : ''}>`;
+        html += `<option value="">-- Bitte wählen --</option>`;
+        // Options werden dynamisch geladen
+        html += `</select>`;
+        html += `<div class="suggestion-container" id="suggestion_${comboId}_level2"></div>`;
+        if (!level2Confirmed) {
+            html += `<button type="button" class="btn btn-sm btn-primary confirm-level2-btn" 
+                     data-combo-id="${comboId}" 
+                     onclick="window.app.import.confirmLevel2('${comboId}')" 
+                     ${level2Uuid ? '' : 'disabled'}>`;
+            html += `<span class="btn-icon">✓</span> Bestätigen`;
+            html += `</button>`;
         } else {
-            // Fallback: Wenn keine Kombinationen gefunden wurden
-            html += '<p class="info">Keine Branchenkombinationen in den Excel-Daten gefunden.</p>';
+            html += `<div class="level-confirmation-feedback">✅ Branche ausgewählt</div>`;
         }
+        html += `</div>`;
         
-        html += '</div>';
+        // Level 1: Branchenbereich - Wird automatisch aus Level 2 abgeleitet
+        html += `<div class="industry-step" data-step="1" data-combo-id="${comboId}" 
+                 style="display: ${level2Confirmed ? 'block' : 'none'}; opacity: ${level2Confirmed ? '1' : '0.5'}; 
+                 background: ${level2Confirmed ? '#f9f9f9' : '#f0f0f0'}; padding: 1rem; margin-top: 1rem; border-radius: 4px;">`;
+        html += `<label class="step-label"><strong>2. Branchenbereich (Level 1):</strong></label>`;
+        html += `<div class="step-help-text">`;
+        html += `<small>Level 1 wird automatisch aus Level 2 abgeleitet (nicht direkt aus Excel). `;
+        html += `Wenn "${combo.excel_level2 || 'der Excel-Wert'}" einem Level 2 zugeordnet wird, ist Level 1 automatisch festgelegt.</small>`;
+        html += `</div>`;
+        html += `<select class="industry-level1-select" data-combo-id="${comboId}" 
+                 onchange="window.app.import.onLevel1Selected('${comboId}', this.value)" 
+                 ${level1Confirmed ? 'disabled' : ''}>`;
+        html += `<option value="">-- Bitte wählen --</option>`;
+        // Options werden dynamisch geladen (wird nach Rendering geladen)
+        html += `</select>`;
+        html += `<div class="suggestion-container" id="suggestion_${comboId}_level1"></div>`;
+        if (!level1Confirmed) {
+            html += `<button type="button" class="btn btn-sm btn-primary confirm-level1-btn" 
+                     data-combo-id="${comboId}" 
+                     onclick="window.app.import.confirmLevel1('${comboId}')" 
+                     ${level1Uuid ? '' : 'disabled'}>`;
+            html += `<span class="btn-icon">✓</span> Bestätigen`;
+            html += `</button>`;
+        } else {
+            html += `<div class="level-confirmation-feedback">✅ Branchenbereich ausgewählt</div>`;
+        }
+        html += `</div>`;
+        
+        // Level 3: Unterbranche (nur aktiv wenn Level 2 bestätigt)
+        html += `<div class="industry-step" data-step="3" data-combo-id="${comboId}" 
+                 style="display: ${level2Confirmed ? 'block' : 'none'}; opacity: ${level2Confirmed ? '1' : '0.5'}; 
+                 background: ${level2Confirmed ? '#f9f9f9' : '#f0f0f0'}; padding: 1rem; margin-top: 1rem; border-radius: 4px;">`;
+        html += `<label><strong>3. Unterbranche (Level 3)</strong></label>`;
+        
+        if (level3PreSelected && level3PreSelected.industry_uuid) {
+            // Bestehende Unterbranche gefunden
+            html += `<select class="industry-level3-select" data-combo-id="${comboId}" 
+                     onchange="window.app.import.onLevel3Selected('${comboId}', this.value)" 
+                     style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">`;
+            html += `<option value="">-- Bitte wählen --</option>`;
+            // Options werden dynamisch geladen
+            html += `</select>`;
+            html += `<p class="suggestion-hint">💡 Vorschlag: ${level3PreSelected.name}</p>`;
+        } else {
+            // Keine passende Unterbranche gefunden - Option zum Anlegen
+            html += `<p class="info">Keine passende Unterbranche gefunden.</p>`;
+            html += `<div class="form-group" style="margin-top: 0.5rem;">`;
+            html += `<label>Neue Unterbranche anlegen:</label>`;
+            html += `<input type="text" class="industry-level3-new-input" data-combo-id="${comboId}" 
+                     placeholder="${combo.excel_level3 || 'Unterbranche'}" 
+                     value="${combo.excel_level3 || ''}" style="width: 100%; padding: 0.5rem;">`;
+            html += `<button type="button" class="btn btn-sm btn-success" 
+                     onclick="window.app.import.addLevel3FromCombo('${comboId}')" 
+                     style="margin-top: 0.5rem;">Als neue Unterbranche übernehmen</button>`;
+            html += `</div>`;
+        }
+        html += `</div>`;
+        
+        html += `</div>`;
         return html;
     }
     
     /**
-     * Verwendet Kombination (Hauptbranche + Subbranche aus DB) - Rückwärtskompatibilität
+     * Wird aufgerufen, wenn Level 1 ausgewählt wird
+     * WICHTIG: Level 1 wird normalerweise automatisch aus Level 2 abgeleitet!
      */
-    useCombination(excelMain, dbMainUuid, excelSub, dbSubUuid) {
-        // Speichere Entscheidung
-            
-            for (const missing of validation.main.missing) {
-                const decisionId = `industry_main_${missing.excel_value.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                html += `<div class="industry-decision-item" data-excel-value="${missing.excel_value}" data-type="main">`;
-                html += `<div class="industry-name"><strong>${missing.excel_value}</strong></div>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<div class="industry-suggestion">`;
-                    html += `Vorschlag: <strong>${missing.suggestion.name}</strong> (${(missing.similarity * 100).toFixed(0)}% ähnlich)`;
-                    html += `</div>`;
-                }
-                
-                html += `<div class="industry-actions">`;
-                html += `<button type="button" class="btn btn-sm btn-primary" onclick="window.app.import.addIndustry('${missing.excel_value}', 'main', null)">
-                    ➕ Als neue Hauptbranche hinzufügen
-                </button>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<button type="button" class="btn btn-sm btn-secondary" onclick="window.app.import.useSuggestion('${missing.excel_value}', '${missing.suggestion.industry_uuid}', 'main')">
-                        ✅ Vorschlag verwenden (${missing.suggestion.name})
-                    </button>`;
-                }
-                
-                html += `<button type="button" class="btn btn-sm btn-outline" onclick="window.app.import.ignoreIndustry('${missing.excel_value}', 'main')">
-                    ⏭️ Ignorieren
-                </button>`;
-                html += `</div>`;
-                html += `</div>`;
-            }
-            
-            html += '</div>';
-        }
+    async onLevel1Selected(comboId, level1Uuid) {
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (!comboEl) return;
         
-        // Unterbranchen
-        if (validation.sub && validation.sub.missing && validation.sub.missing.length > 0) {
-            html += '<div class="warning-section">';
-            html += '<h5>Subbranchen (nicht in DB gefunden):</h5>';
-            
-            for (const missing of validation.sub.missing) {
-                html += `<div class="industry-decision-item" data-excel-value="${missing.excel_value}" data-type="sub">`;
-                html += `<div class="industry-name"><strong>${missing.excel_value}</strong></div>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<div class="industry-suggestion">`;
-                    html += `Vorschlag: <strong>${missing.suggestion.name}</strong> (${(missing.similarity * 100).toFixed(0)}% ähnlich)`;
-                    html += `</div>`;
-                }
-                
-                html += `<div class="industry-actions">`;
-                html += `<label>Unter welcher Hauptbranche? <select class="parent-industry-select" data-excel-value="${missing.excel_value}" onchange="window.app.import.onParentIndustrySelected('${missing.excel_value}', this.value)">
-                    <option value="">-- Hauptbranche wählen --</option>
-                </select></label>`;
-                html += `<button type="button" class="btn btn-sm btn-primary add-sub-industry-btn" data-excel-value="${missing.excel_value}" onclick="window.app.import.addIndustry('${missing.excel_value}', 'sub', null)" disabled>
-                    ➕ Als neue Subbranche hinzufügen
-                </button>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<button type="button" class="btn btn-sm btn-secondary" onclick="window.app.import.useSuggestion('${missing.excel_value}', '${missing.suggestion.industry_uuid}', 'sub')">
-                        ✅ Vorschlag verwenden (${missing.suggestion.name})
-                    </button>`;
-                }
-                
-                html += `<button type="button" class="btn btn-sm btn-outline" onclick="window.app.import.ignoreIndustry('${missing.excel_value}', 'sub')">
-                    ⏭️ Ignorieren
-                </button>`;
-                html += `</div>`;
-                html += `</div>`;
-            }
-            
-            html += '</div>';
-        }
+        const stagingUuid = comboEl.dataset.stagingUuid;
+        if (!stagingUuid) return;
         
-        // Gefundene Branchen
-        if (validation.main && validation.main.found && validation.main.found.length > 0) {
-            html += '<div class="success-section">';
-            html += '<h5>✅ Hauptbranchen (in DB gefunden):</h5>';
-            html += '<ul>';
-            for (const found of validation.main.found) {
-                html += `<li>${found.excel_value} → ${found.db_industry.name}</li>`;
-            }
-            html += '</ul>';
-            html += '</div>';
-        }
-        
-        // Level 3 Unterbranchen (neu anzulegen)
-        if (validation.level3 && validation.level3.missing && validation.level3.missing.length > 0) {
-            html += '<div class="warning-section">';
-            html += '<h5>Unterbranchen Level 3 (nicht in DB gefunden - müssen neu angelegt werden):</h5>';
-            
-            for (const missing of validation.level3.missing) {
-                html += `<div class="industry-decision-item" data-excel-value="${missing.excel_value}" data-type="level3">`;
-                html += `<div class="industry-name"><strong>${missing.excel_value}</strong></div>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<div class="industry-suggestion">`;
-                    html += `Vorschlag: <strong>${missing.suggestion.name}</strong> (${(missing.similarity * 100).toFixed(0)}% ähnlich)`;
-                    html += `</div>`;
-                }
-                
-                html += `<div class="industry-actions">`;
-                html += `<label>Unter welcher Branche (Level 2)? <select class="parent-industry-select" data-excel-value="${missing.excel_value}" data-level="3" onchange="window.app.import.onParentIndustrySelected('${missing.excel_value}', this.value, 3)">`;
-                html += `<option value="">-- Branche (Level 2) wählen --</option>`;
-                html += `</select></label>`;
-                html += `<button type="button" class="btn btn-sm btn-primary add-level3-industry-btn" data-excel-value="${missing.excel_value}" onclick="window.app.import.addIndustry('${missing.excel_value}', 'level3', null)" disabled>`;
-                html += `➕ Als neue Unterbranche (Level 3) hinzufügen`;
-                html += `</button>`;
-                
-                if (missing.suggestion && missing.similarity > 0.7) {
-                    html += `<button type="button" class="btn btn-sm btn-secondary" onclick="window.app.import.useSuggestion('${missing.excel_value}', '${missing.suggestion.industry_uuid}', 'level3')">`;
-                    html += `✅ Vorschlag verwenden (${missing.suggestion.name})`;
-                    html += `</button>`;
-                }
-                
-                html += `<button type="button" class="btn btn-sm btn-outline" onclick="window.app.import.ignoreIndustry('${missing.excel_value}', 'level3')">`;
-                html += `⏭️ Ignorieren`;
-                html += `</button>`;
-                html += `</div>`;
-                html += `</div>`;
-            }
-            
-            html += '</div>';
-        }
-        
-        // Kombinations-Vorschläge (3-stufige Hierarchie)
-        if (validation.combinations && validation.combinations.length > 0) {
-            html += '<div class="combination-section">';
-            html += '<h5>💡 Kombinations-Vorschläge (3-stufige Hierarchie):</h5>';
-            html += '<p class="info">Die folgenden Kombinationen wurden in der DB gefunden:</p>';
-            
-            for (const combo of validation.combinations) {
-                html += `<div class="combination-item">`;
-                html += `<div class="combination-main">`;
-                html += `<strong>${combo.excel_level1}</strong> → <strong>${combo.db_level1.name}</strong> (Level 1 gefunden)`;
-                html += `</div>`;
-                
-                if (combo.level2_matches && combo.level2_matches.length > 0) {
-                    html += `<div class="combination-subs">`;
-                    html += `<strong>Level 2: ${combo.excel_level2}</strong> → `;
-                    for (const level2Match of combo.level2_matches) {
-                        html += `<strong>${level2Match.db_industry.name}</strong> (${(level2Match.similarity * 100).toFixed(0)}% ähnlich)`;
-                    }
-                    html += `</div>`;
-                    
-                    // Level 3
-                    if (combo.excel_level3s && combo.excel_level3s.length > 0) {
-                        html += `<div class="combination-level3">`;
-                        html += `<strong>Level 3:</strong>`;
-                        html += `<ul>`;
-                        for (const excelLevel3 of combo.excel_level3s) {
-                            const level3Match = combo.level3_matches?.find(m => m.excel_value === excelLevel3);
-                            const needsCreation = combo.level3_needs_creation?.find(m => m.excel_value === excelLevel3);
-                            
-                            if (level3Match) {
-                                html += `<li>${excelLevel3} → ${level3Match.db_industry.name} (${(level3Match.similarity * 100).toFixed(0)}% ähnlich)`;
-                                html += ` <button type="button" class="btn btn-xs btn-success" onclick="window.app.import.useCombination3Level('${combo.excel_level1}', '${combo.db_level1.industry_uuid}', '${combo.excel_level2}', '${combo.level2_matches[0].db_industry.industry_uuid}', '${excelLevel3}', '${level3Match.db_industry.industry_uuid}')">✅ Verwenden</button>`;
-                            } else if (needsCreation || !level3Match) {
-                                const parentLevel2Uuid = needsCreation?.parent_level2_uuid || combo.level2_matches[0]?.db_industry?.industry_uuid;
-                                html += `<li>${excelLevel3} → <em>Nicht gefunden, muss neu angelegt werden</em>`;
-                                html += ` <button type="button" class="btn btn-xs btn-primary" onclick="window.app.import.addLevel3Industry('${excelLevel3}', '${parentLevel2Uuid}')">➕ Neu anlegen</button>`;
-                            }
-                            html += `</li>`;
-                        }
-                        html += `</ul>`;
-                        html += `</div>`;
-                    }
-                }
-                
-                html += `</div>`;
-            }
-            
-            html += '</div>';
-        }
-        
-        html += '</div>';
-        return html;
+        // Level 1 ändert sich normalerweise nicht, wenn Level 2 bereits bestätigt ist
+        // Aber wenn manuell geändert, müssen Level 2 Optionen neu geladen werden
+        // (Dies sollte eigentlich nicht passieren, da Level 1 aus Level 2 abgeleitet wird)
     }
     
     /**
-     * Verwendet Kombination (Hauptbranche + Subbranche aus DB) - Rückwärtskompatibilität
+     * Bestätigt Level 1
      */
-    useCombination(excelMain, dbMainUuid, excelSub, dbSubUuid) {
-        // Speichere Entscheidung
-        this.industryDecisions[excelMain] = {
-            type: 'main',
-            decision: 'using_existing',
-            industry_uuid: dbMainUuid
-        };
+    async confirmLevel1(comboId) {
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (!comboEl) return;
         
-        this.industryDecisions[excelSub] = {
-            type: 'sub',
-            decision: 'using_existing',
-            industry_uuid: dbSubUuid
-        };
-        
-        Utils.showSuccess(`Kombination verwendet: ${excelMain} + ${excelSub}`);
-        
-        // UI aktualisieren
-        this.updateIndustryDecision(excelMain, 'main', 'using_existing', dbMainUuid);
-        this.updateIndustryDecision(excelSub, 'sub', 'using_existing', dbSubUuid);
-    }
-    
-    /**
-     * Verwendet 3-stufige Kombination (Level 1 + Level 2 + Level 3 aus DB)
-     */
-    useCombination3Level(excelLevel1, dbLevel1Uuid, excelLevel2, dbLevel2Uuid, excelLevel3, dbLevel3Uuid) {
-        // Speichere Entscheidung
-        this.industryDecisions[excelLevel1] = {
-            type: 'level1',
-            decision: 'using_existing',
-            industry_uuid: dbLevel1Uuid
-        };
-        
-        this.industryDecisions[excelLevel2] = {
-            type: 'level2',
-            decision: 'using_existing',
-            industry_uuid: dbLevel2Uuid
-        };
-        
-        this.industryDecisions[excelLevel3] = {
-            type: 'level3',
-            decision: 'using_existing',
-            industry_uuid: dbLevel3Uuid
-        };
-        
-        Utils.showSuccess(`3-stufige Kombination verwendet: ${excelLevel1} / ${excelLevel2} / ${excelLevel3}`);
-        
-        // UI aktualisieren
-        this.updateIndustryDecision(excelLevel1, 'level1', 'using_existing', dbLevel1Uuid);
-        this.updateIndustryDecision(excelLevel2, 'level2', 'using_existing', dbLevel2Uuid);
-        this.updateIndustryDecision(excelLevel3, 'level3', 'using_existing', dbLevel3Uuid);
-    }
-    
-    /**
-     * Fügt neue Level 3 Unterbranche hinzu
-     */
-    async addLevel3Industry(excelValue, parentLevel2Uuid) {
-        try {
-            const response = await fetch('/tom3/public/api/industries', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: excelValue,
-                    parent_industry_uuid: parentLevel2Uuid
-                })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Fehler beim Hinzufügen');
-            }
-            
-            const result = await response.json();
-            
-            // Speichere Entscheidung
-            this.industryDecisions[excelValue] = {
-                type: 'level3',
-                decision: 'added_new',
-                industry_uuid: result.industry_uuid
-            };
-            
-            Utils.showSuccess(`Unterbranche "${excelValue}" wurde als Level 3 hinzugefügt.`);
-            this.updateIndustryDecision(excelValue, 'level3', 'added_new', result.industry_uuid);
-            
-        } catch (error) {
-            console.error('Error adding level 3 industry:', error);
-            Utils.showError('Fehler beim Hinzufügen: ' + (error.message || 'Unbekannter Fehler'));
-        }
-    }
-    
-    /**
-     * Fügt neue Branche zur DB hinzu
-     */
-    async addIndustry(excelValue, type, parentUuid) {
-        // Für Level 3: Verwende spezielle Funktion
-        if (type === 'level3' && parentUuid) {
-            return this.addLevel3Industry(excelValue, parentUuid);
-        }
-        
-        try {
-            const response = await fetch('/tom3/public/api/industries', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: excelValue,
-                    code: null,
-                    parent_industry_uuid: parentUuid,
-                    description: `Hinzugefügt durch Import am ${new Date().toLocaleDateString('de-DE')}`
-                })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Fehler beim Hinzufügen');
-            }
-            
-            const result = await response.json();
-            Utils.showSuccess(`Branche "${excelValue}" wurde hinzugefügt.`);
-            
-            // UI aktualisieren
-            this.updateIndustryDecision(excelValue, type, 'added', result.industry_uuid);
-            
-        } catch (error) {
-            console.error('Add industry error:', error);
-            Utils.showError(error.message || 'Fehler beim Hinzufügen der Branche');
-        }
-    }
-    
-    /**
-     * Verwendet Vorschlag (bestehende Branche)
-     */
-    async useSuggestion(excelValue, suggestionUuid, type) {
-        Utils.showSuccess(`Branche "${excelValue}" wird mit "${suggestionUuid}" verknüpft.`);
-        this.updateIndustryDecision(excelValue, type, 'using_suggestion', suggestionUuid);
-    }
-    
-    /**
-     * Ignoriert Branche
-     */
-    ignoreIndustry(excelValue, type) {
-        Utils.showInfo(`Branche "${excelValue}" wird ignoriert.`);
-        this.updateIndustryDecision(excelValue, type, 'ignored', null);
-    }
-    
-    /**
-     * Lädt Branchenbereiche (Level 1) für Dropdowns
-     */
-    async loadMainIndustries() {
-        try {
-            const industries = await window.API.getIndustries(null, false, 1);
-            
-            // Fülle alle Level 1 Dropdowns
-            document.querySelectorAll('.industry-level1-select, .industry-level1-select-single').forEach(select => {
-                const currentValue = select.value;
-                select.innerHTML = '<option value="">-- Bitte wählen --</option>';
-                
-                industries.forEach(industry => {
-                    const option = document.createElement('option');
-                    option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
-                    select.appendChild(option);
-                });
-                
-                if (currentValue) {
-                    select.value = currentValue;
-                }
-            });
-            
-        } catch (error) {
-            console.error('Load level 1 industries error:', error);
-            Utils.showError('Fehler beim Laden der Branchenbereiche (Level 1)');
-        }
-    }
-    
-    /**
-     * Wird aufgerufen, wenn Level 1 (Branchenbereich) ausgewählt wird
-     */
-    async onLevel1Selected(comboId, level1Uuid, excelValue) {
-        const confirmBtn = document.querySelector(`.confirm-level1-btn[data-combo-id="${comboId}"]`);
-        if (confirmBtn) {
-            confirmBtn.disabled = !level1Uuid;
-        }
-        
-        // Wenn Level 1 ausgewählt, lade Level 2 Optionen
-        if (level1Uuid) {
-            await this.loadLevel2Options(comboId, level1Uuid);
-        }
-    }
-    
-    /**
-     * Bestätigt Level 1 und aktiviert Level 2
-     */
-    confirmLevel1(comboId, excelValue) {
-        const level1Select = document.querySelector(`.industry-level1-select[data-combo-id="${comboId}"]`);
+        const stagingUuid = comboEl.dataset.stagingUuid;
+        const level1Select = comboEl.querySelector('.industry-level1-select');
         const level1Uuid = level1Select?.value;
         
-        if (!level1Uuid) {
-            Utils.showError('Bitte wählen Sie zuerst einen Branchenbereich aus.');
-            return;
-        }
+        if (!stagingUuid || !level1Uuid) return;
         
-        // Speichere Entscheidung
-        this.industryDecisions[excelValue] = {
-            type: 'level1',
-            decision: 'using_existing',
-            industry_uuid: level1Uuid
-        };
-        
-        // Aktiviere Schritt 2
-        const step2 = document.querySelector(`.industry-step[data-step="2"][data-combo-id="${comboId}"]`);
-        if (step2) {
-            step2.style.display = 'block';
-            const level2Select = step2.querySelector('.industry-level2-select');
-            if (level2Select) {
-                level2Select.disabled = false;
+        try {
+            // Speichere Entscheidung serverseitig
+            const response = await window.API.request(`/import/staging/${stagingUuid}/industry-decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    level1_uuid: level1Uuid,
+                    confirm_level1: true
+                })
+            });
+            
+            // Update UI mit Dropdown-Optionen
+            if (response.dropdown_options) {
+                this.updateDropdownOptions(comboId, response.dropdown_options);
             }
+            
+            // Zeige Feedback
+            const step1 = comboEl.querySelector('.industry-step[data-step="1"]');
+            if (step1) {
+                const existingFeedback = step1.querySelector('.level-confirmation-feedback');
+                if (existingFeedback) existingFeedback.remove();
+                
+                const feedback = document.createElement('div');
+                feedback.className = 'level-confirmation-feedback';
+                feedback.style.cssText = 'background: #d4edda; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px;';
+                feedback.textContent = '✅ Branchenbereich ausgewählt';
+                step1.appendChild(feedback);
+                
+                level1Select.style.background = '#e9ecef';
+                level1Select.disabled = true;
+            }
+            
+            // Aktiviere Level 1 (wird aus Level 2 abgeleitet)
+            this.activateLevel1(comboId);
+            
+        } catch (error) {
+            console.error('Error confirming Level 1:', error);
+            Utils.showError('Fehler beim Bestätigen: ' + (error.message || 'Unbekannter Fehler'));
         }
-        
-        Utils.showSuccess('Branchenbereich bestätigt. Bitte wählen Sie nun die Branche (Level 2).');
     }
     
     /**
-     * Lädt Level 2 Optionen basierend auf Level 1
+     * Lädt Level 2 Optionen
      */
     async loadLevel2Options(comboId, level1Uuid) {
         try {
             const industries = await window.API.getIndustries(level1Uuid, false, 2);
-            const level2Select = document.querySelector(`.industry-level2-select[data-combo-id="${comboId}"]`);
             
-            if (level2Select) {
-                level2Select.innerHTML = '<option value="">-- Bitte wählen --</option>';
-                industries.forEach(industry => {
-                    const option = document.createElement('option');
-                    option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
-                    level2Select.appendChild(option);
-                });
+            const level2Select = document.querySelector(`.industry-level2-select[data-combo-id="${comboId}"]`);
+            if (!level2Select) return;
+            
+            const currentValue = level2Select.value;
+            level2Select.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            
+            industries.forEach(industry => {
+                const option = document.createElement('option');
+                option.value = industry.industry_uuid;
+                const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = industry.code ? `${industry.code} - ${displayName}` : displayName;
+                level2Select.appendChild(option);
+            });
+            
+            // Setze vorbelegten Wert (wenn vorhanden)
+            if (currentValue) {
+                level2Select.value = currentValue;
             }
+            
         } catch (error) {
-            console.error('Error loading level 2 options:', error);
-            Utils.showError('Fehler beim Laden der Branchen (Level 2)');
+            console.error('Error loading Level 2 options:', error);
         }
     }
     
     /**
      * Wird aufgerufen, wenn Level 2 ausgewählt wird
+     * WICHTIG: Wenn Level 2 ausgewählt wird, sollte Level 1 automatisch abgeleitet werden!
      */
-    onLevel2Selected(comboId, level2Uuid) {
-        const confirmBtn = document.querySelector(`.confirm-level2-btn[data-combo-id="${comboId}"]`);
-        if (confirmBtn) {
-            confirmBtn.disabled = !level2Uuid;
-        }
-    }
-    
-    /**
-     * Bestätigt Level 2 und aktiviert Level 3
-     */
-    async confirmLevel2(comboId, excelValue) {
-        const level2Select = document.querySelector(`.industry-level2-select[data-combo-id="${comboId}"]`);
-        const level2Uuid = level2Select?.value;
-        
+    async onLevel2Selected(comboId, level2Uuid) {
         if (!level2Uuid) {
-            Utils.showError('Bitte wählen Sie zuerst eine Branche aus.');
+            this.resetLevel1(comboId);
+            this.resetLevel3(comboId);
             return;
         }
         
-        // Speichere Entscheidung
-        this.industryDecisions[excelValue] = {
-            type: 'level2',
-            decision: 'using_existing',
-            industry_uuid: level2Uuid
-        };
+        // Lade Level 1 aus Level 2 ab (automatisch)
+        // Hole Parent-Info aus den bereits geladenen level2_candidates
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (comboEl) {
+            // Versuche Parent-Info aus dem ausgewählten Option-Element zu holen
+            const level2Select = comboEl.querySelector(`.industry-level2-select[data-combo-id="${comboId}"]`);
+            if (level2Select) {
+                const selectedOption = level2Select.options[level2Select.selectedIndex];
+                // Parent-Info sollte in data-Attributen gespeichert sein, oder wir holen es aus der Staging-Row
+                // Für jetzt: Lade es aus der Staging-Row (wenn verfügbar)
+            }
+        }
         
-        // Lade alle Level 3 Optionen für dieses Level 2
+        // Lade Level 1 Parent von Level 2 über API
+        try {
+            // Hole alle Level 2 Industries mit Parent-Info
+            const industries = await window.API.getIndustries(null, false, 2);
+            const selectedLevel2 = industries.find(i => i.industry_uuid === level2Uuid);
+            
+            if (selectedLevel2 && selectedLevel2.parent_industry_uuid) {
+                const level1Select = document.querySelector(`.industry-level1-select[data-combo-id="${comboId}"]`);
+                if (level1Select) {
+                    // Lade Level 1 Optionen, falls noch nicht geladen
+                    if (level1Select.options.length <= 1) {
+                        await this.loadAllLevel1Options();
+                    }
+                    
+                    level1Select.value = selectedLevel2.parent_industry_uuid;
+                    
+                    // Hole Parent-Name
+                    const level1Industries = await window.API.getIndustries(null, false, 1);
+                    const parentLevel1 = level1Industries.find(i => i.industry_uuid === selectedLevel2.parent_industry_uuid);
+                    
+                    // Zeige Hinweis
+                    const suggestionContainer = document.getElementById(`suggestion_${comboId}_level1`);
+                    if (suggestionContainer) {
+                        suggestionContainer.innerHTML = `
+                            <p class="suggestion-hint">
+                                ✅ <strong>Automatisch abgeleitet:</strong> ${parentLevel1?.name || 'Branchenbereich'}
+                                <small>(aus Level 2: "${selectedLevel2.name}")</small>
+                            </p>
+                        `;
+                    }
+                    
+                    // Aktiviere Bestätigen-Button
+                    const confirmBtn = document.querySelector(`.confirm-level1-btn[data-combo-id="${comboId}"]`);
+                    if (confirmBtn) {
+                        confirmBtn.disabled = false;
+                    }
+                    
+                    // Aktiviere Level 1 Schritt
+                    this.activateLevel1(comboId);
+                }
+            }
+        } catch (error) {
+            console.error('Error deriving Level 1 from Level 2:', error);
+        }
+        
+        // Lade Level 3 Optionen
         await this.loadLevel3Options(comboId, level2Uuid);
-        
-        // Aktiviere Schritt 3
-        const step3Elements = document.querySelectorAll(`.industry-step[data-step="3"][data-combo-id="${comboId}"]`);
-        step3Elements.forEach(step3 => {
-            step3.style.display = 'block';
-            step3.style.opacity = '1';
-            step3.style.background = '#f9f9f9';
-            
-            const level3Select = step3.querySelector('.industry-level3-select');
-            if (level3Select) {
-                level3Select.disabled = false;
-            }
-            
-            const addBtn = step3.querySelector('.add-level3-btn');
-            if (addBtn) {
-                addBtn.disabled = false;
-                // Setze parent_uuid
-                addBtn.setAttribute('data-parent-uuid', level2Uuid);
-            }
-        });
-        
-        Utils.showSuccess('Branche bestätigt. Bitte prüfen Sie die Unterbranchen (Level 3).');
     }
     
     /**
-     * Lädt Level 3 Optionen basierend auf Level 2
+     * Aktiviere Level 1
+     */
+    activateLevel1(comboId) {
+        const step1 = document.querySelector(`.industry-step[data-step="1"][data-combo-id="${comboId}"]`);
+        if (step1) {
+            step1.style.display = 'block';
+            step1.style.opacity = '1';
+            step1.style.background = '#f9f9f9';
+        }
+    }
+    
+    /**
+     * Reset Level 1
+     */
+    resetLevel1(comboId) {
+        const step1 = document.querySelector(`.industry-step[data-step="1"][data-combo-id="${comboId}"]`);
+        if (step1) {
+            const select = step1.querySelector('.industry-level1-select');
+            if (select) select.value = '';
+            const feedback = step1.querySelector('.level-confirmation-feedback');
+            if (feedback) feedback.remove();
+            step1.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Bestätigt Level 2
+     */
+    async confirmLevel2(comboId) {
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (!comboEl) return;
+        
+        const stagingUuid = comboEl.dataset.stagingUuid;
+        const level2Select = comboEl.querySelector('.industry-level2-select');
+        const level2Uuid = level2Select?.value;
+        
+        if (!stagingUuid || !level2Uuid) return;
+        
+        try {
+            // Speichere Entscheidung serverseitig
+            const response = await window.API.request(`/import/staging/${stagingUuid}/industry-decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    level2_uuid: level2Uuid,
+                    confirm_level2: true
+                })
+            });
+            
+            // Update UI
+            const step2 = comboEl.querySelector('.industry-step[data-step="2"]');
+            if (step2) {
+                const existingFeedback = step2.querySelector('.level-confirmation-feedback');
+                if (existingFeedback) existingFeedback.remove();
+                
+                const feedback = document.createElement('div');
+                feedback.className = 'level-confirmation-feedback';
+                feedback.style.cssText = 'background: #d4edda; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px;';
+                feedback.textContent = '✅ Branche ausgewählt';
+                step2.appendChild(feedback);
+                
+                level2Select.style.background = '#e9ecef';
+                level2Select.disabled = true;
+            }
+            
+            // Aktiviere Level 3
+            this.activateLevel3(comboId);
+            
+            // Lade Level 3 Optionen
+            await this.loadLevel3Options(comboId, level2Uuid);
+            
+        } catch (error) {
+            console.error('Error confirming Level 2:', error);
+            Utils.showError('Fehler beim Bestätigen: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Lädt Level 3 Optionen
      */
     async loadLevel3Options(comboId, level2Uuid) {
         try {
             const industries = await window.API.getIndustries(level2Uuid, false, 3);
-            const level3Selects = document.querySelectorAll(`.industry-level3-select[data-combo-id="${comboId}"]`);
             
-            level3Selects.forEach(select => {
+            const level3Select = document.querySelector(`.industry-level3-select[data-combo-id="${comboId}"]`);
+            if (!level3Select) return;
+            
+            const currentValue = level3Select.value;
+            level3Select.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            
+            industries.forEach(industry => {
+                const option = document.createElement('option');
+                option.value = industry.industry_uuid;
+                const displayName = industry.display_name || industry.name_short || industry.name;
+                option.textContent = displayName;
+                level3Select.appendChild(option);
+            });
+            
+            if (currentValue) {
+                level3Select.value = currentValue;
+            }
+            
+        } catch (error) {
+            console.error('Error loading Level 3 options:', error);
+        }
+    }
+    
+    /**
+     * Wird aufgerufen, wenn Level 3 ausgewählt wird
+     */
+    async onLevel3Selected(comboId, level3Uuid) {
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (!comboEl) return;
+        
+        const stagingUuid = comboEl.dataset.stagingUuid;
+        if (!stagingUuid || !level3Uuid) return;
+        
+        try {
+            // Speichere Entscheidung serverseitig
+            await window.API.request(`/import/staging/${stagingUuid}/industry-decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    level3_uuid: level3Uuid,
+                    level3_action: 'SELECT_EXISTING'
+                })
+            });
+            
+            Utils.showSuccess('Unterbranche ausgewählt');
+            
+        } catch (error) {
+            console.error('Error selecting Level 3:', error);
+            Utils.showError('Fehler: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Fügt Level 3 als neue Unterbranche hinzu
+     */
+    async addLevel3FromCombo(comboId) {
+        const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+        if (!comboEl) return;
+        
+        const stagingUuid = comboEl.dataset.stagingUuid;
+        const level3Input = comboEl.querySelector('.industry-level3-new-input');
+        const level3Name = level3Input?.value?.trim();
+        const level2Select = comboEl.querySelector('.industry-level2-select');
+        const level2Uuid = level2Select?.value;
+        
+        if (!stagingUuid || !level3Name || !level2Uuid) {
+            Utils.showError('Bitte füllen Sie alle Felder aus.');
+            return;
+        }
+        
+        try {
+            // Speichere Entscheidung serverseitig
+            const response = await window.API.request(`/import/staging/${stagingUuid}/industry-decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    level3_new_name: level3Name,
+                    level3_action: 'CREATE_NEW'
+                })
+            });
+            
+            // Update UI: Zeige Bestätigung
+            const step3 = comboEl.querySelector('.industry-step[data-step="3"]');
+            if (step3) {
+                const existingFeedback = step3.querySelector('.level-confirmation-feedback');
+                if (existingFeedback) existingFeedback.remove();
+                
+                const feedback = document.createElement('div');
+                feedback.className = 'level-confirmation-feedback';
+                feedback.style.cssText = 'background: #d4edda; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px;';
+                feedback.textContent = `✅ Unterbranche "${level3Name}" wird beim Import erstellt.`;
+                step3.appendChild(feedback);
+                
+                // Deaktiviere Input
+                if (level3Input) {
+                    level3Input.style.background = '#e9ecef';
+                    level3Input.disabled = true;
+                }
+            }
+            
+            Utils.showSuccess(`Unterbranche "${level3Name}" wird beim Import erstellt.`);
+            
+        } catch (error) {
+            console.error('Error adding Level 3:', error);
+            const errorMsg = error.message || 'Unbekannter Fehler';
+            Utils.showError('Fehler: ' + errorMsg);
+        }
+    }
+    
+    /**
+     * Aktiviere Level 2
+     */
+    activateLevel2(comboId) {
+        const step2 = document.querySelector(`.industry-step[data-step="2"][data-combo-id="${comboId}"]`);
+        if (step2) {
+            step2.style.display = 'block';
+            step2.style.opacity = '1';
+            step2.style.background = '#f9f9f9';
+        }
+    }
+    
+    /**
+     * Aktiviere Level 3
+     */
+    activateLevel3(comboId) {
+        const step3 = document.querySelector(`.industry-step[data-step="3"][data-combo-id="${comboId}"]`);
+        if (step3) {
+            step3.style.display = 'block';
+            step3.style.opacity = '1';
+            step3.style.background = '#f9f9f9';
+        }
+    }
+    
+    /**
+     * Reset Level 2
+     */
+    resetLevel2(comboId) {
+        const step2 = document.querySelector(`.industry-step[data-step="2"][data-combo-id="${comboId}"]`);
+        if (step2) {
+            const select = step2.querySelector('.industry-level2-select');
+            if (select) select.value = '';
+            const feedback = step2.querySelector('.level-confirmation-feedback');
+            if (feedback) feedback.remove();
+            step2.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Reset Level 3
+     */
+    resetLevel3(comboId) {
+        const step3 = document.querySelector(`.industry-step[data-step="3"][data-combo-id="${comboId}"]`);
+        if (step3) {
+            const select = step3.querySelector('.industry-level3-select');
+            if (select) select.value = '';
+            const input = step3.querySelector('.industry-level3-new-input');
+            if (input) input.value = '';
+            const feedback = step3.querySelector('.level-confirmation-feedback');
+            if (feedback) feedback.remove();
+            step3.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Update Dropdown-Optionen
+     */
+    updateDropdownOptions(comboId, options) {
+        // Level 1
+        if (options.level1) {
+            const select = document.querySelector(`.industry-level1-select[data-combo-id="${comboId}"]`);
+            if (select) {
+                // Options werden bereits geladen
+            }
+        }
+        
+        // Level 2
+        if (options.level2) {
+            const select = document.querySelector(`.industry-level2-select[data-combo-id="${comboId}"]`);
+            if (select) {
                 const currentValue = select.value;
+                select.innerHTML = '<option value="">-- Bitte wählen --</option>';
+                options.level2.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt.industry_uuid;
+                    option.textContent = opt.code ? `${opt.code} - ${opt.name}` : opt.name;
+                    select.appendChild(option);
+                });
+                if (currentValue) select.value = currentValue;
+            }
+        }
+        
+        // Level 3
+        if (options.level3) {
+            const select = document.querySelector(`.industry-level3-select[data-combo-id="${comboId}"]`);
+            if (select) {
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">-- Bitte wählen --</option>';
+                options.level3.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt.industry_uuid;
+                    const displayName = opt.display_name || opt.name_short || opt.name;
+                    option.textContent = displayName;
+                    select.appendChild(option);
+                });
+                if (currentValue) select.value = currentValue;
+            }
+        }
+    }
+    
+    /**
+     * Lädt Level 1 Optionen für alle Dropdowns
+     */
+    async loadAllLevel1Options() {
+        try {
+            const industries = await window.API.getIndustries(null, false, 1);
+            
+            document.querySelectorAll('.industry-level1-select').forEach(select => {
+                const currentValue = select.value;
+                const comboId = select.dataset.comboId;
+                
                 select.innerHTML = '<option value="">-- Bitte wählen --</option>';
                 
                 industries.forEach(industry => {
                     const option = document.createElement('option');
                     option.value = industry.industry_uuid;
-                    option.textContent = industry.name;
+                    const displayName = industry.display_name || industry.name_short || industry.name;
+                    option.textContent = industry.code ? `${industry.code} - ${displayName}` : displayName;
                     select.appendChild(option);
                 });
                 
+                // Setze vorbelegten Wert (wenn vorhanden)
                 if (currentValue) {
                     select.value = currentValue;
+                } else {
+                    // Prüfe, ob es einen Vorschlag gibt
+                    const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+                    if (comboEl) {
+                        const suggestionHint = comboEl.querySelector('.suggestion-hint');
+                        if (suggestionHint) {
+                            // Extrahiere UUID aus Vorschlag (wird in renderIndustryCombination gesetzt)
+                            const suggestionText = suggestionHint.textContent;
+                            // Versuche UUID aus data-attribute zu holen
+                            const preSelectedUuid = comboEl.dataset.level1Uuid;
+                            if (preSelectedUuid) {
+                                select.value = preSelectedUuid;
+                            }
+                        }
+                    }
                 }
             });
         } catch (error) {
-            console.error('Error loading level 3 options:', error);
-            Utils.showError('Fehler beim Laden der Unterbranchen (Level 3)');
+            console.error('Error loading Level 1 options:', error);
         }
     }
     
     /**
-     * Verwendet gefundene Level 3 Branche
+     * Get Field Label
      */
-    useLevel3(comboId, excelValue, level3Uuid) {
-        this.industryDecisions[excelValue] = {
-            type: 'level3',
-            decision: 'using_existing',
-            industry_uuid: level3Uuid
+    getFieldLabel(field) {
+        const labels = {
+            'name': 'Name',
+            'website': 'Website',
+            'industry_level1': 'Branchenbereich',
+            'industry_level2': 'Branche',
+            'industry_level3': 'Unterbranche',
+            'revenue_range': 'Umsatz',
+            'employee_count': 'Mitarbeiter',
+            'notes': 'Notizen',
+            'address_street': 'Straße',
+            'address_postal_code': 'PLZ',
+            'address_city': 'Stadt',
+            'address_state': 'Bundesland',
+            'email': 'E-Mail',
+            'fax': 'Fax',
+            'phone': 'Telefon',
+            'vat_id': 'USt-ID'
         };
-        
-        Utils.showSuccess(`Unterbranche "${excelValue}" wird verwendet.`);
-    }
-    
-    /**
-     * Fügt neue Level 3 Branche aus Kombination hinzu
-     */
-    async addLevel3FromCombo(comboId, excelValue, parentUuid) {
-        // Hole aktuelle parent_uuid vom Button
-        const addBtn = document.querySelector(`.add-level3-btn[data-combo-id="${comboId}"][data-level3-value="${excelValue}"]`);
-        const actualParentUuid = addBtn?.getAttribute('data-parent-uuid') || parentUuid;
-        
-        if (!actualParentUuid) {
-            Utils.showError('Bitte bestätigen Sie zuerst die Branche (Level 2).');
-            return;
-        }
-        
-        await this.addLevel3Industry(excelValue, actualParentUuid);
-    }
-    
-    /**
-     * Wird aufgerufen, wenn Hauptbranche für Subbranche ausgewählt wird (Rückwärtskompatibilität)
-     */
-    onParentIndustrySelected(excelValue, parentUuid, level = 2) {
-        if (level === 3) {
-            const btn = document.querySelector(`.add-level3-industry-btn[data-excel-value="${excelValue}"]`);
-            if (btn) {
-                btn.disabled = !parentUuid;
-                if (parentUuid) {
-                    btn.onclick = () => this.addLevel3Industry(excelValue, parentUuid);
-                }
-            }
-        } else {
-            const btn = document.querySelector(`.add-sub-industry-btn[data-excel-value="${excelValue}"]`);
-            if (btn) {
-                btn.disabled = !parentUuid;
-                if (parentUuid) {
-                    btn.onclick = () => this.addIndustry(excelValue, 'sub', parentUuid);
-                }
-            }
-        }
-    }
-    
-    /**
-     * Aktualisiert UI nach Entscheidung
-     */
-    updateIndustryDecision(excelValue, type, decision, industryUuid) {
-        const item = document.querySelector(`[data-excel-value="${excelValue}"][data-type="${type}"]`);
-        if (!item) return;
-        
-        // Speichere Entscheidung
-        this.industryDecisions[excelValue] = {
-            type: type,
-            decision: decision,
-            industry_uuid: industryUuid
-        };
-        
-        item.classList.add('decision-made');
-        item.dataset.decision = decision;
-        item.dataset.industryUuid = industryUuid || '';
-        
-        // Deaktiviere Buttons
-        item.querySelectorAll('button').forEach(btn => btn.disabled = true);
-        item.querySelectorAll('select').forEach(sel => sel.disabled = true);
-        
-        // Zeige Status
-        const statusDiv = document.createElement('div');
-        statusDiv.className = 'decision-status';
-        if (decision === 'added') {
-            statusDiv.innerHTML = `✅ Hinzugefügt (UUID: ${industryUuid})`;
-            statusDiv.className += ' status-added';
-        } else if (decision === 'using_suggestion') {
-            statusDiv.innerHTML = `✅ Vorschlag verwendet`;
-            statusDiv.className += ' status-using';
-        } else {
-            statusDiv.innerHTML = `⏭️ Ignoriert`;
-            statusDiv.className += ' status-ignored';
-        }
-        item.appendChild(statusDiv);
+        return labels[field] || field;
     }
     
     /**
@@ -1114,37 +1174,50 @@ export class ImportModule {
             return;
         }
         
-        // Sammle Mapping aus Select-Feldern
-        const mappingConfig = {
-            header_row: 1, // TODO: Aus Analysis
-            data_start_row: 2,
-            columns: {}
-        };
-        
-        // Sammle Mapping aus Radio-Buttons (neue Struktur)
-        document.querySelectorAll('[name^="field_"]').forEach(radio => {
-            if (!radio.checked) return;
-            
-            const field = radio.name.replace('field_', '');
-            const col = radio.value;
-            
-            if (field && col) {
-                mappingConfig.columns[field] = {
-                    excel_column: col,
-                    required: field === 'name' // Name ist Pflichtfeld
-                };
-            }
-        });
-        
         try {
-            const response = await fetch(`/tom3/public/api/import/mapping/${this.currentBatch.batch_uuid}`, {
+            // Sammle Mapping aus Radio-Buttons
+            const mappingConfig = {
+                header_row: this.analysis?.header_row || 1,
+                data_start_row: (this.analysis?.header_row || 1) + 1,
+                columns: {}
+            };
+            
+            // Sammle alle Radio-Button-Auswahlen
+            // WICHTIG: Branchen-Felder werden hier NICHT gespeichert - die werden in Schritt 3 behandelt
+            document.querySelectorAll('input[type="radio"][name^="mapping_"]:checked').forEach(radio => {
+                const name = radio.name;
+                const field = name.replace('mapping_', '');
+                const excelColumn = radio.value;
+                
+                // Überspringe Branchen-Felder (werden in Schritt 3 behandelt)
+                if (field === 'industry_level1' || field === 'industry_level2' || field === 'industry_level3' ||
+                    field === 'industry_main' || field === 'industry_sub') {
+                    return;
+                }
+                
+                if (field && excelColumn) {
+                    // Finde Header-Name aus Analysis
+                    const headerName = this.getHeaderNameForColumn(excelColumn);
+                    
+                    mappingConfig.columns[field] = {
+                        excel_column: excelColumn,
+                        excel_header: headerName,
+                        required: field === 'name' // Name ist Pflichtfeld
+                    };
+                }
+            });
+            
+            // Prüfe, ob mindestens Name gemappt ist
+            if (!mappingConfig.columns.name) {
+                Utils.showError('Bitte mappen Sie mindestens das Feld "Name"');
+                return;
+            }
+            
+            // Speichere Mapping
+            const response = await fetch(`/tom3/public/api/import/mapping/${this.currentBatch}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    mapping_config: mappingConfig
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mapping_config: mappingConfig })
             });
             
             if (!response.ok) {
@@ -1152,118 +1225,907 @@ export class ImportModule {
                 throw new Error(error.message || 'Fehler beim Speichern');
             }
             
-            // Weiter zu Schritt 3 (Review)
+            Utils.showSuccess('Mapping erfolgreich gespeichert!');
+            
+            // Automatisch in Staging importieren (mit Branchen-Vorschlägen)
+            Utils.showInfo('Importiere Daten in Staging und erstelle Branchen-Vorschläge...');
+            await this.importToStaging();
+            
+            // Gehe zu Schritt 3 (Branchen-Prüfung)
             this.goToStep(3);
-            await this.loadStagingPreview();
             
         } catch (error) {
             console.error('Save mapping error:', error);
-            Utils.showError(error.message || 'Fehler beim Speichern des Mappings');
+            Utils.showError('Fehler beim Speichern des Mappings: ' + error.message);
         }
     }
     
     /**
-     * Lädt Staging-Vorschau
+     * Holt Header-Name für Spalte aus Analysis
      */
-    async loadStagingPreview() {
-        const preview = document.getElementById('staging-preview');
-        if (!preview) return;
+    getHeaderNameForColumn(excelColumn) {
+        if (!this.analysis || !this.analysis.columns) {
+            return excelColumn;
+        }
         
-        preview.innerHTML = '<p>Lädt Vorschau...</p>';
-        
+        return this.analysis.columns[excelColumn] || excelColumn;
+    }
+    
+    /**
+     * Importiert in Staging (wird nach Mapping-Speicherung automatisch aufgerufen)
+     * WICHTIG: Backend holt file_path automatisch aus DocumentService/BlobService
+     */
+    async importToStaging() {
         try {
-            const response = await fetch(`/tom3/public/api/import/staging/${this.currentBatch.batch_uuid}`);
+            // 1. Prüfe, ob Mapping vorhanden ist
+            const batch = await window.API.request(`/import/batch/${this.currentBatch}`);
             
-            if (!response.ok) {
-                throw new Error('Fehler beim Laden der Vorschau');
+            if (!batch || !batch.mapping_config) {
+                throw new Error('Kein Mapping gefunden. Bitte speichern Sie zuerst das Mapping.');
             }
             
-            const data = await response.json();
-            this.renderStagingPreview(data);
+            // 2. Importiere in Staging (mit Branchen-Vorschlägen)
+            // Backend holt file_path automatisch aus DocumentService/BlobService
+            const stagingResponse = await fetch(`/tom3/public/api/import/staging/${this.currentBatch}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+                // Kein Body nötig - Backend holt file_path selbst
+            });
+            
+            if (!stagingResponse.ok) {
+                const error = await stagingResponse.json();
+                throw new Error(error.message || 'Fehler beim Import in Staging');
+            }
+            
+            const stagingResult = await stagingResponse.json();
+            
+            // Prüfe, ob Daten importiert wurden
+            if (stagingResult.error) {
+                // Backend hat bereits einen Fehler gemeldet
+                throw new Error(stagingResult.message || stagingResult.error);
+            }
+            
+            if (stagingResult.stats && stagingResult.stats.imported === 0) {
+                if (stagingResult.stats.total_rows > 0) {
+                    // Zeilen vorhanden, aber alle hatten Fehler
+                    const errorDetails = stagingResult.stats.errors_detail?.[0];
+                    const errorMsg = errorDetails 
+                        ? `Import fehlgeschlagen: ${stagingResult.stats.errors || 0} Fehler. Erster Fehler (Zeile ${errorDetails.row}): ${errorDetails.error}`
+                        : `Import fehlgeschlagen: ${stagingResult.stats.errors || 0} Fehler. Bitte prüfen Sie die Mapping-Konfiguration.`;
+                    throw new Error(errorMsg);
+                } else {
+                    // Keine Zeilen gefunden
+                    throw new Error('Keine Datenzeilen in der Excel-Datei gefunden. Bitte prüfen Sie die Datei.');
+                }
+            }
+            
+            this.stagingImported = true;
+            
+            Utils.showSuccess(`Import erfolgreich! ${stagingResult.stats?.imported || 0} Zeilen importiert.`);
+            
+            return stagingResult;
             
         } catch (error) {
-            console.error('Load staging error:', error);
-            preview.innerHTML = `<p class="error">${error.message}</p>`;
+            console.error('Error importing to staging:', error);
+            Utils.showError('Fehler beim Import in Staging: ' + error.message);
+            throw error;
         }
     }
     
     /**
-     * Rendert Staging-Vorschau
+     * Rendert Branchen-Prüfung Step (Schritt 3)
      */
-    renderStagingPreview(data) {
-        const preview = document.getElementById('staging-preview');
-        if (!preview) return;
+    async renderIndustryCheckStep() {
+        const container = document.getElementById('industry-check-content');
+        if (!container || !this.currentBatch) return;
         
-        // Prüfe, ob Branchendaten fehlen (inkonsistent)
-        const hasInconsistentIndustries = this.currentBatch?.analysis?.industry_validation?.consistency && 
-                                         !this.currentBatch.analysis.industry_validation.consistency.is_consistent;
+        container.innerHTML = '<p>Lädt Branchen-Vorschläge...</p>';
         
-        let html = '';
-        
-        // Warnung bei inkonsistenten Branchendaten
-        if (hasInconsistentIndustries) {
-            const consistency = this.currentBatch.analysis.industry_validation.consistency;
-            html += '<div class="alert alert-warning" style="margin: 1rem 0; padding: 1rem; border: 2px solid #ffc107; background-color: #fff3cd;">';
-            html += '<h5>⚠️ Branchendaten fehlen</h5>';
-            html += `<p><strong>Die Importdatei enthält verschiedene Branchenwerte. Die Branchenfelder wurden nicht gemappt und müssen nach dem Import manuell nachgetragen werden.</strong></p>`;
-            if (consistency.level1_values && consistency.level1_values.length > 0) {
-                html += `<p>Gefundene Branchenbereiche (Level 1): ${consistency.level1_values.join(', ')}</p>`;
+        try {
+            // Prüfe, ob bereits in Staging importiert wurde
+            if (!this.stagingImported) {
+                // Falls nicht, importiere jetzt
+                await this.importToStaging();
             }
-            if (consistency.level2_values && consistency.level2_values.length > 0) {
-                html += `<p>Gefundene Branchen (Level 2): ${consistency.level2_values.join(', ')}</p>`;
+            
+            // Lade Staging-Rows mit industry_resolution
+            const stagingRows = await this.loadStagingRows(this.currentBatch);
+            
+            if (stagingRows.length === 0) {
+                container.innerHTML = '<p class="error">Keine Staging-Daten gefunden. Bitte importieren Sie zuerst die Daten.</p>';
+                return;
             }
+            
+            // Extrahiere eindeutige Branchen-Kombinationen aus Staging-Rows
+            const combinations = this.extractIndustryCombinations(stagingRows);
+            
+            if (combinations.length === 0) {
+                container.innerHTML = '<p class="info">Keine Branchendaten in den importierten Daten gefunden.</p>';
+                const confirmBtn = document.getElementById('confirm-industries-btn');
+                if (confirmBtn) {
+                    confirmBtn.style.display = 'inline-block';
+                    confirmBtn.textContent = 'Weiter zum Review →';
+                    confirmBtn.onclick = () => this.goToStep(4);
+                }
+                return;
+            }
+            
+            // Rendere Branchen-Prüfung UI
+            let html = '<div class="industry-check-section">';
+            html += '<div class="industry-header">';
+            html += '<div class="industry-header-icon">⚠️</div>';
+            html += '<div class="industry-header-text">';
+            html += '<h4>Branchen-Prüfung</h4>';
+            html += '<p class="industry-description">Bitte prüfen und bestätigen Sie die Branchenzuordnungen:</p>';
             html += '</div>';
+            html += '</div>';
+            
+            // Für jede Kombination
+            combinations.forEach((combo, index) => {
+                const comboId = `combo_${index}`;
+                html += this.renderIndustryCombination(comboId, combo);
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            
+            // Lade Level 1 Optionen für alle Dropdowns
+            await this.loadAllLevel1Options();
+            
+            // Lade Vorschläge für alle Kombinationen
+            combinations.forEach((combo, index) => {
+                const comboId = `combo_${index}`;
+                if (combo.staging_uuid) {
+                    this.loadStagingRowForCombination(comboId, combo.staging_uuid);
+                }
+            });
+            
+            // Zeige Bestätigen-Button
+            const confirmBtn = document.getElementById('confirm-industries-btn');
+            if (confirmBtn) {
+                confirmBtn.style.display = 'inline-block';
+            }
+            
+        } catch (error) {
+            console.error('Error loading industry check:', error);
+            container.innerHTML = `<p class="error">Fehler beim Laden: ${error.message}</p>`;
+        }
+    }
+    
+    /**
+     * Extrahiert eindeutige Branchen-Kombinationen aus Staging-Rows
+     */
+    extractIndustryCombinations(stagingRows) {
+        const combinationsMap = new Map();
+        
+        stagingRows.forEach(row => {
+            const mappedData = row.mapped_data || {};
+            const industry = mappedData.industry || {};
+            const excelLevel2 = industry.excel_level2_label || industry.industry_level2 || null;
+            const excelLevel3 = industry.excel_level3_label || industry.industry_level3 || null;
+            
+            if (excelLevel2) {
+                const key = `${excelLevel2}|||${excelLevel3 || ''}`;
+                if (!combinationsMap.has(key)) {
+                    combinationsMap.set(key, {
+                        excel_level2: excelLevel2,
+                        excel_level3: excelLevel3 || null,
+                        staging_uuid: row.staging_uuid, // Erste Row mit dieser Kombination
+                        count: 1
+                    });
+                } else {
+                    combinationsMap.get(key).count++;
+                }
+            }
+        });
+        
+        return Array.from(combinationsMap.values());
+    }
+    
+    /**
+     * Bestätigt alle Branchen-Entscheidungen und reichert Staging-Daten an
+     */
+    async confirmAllIndustries() {
+        try {
+            Utils.showInfo('Reichere Staging-Daten mit Branchen-Entscheidungen an...');
+            
+            // Lade alle Staging-Rows
+            const stagingRows = await this.loadStagingRows(this.currentBatch);
+            
+            // Für jede Row: Aktualisiere industry_resolution und mapped_data
+            let updated = 0;
+            for (const row of stagingRows) {
+                const comboEl = document.querySelector(`[data-staging-uuid="${row.staging_uuid}"]`);
+                if (!comboEl) continue;
+                
+                // Hole Entscheidungen aus UI
+                const level1Select = comboEl.querySelector('.industry-level1-select');
+                const level2Select = comboEl.querySelector('.industry-level2-select');
+                const level3Select = comboEl.querySelector('.industry-level3-select');
+                
+                const level1Uuid = level1Select?.value || null;
+                const level2Uuid = level2Select?.value || null;
+                const level3Uuid = level3Select?.value || null;
+                
+                if (level1Uuid && level2Uuid) {
+                    // Aktualisiere industry_resolution.decision
+                    const resolution = row.industry_resolution || { decision: {} };
+                    resolution.decision = {
+                        ...resolution.decision,
+                        level1_uuid: level1Uuid,
+                        level2_uuid: level2Uuid,
+                        level3_uuid: level3Uuid,
+                        level1_confirmed: true,
+                        level2_confirmed: true,
+                        level3_action: level3Uuid ? 'SELECT_EXISTING' : 'UNDECIDED'
+                    };
+                    
+                    // Speichere aktualisierte industry_resolution
+                    await fetch(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            level1_uuid: level1Uuid,
+                            level2_uuid: level2Uuid,
+                            level3_uuid: level3Uuid,
+                            confirm_level1: true,
+                            confirm_level2: true
+                        })
+                    });
+                    
+                    updated++;
+                }
+            }
+            
+            Utils.showSuccess(`${updated} Zeilen mit Branchendaten angereichert.`);
+            
+            // Gehe zu Schritt 4 (Review)
+            this.goToStep(4);
+            
+        } catch (error) {
+            console.error('Error confirming industries:', error);
+            Utils.showError('Fehler beim Anreichern der Daten: ' + error.message);
+        }
+    }
+    
+    /**
+     * Rendert Review-Step (Schritt 4)
+     */
+    async renderReviewStep() {
+        const container = document.getElementById('review-content');
+        if (!container || !this.currentBatch) return;
+        
+        container.innerHTML = '<p>Lädt Staging-Daten...</p>';
+        
+        try {
+            // Lade Staging-Rows (bereits importiert und angereichert)
+            const stagingRows = await this.loadStagingRows(this.currentBatch);
+            this.stagingRows = stagingRows;
+            
+            if (stagingRows.length === 0) {
+                container.innerHTML = '<p class="error">Keine Staging-Daten gefunden.</p>';
+                return;
+            }
+            
+            // Rendere Review-UI
+            container.innerHTML = this.renderReviewUI(stagingRows, { 
+                total_rows: stagingRows.length,
+                imported: stagingRows.length 
+            });
+            
+            // Zeige Commit-Button
+            const commitBtn = document.getElementById('commit-btn');
+            if (commitBtn) {
+                commitBtn.style.display = 'inline-block';
+            }
+            
+        } catch (error) {
+            console.error('Error loading review:', error);
+            container.innerHTML = `<p class="error">Fehler beim Laden: ${error.message}</p>`;
+        }
+    }
+    
+    /**
+     * Holt Datei-Pfad für Batch (wird vom Backend gehandhabt)
+     * @deprecated Backend holt file_path automatisch aus DocumentService/BlobService
+     */
+    async getFilePathForBatch(batch) {
+        // Backend holt file_path automatisch aus DocumentService/BlobService
+        // Diese Methode wird nicht mehr benötigt
+        return null;
+    }
+    
+    /**
+     * Lädt Staging-Rows für Batch
+     */
+    async loadStagingRows(batchUuid) {
+        try {
+            // Hole alle Staging-Rows für Batch (via API)
+            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}/staging-rows`);
+            
+            if (!response.ok) {
+                // Fallback: Versuche einzelne Rows zu laden (nicht ideal)
+                return [];
+            }
+            
+            const result = await response.json();
+            return result.rows || [];
+            
+        } catch (error) {
+            console.error('Error loading staging rows:', error);
+            return [];
+        }
+    }
+    
+    /**
+     * Rendert Review-UI
+     */
+    renderReviewUI(stagingRows, stats) {
+        if (stagingRows.length === 0) {
+            return '<p class="info">Keine Staging-Rows gefunden.</p>';
         }
         
-        // Statistiken
-        html += '<div class="staging-stats">';
-        html += '<h4>Statistiken</h4>';
-        html += `<p>Total: ${data.stats?.total_rows || 0}</p>`;
-        html += `<p>Valid: ${data.stats?.valid || 0}</p>`;
-        html += `<p>Warnings: ${data.stats?.warnings || 0}</p>`;
-        html += `<p>Errors: ${data.stats?.errors || 0}</p>`;
-        if (hasInconsistentIndustries) {
-            html += '<p><strong style="color: #ffc107;">⚠️ Branchendaten fehlen (müssen nachgetragen werden)</strong></p>';
+        let html = '<div class="review-content">';
+        html += '<div class="review-stats">';
+        html += `<p><strong>Gesamt:</strong> ${stats?.total_rows || stagingRows.length} Zeilen</p>`;
+        html += `<p><strong>Importiert:</strong> ${stats?.imported || 0} Zeilen</p>`;
+        if (stats?.errors > 0) {
+            html += `<p class="error"><strong>Fehler:</strong> ${stats.errors} Zeilen</p>`;
         }
         html += '</div>';
         
-        preview.innerHTML = html;
+        html += '<div class="review-table-container">';
+        html += '<table class="review-table">';
+        html += '<thead><tr>';
+        html += '<th>Zeile</th>';
+        html += '<th>Name</th>';
+        html += '<th>Website</th>';
+        html += '<th>Status</th>';
+        html += '<th>Duplikat</th>';
+        html += '<th>Aktion</th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+        
+        stagingRows.forEach(row => {
+            const mappedData = row.mapped_data || {};
+            const orgData = mappedData.org || {};
+            const validationStatus = row.validation_status || 'pending';
+            const duplicateStatus = row.duplicate_status || 'unknown';
+            
+            html += '<tr>';
+            html += `<td>${row.row_number}</td>`;
+            html += `<td>${orgData.name || '-'}</td>`;
+            html += `<td>${orgData.website || '-'}</td>`;
+            html += `<td><span class="status-badge status-${validationStatus}">${validationStatus}</span></td>`;
+            html += `<td><span class="duplicate-badge duplicate-${duplicateStatus}">${duplicateStatus}</span></td>`;
+            html += `<td><button class="btn btn-sm" onclick="window.app.import.showRowDetail('${row.staging_uuid}')">Details</button></td>`;
+            html += '</tr>';
+        });
+        
+        html += '</tbody>';
+        html += '</table>';
+        html += '</div>';
+        html += '</div>';
+        
+        return html;
     }
     
     /**
-     * Wechselt zu Schritt
+     * Zeigt Detail-Ansicht für eine Staging-Row
      */
-    goToStep(step) {
-        this.currentStep = step;
-        
-        // Update Wizard-Navigation
-        document.querySelectorAll('.wizard-step-indicator').forEach((el, idx) => {
-            const stepNum = idx + 1;
-            el.classList.remove('active', 'completed');
-            if (stepNum === step) {
-                el.classList.add('active');
-            } else if (stepNum < step) {
-                el.classList.add('completed');
+    async showRowDetail(stagingUuid) {
+        try {
+            console.log('Loading row detail for:', stagingUuid);
+            const row = await window.API.request(`/import/staging/${stagingUuid}`);
+            
+            if (!row) {
+                Utils.showError('Staging-Row nicht gefunden');
+                return;
             }
-        });
-        
-        // Zeige/Verstecke Schritte
-        document.querySelectorAll('.wizard-step').forEach((el, idx) => {
-            if (idx + 1 === step) {
-                el.classList.add('active');
-                el.style.display = 'block';
+            
+            // Entferne vorhandenes Modal, falls vorhanden
+            const existingModal = document.querySelector('.modal-overlay[data-staging-detail]');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Zeige Modal mit Details
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.setAttribute('data-staging-detail', 'true');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;';
+            
+            const mappedData = row.mapped_data || {};
+            const orgData = mappedData.org || {};
+            const addressData = mappedData.address || {};
+            const communicationData = mappedData.communication || {};
+            const industryData = mappedData.industry || {};
+            const industryResolution = row.industry_resolution || {};
+            const decision = industryResolution.decision || {};
+            const suggestions = industryResolution.suggestions || {};
+            
+            // Baue Adress-String
+            const addressParts = [];
+            if (addressData.street) addressParts.push(addressData.street);
+            if (addressData.postal_code || addressData.city) {
+                addressParts.push([addressData.postal_code, addressData.city].filter(Boolean).join(' '));
+            }
+            if (addressData.state) addressParts.push(addressData.state);
+            const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : '-';
+            
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto; background: white; border-radius: 8px; padding: 24px; position: relative;">
+                    <button class="btn-close" onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 12px; right: 12px; background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+                    <h2 style="margin-top: 0;">Staging-Row Details</h2>
+                    <p><strong>Zeile:</strong> ${row.row_number || '-'} | <strong>Staging UUID:</strong> <code style="font-size: 0.85em;">${stagingUuid}</code></p>
+                    
+                    <div style="margin-top: 20px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Organisationsdaten</h3>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+                            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; width: 180px;"><strong>Name:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.name || '-'}</td></tr>
+                            ${orgData.vat_id ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>USt-IdNr.:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.vat_id}</td></tr>` : ''}
+                            ${orgData.employee_count ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Mitarbeiter:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.employee_count}</td></tr>` : ''}
+                            ${orgData.revenue_range ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Umsatz:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.revenue_range}</td></tr>` : ''}
+                            ${orgData.website ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Website:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;"><a href="${orgData.website}" target="_blank">${orgData.website}</a></td></tr>` : ''}
+                            ${orgData.notes ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Notizen:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.notes}</td></tr>` : ''}
+                        </table>
+                    </div>
+                    
+                    ${(addressData.street || addressData.postal_code || addressData.city || addressData.state) ? `
+                    <div style="margin-top: 20px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Adresse</h3>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+                            ${addressData.street ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee; width: 180px;"><strong>Straße:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${addressData.street}</td></tr>` : ''}
+                            ${addressData.postal_code || addressData.city ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>PLZ / Ort:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${[addressData.postal_code, addressData.city].filter(Boolean).join(' ')}</td></tr>` : ''}
+                            ${addressData.state ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Bundesland:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${addressData.state}</td></tr>` : ''}
+                            <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Vollständige Adresse:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${fullAddress}</td></tr>
+                        </table>
+                    </div>
+                    ` : ''}
+                    
+                    ${(communicationData.email || communicationData.phone || communicationData.fax) ? `
+                    <div style="margin-top: 20px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Kontaktdaten</h3>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+                            ${communicationData.email ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee; width: 180px;"><strong>E-Mail:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;"><a href="mailto:${communicationData.email}">${communicationData.email}</a></td></tr>` : ''}
+                            ${communicationData.phone ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Telefon:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;"><a href="tel:${communicationData.phone}">${communicationData.phone}</a></td></tr>` : ''}
+                            ${communicationData.fax ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Fax:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${communicationData.fax}</td></tr>` : ''}
+                        </table>
+                    </div>
+                    ` : ''}
+                    
+                    ${industryResolution.excel || industryResolution.suggestions || decision.status || industryData.excel_level2_label || industryData.excel_level3_label ? `
+                    <div style="margin-top: 24px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Branchenzuordnung</h3>
+                        ${(industryResolution.excel && (industryResolution.excel.level2_label || industryResolution.excel.level3_label)) || industryData.excel_level2_label || industryData.excel_level3_label ? `
+                            <div style="margin-bottom: 16px;">
+                                <p><strong>Excel-Labels (aus Datei):</strong></p>
+                                <ul style="margin-left: 20px;">
+                                    ${(industryResolution.excel?.level2_label || industryData.excel_level2_label) ? `<li><strong>Level 2:</strong> ${industryResolution.excel?.level2_label || industryData.excel_level2_label}</li>` : ''}
+                                    ${(industryResolution.excel?.level3_label || industryData.excel_level3_label) ? `<li><strong>Level 3:</strong> ${industryResolution.excel?.level3_label || industryData.excel_level3_label}</li>` : ''}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        ${suggestions.level2_candidates && suggestions.level2_candidates.length > 0 ? `
+                            <div style="margin-bottom: 16px;">
+                                <p><strong>Vorschläge Level 2:</strong></p>
+                                <ul style="margin-left: 20px;">
+                                    ${suggestions.level2_candidates.slice(0, 3).map(c => `<li>${c.name} (Score: ${c.score?.toFixed(2) || 'N/A'})</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        ${suggestions.level3_candidates && suggestions.level3_candidates.length > 0 ? `
+                            <div style="margin-bottom: 16px;">
+                                <p><strong>Vorschläge Level 3:</strong></p>
+                                <ul style="margin-left: 20px;">
+                                    ${suggestions.level3_candidates.slice(0, 3).map(c => `<li>${c.name} (Score: ${c.score?.toFixed(2) || 'N/A'})</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        ${suggestions.derived_level1 ? `
+                            <div style="margin-bottom: 16px;">
+                                <p><strong>Abgeleitetes Level 1:</strong> ${suggestions.derived_level1.name || suggestions.derived_level1.code || 'N/A'}</p>
+                            </div>
+                        ` : ''}
+                        ${decision.status ? `
+                            <div style="margin-top: 16px; padding: 12px; background: ${decision.status === 'APPROVED' ? '#d4edda' : '#fff3cd'}; border-radius: 4px;">
+                                <p style="margin: 0;"><strong>Entscheidungs-Status:</strong> <span style="font-weight: bold; color: ${decision.status === 'APPROVED' ? '#155724' : '#856404'};">${decision.status}</span></p>
+                                ${decision.level1_uuid ? `<p style="margin: 4px 0 0 0;"><strong>Level 1 UUID:</strong> <code style="font-size: 0.85em;">${decision.level1_uuid}</code></p>` : ''}
+                                ${decision.level2_uuid ? `<p style="margin: 4px 0 0 0;"><strong>Level 2 UUID:</strong> <code style="font-size: 0.85em;">${decision.level2_uuid}</code></p>` : ''}
+                                ${decision.level3_uuid ? `<p style="margin: 4px 0 0 0;"><strong>Level 3 UUID:</strong> <code style="font-size: 0.85em;">${decision.level3_uuid}</code></p>` : ''}
+                                ${decision.level3_action ? `<p style="margin: 4px 0 0 0;"><strong>Level 3 Aktion:</strong> ${decision.level3_action}</p>` : ''}
+                                ${decision.level3_new_name ? `<p style="margin: 4px 0 0 0;"><strong>Neue Level 3:</strong> <strong style="color: #155724;">${decision.level3_new_name}</strong></p>` : ''}
+                                ${decision.level2_confirmed ? `<p style="margin: 4px 0 0 0;">✅ Level 2 bestätigt</p>` : ''}
+                                ${decision.level1_confirmed ? `<p style="margin: 4px 0 0 0;">✅ Level 1 bestätigt</p>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
+                    
+                    <div style="margin-top: 24px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Status</h3>
+                        <p><strong>Validation:</strong> ${row.validation_status || 'unknown'}</p>
+                        <p><strong>Duplicate:</strong> ${row.duplicate_status || 'unknown'}</p>
+                        <p><strong>Review:</strong> ${row.review_status || 'pending'}</p>
+                        ${row.import_status ? `<p><strong>Import:</strong> ${row.import_status}</p>` : ''}
+                    </div>
+                    
+                    ${row.validation_errors && row.validation_errors.length > 0 ? `
+                    <div style="margin-top: 24px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px; color: #d32f2f;">Validierungsfehler</h3>
+                        <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(row.validation_errors, null, 2)}</pre>
+                    </div>
+                    ` : ''}
+                    
+                    ${row.duplicate_summary ? `
+                    <div style="margin-top: 24px;">
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Duplikat-Informationen</h3>
+                        <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(row.duplicate_summary, null, 2)}</pre>
+                    </div>
+                    ` : ''}
+                    
+                    <details style="margin-top: 24px;">
+                        <summary style="cursor: pointer; font-weight: bold; padding: 8px; background: #f5f5f5; border-radius: 4px;">Raw Data (Original Excel)</summary>
+                        <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px;">${JSON.stringify(row.raw_data, null, 2)}</pre>
+                    </details>
+                    
+                    <details style="margin-top: 12px;">
+                        <summary style="cursor: pointer; font-weight: bold; padding: 8px; background: #f5f5f5; border-radius: 4px;">Mapped Data</summary>
+                        <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px;">${JSON.stringify(row.mapped_data, null, 2)}</pre>
+                    </details>
+                    
+                    <details style="margin-top: 12px;">
+                        <summary style="cursor: pointer; font-weight: bold; padding: 8px; background: #f5f5f5; border-radius: 4px;">Industry Resolution (Vollständig)</summary>
+                        <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px;">${JSON.stringify(row.industry_resolution, null, 2)}</pre>
+                    </details>
+                    
+                    <div style="margin-top: 24px; text-align: right;">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Schließen</button>
+                    </div>
+                </div>
+            `;
+            
+            // Klick außerhalb des Modals schließt es
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+            
+            document.body.appendChild(modal);
+            
+        } catch (error) {
+            console.error('Error loading row detail:', error);
+            Utils.showError('Fehler beim Laden der Details: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Lädt Staging-Row für Kombination (um industry_resolution zu holen)
+     * FALLBACK: Wenn keine Staging-Row vorhanden, erstelle Vorschläge direkt aus Excel-Werten
+     */
+    async loadStagingRowForCombination(comboId, stagingUuid) {
+        try {
+            // Entferne Loading-Hinweis
+            const loadingEl = document.getElementById(`loading_${comboId}`);
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+            
+            let resolution = null;
+            let suggestions = {};
+            let decision = {};
+            
+            // Versuche Staging-Row zu laden (wenn bereits vorhanden)
+            if (stagingUuid) {
+                try {
+                    const row = await window.API.request(`/import/staging/${stagingUuid}`);
+                    if (row && row.industry_resolution) {
+                        resolution = row.industry_resolution;
+                        suggestions = resolution.suggestions || {};
+                        decision = resolution.decision || {};
+                    }
+                } catch (error) {
+                    console.log('Staging-Row noch nicht vorhanden, erstelle Vorschläge direkt aus Excel-Werten');
+                }
+            }
+            
+            // FALLBACK: Wenn keine industry_resolution vorhanden, erstelle Vorschläge direkt
+            if (!resolution || !suggestions.level2_candidates || suggestions.level2_candidates.length === 0) {
+                const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+                if (comboEl) {
+                    // Extrahiere Excel Level 2 Wert aus verschiedenen möglichen Stellen
+                    let excelLevel2 = comboEl.querySelector('.excel-value')?.textContent?.match(/Level 2:\s*([^/]+)/)?.[1]?.trim() || '';
+                    if (!excelLevel2) {
+                        // Fallback: Versuche aus excel-value-hint zu extrahieren
+                        excelLevel2 = comboEl.querySelector('.excel-value-hint')?.textContent?.match(/Excel-Wert.*?:\s*<strong>([^<]+)<\/strong>/)?.[1]?.trim() || '';
+                    }
+                    if (!excelLevel2 && combo.excel_level2) {
+                        // Fallback: Nutze combo.excel_level2 direkt
+                        excelLevel2 = combo.excel_level2;
+                    }
+                    
+                    if (excelLevel2) {
+                        console.log(`Erstelle Vorschläge für Excel-Wert: "${excelLevel2}"`);
+                        // Erstelle Vorschläge direkt aus Excel-Wert
+                        suggestions = await this.createSuggestionsFromExcelValue(excelLevel2);
+                        decision = {
+                            level1_uuid: suggestions.derived_level1?.industry_uuid || null,
+                            level2_uuid: suggestions.level2_candidates?.[0]?.industry_uuid || null,
+                            level1_confirmed: false,
+                            level2_confirmed: false
+                        };
+                    } else {
+                        console.warn(`Kein Excel Level 2 Wert gefunden für combo ${comboId}`);
+                    }
+                }
+            }
+            
+            if (suggestions && Object.keys(suggestions).length > 0) {
+                
+                // Update UI mit Vorschlägen
+                const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
+                if (!comboEl) return;
+                
+                // Level 1 Vorschlag - WICHTIG: Wird aus Level 2 abgeleitet!
+                if (suggestions.derived_level1) {
+                    const level1Select = comboEl.querySelector('.industry-level1-select');
+                    const suggestionContainer = document.getElementById(`suggestion_${comboId}_level1`);
+                    
+                    if (level1Select && !level1Select.value) {
+                        // Setze Vorschlag im Dropdown
+                        level1Select.value = suggestions.derived_level1.industry_uuid;
+                        
+                        // Zeige Vorschlag-Hinweis mit Erklärung
+                        if (suggestionContainer) {
+                            const excelLevel2 = comboEl.querySelector('.excel-value')?.textContent?.match(/Level 2: ([^/]+)/)?.[1]?.trim() || '';
+                            const level2Best = suggestions.level2_candidates?.[0];
+                            const level2Name = level2Best?.name || '';
+                            
+                            suggestionContainer.innerHTML = `
+                                <p class="suggestion-hint">
+                                    ✅ <strong>Automatisch abgeleitet:</strong> ${suggestions.derived_level1.name}
+                                    <small>(aus Level 2 Match: "${level2Name}")</small>
+                                </p>
+                            `;
+                        }
+                        
+                        // Aktiviere Bestätigen-Button
+                        const confirmBtn = comboEl.querySelector('.confirm-level1-btn');
+                        if (confirmBtn) {
+                            confirmBtn.disabled = false;
+                        }
+                        
+                        // WICHTIG: Wenn Level 1 aus Level 2 abgeleitet wurde, sollte es automatisch bestätigt werden können
+                        // Aber nur wenn auch Level 2 ein Match hat
+                        if (suggestions.level2_candidates && suggestions.level2_candidates.length > 0) {
+                            // Level 1 ist bereits vorbelegt, Benutzer kann direkt bestätigen
+                        }
+                    } else if (suggestionContainer && !level1Select.value) {
+                        // Zeige Hinweis, dass kein Vorschlag gefunden wurde
+                        suggestionContainer.innerHTML = `
+                            <p class="suggestion-hint no-suggestion">
+                                ⚠️ Kein Level 2 Match gefunden. Level 1 kann nicht automatisch abgeleitet werden. Bitte wählen Sie manuell.
+                            </p>
+                        `;
+                    }
+                } else {
+                    // Kein Vorschlag verfügbar - bedeutet: kein Level 2 Match gefunden
+                    const suggestionContainer = document.getElementById(`suggestion_${comboId}_level1`);
+                    if (suggestionContainer) {
+                        suggestionContainer.innerHTML = `
+                            <p class="suggestion-hint no-suggestion">
+                                ⚠️ Kein Level 2 Match gefunden. Level 1 kann nicht automatisch abgeleitet werden. Bitte wählen Sie manuell.
+                            </p>
+                        `;
+                    }
+                }
+                
+                // Level 2 Vorschlag - WICHTIG: Dies ist der primäre Matching-Schritt!
+                if (suggestions.level2_candidates && suggestions.level2_candidates.length > 0) {
+                    const best = suggestions.level2_candidates[0];
+                    const level2Select = comboEl.querySelector('.industry-level2-select');
+                    const suggestionContainer2 = document.getElementById(`suggestion_${comboId}_level2`);
+                    
+                    // Wenn Level 1 bereits abgeleitet wurde, lade Level 2 Optionen
+                    if (suggestions.derived_level1) {
+                        await this.loadLevel2Options(comboId, suggestions.derived_level1.industry_uuid);
+                    }
+                    
+                    if (level2Select && !level2Select.value) {
+                        // Setze besten Vorschlag
+                        level2Select.value = best.industry_uuid;
+                        
+                        // Zeige Vorschlag-Hinweis
+                        if (suggestionContainer2) {
+                            const excelLevel2 = comboEl.querySelector('.excel-value-hint')?.textContent?.match(/Excel-Wert.*?:\s*<strong>([^<]+)<\/strong>/)?.[1]?.trim() || '';
+                            suggestionContainer2.innerHTML = `
+                                <p class="suggestion-hint">
+                                    💡 <strong>Vorschlag:</strong> ${best.name}${best.code ? ` (${best.code})` : ''}
+                                    <small>(${(best.score * 100).toFixed(0)}% ähnlich zu "${excelLevel2}")</small>
+                                </p>
+                            `;
+                        }
+                        
+                        // Aktiviere Bestätigen-Button
+                        const confirmBtn2 = comboEl.querySelector('.confirm-level2-btn');
+                        if (confirmBtn2) {
+                            confirmBtn2.disabled = false;
+                        }
+                    }
+                } else {
+                    // Kein Level 2 Match gefunden
+                    const suggestionContainer2 = document.getElementById(`suggestion_${comboId}_level2`);
+                    if (suggestionContainer2) {
+                        suggestionContainer2.innerHTML = `
+                            <p class="suggestion-hint no-suggestion">
+                                ⚠️ Kein automatischer Match gefunden. Bitte wählen Sie manuell.
+                            </p>
+                        `;
+                    }
+                }
             } else {
-                el.classList.remove('active');
-                el.style.display = 'none';
+                // Keine industry_resolution verfügbar
+                const loadingEl = document.getElementById(`loading_${comboId}`);
+                if (loadingEl) {
+                    loadingEl.remove();
+                }
+                const suggestionContainer = document.getElementById(`suggestion_${comboId}_level1`);
+                if (suggestionContainer) {
+                    suggestionContainer.innerHTML = `
+                        <p class="suggestion-hint no-suggestion">
+                            ⚠️ Keine Vorschläge verfügbar. Bitte wählen Sie manuell.
+                        </p>
+                    `;
+                }
             }
-        });
+        } catch (error) {
+            console.error('Error loading staging row:', error);
+            // Entferne Loading-Hinweis auch bei Fehler
+            const loadingEl = document.getElementById(`loading_${comboId}`);
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+            const suggestionContainer = document.getElementById(`suggestion_${comboId}_level1`);
+            if (suggestionContainer) {
+                suggestionContainer.innerHTML = `
+                    <p class="suggestion-hint no-suggestion">
+                        ⚠️ Fehler beim Laden der Vorschläge. Bitte wählen Sie manuell.
+                    </p>
+                `;
+            }
+        }
     }
     
     /**
-     * Freigeben & Importieren
+     * Erstellt Vorschläge direkt aus Excel-Wert (wenn Staging-Row noch nicht existiert)
      */
-    async approveImport() {
-        // TODO: Implementierung
-        Utils.showInfo('Import-Freigabe wird implementiert...');
+    async createSuggestionsFromExcelValue(excelLevel2Label) {
+        try {
+            // Nutze IndustryResolver API, um Vorschläge zu holen
+            // Für jetzt: Nutze getIndustries API und suche manuell
+            // TODO: Erstelle dedizierte API-Endpoint für Industry-Vorschläge
+            
+            const allLevel2 = await window.API.getIndustries(null, false, 2);
+            
+            // Einfache Suche nach ähnlichen Namen
+            const candidates = [];
+            const searchTerm = excelLevel2Label.toLowerCase().trim();
+            
+            for (const industry of allLevel2) {
+                const name = (industry.name || '').toLowerCase();
+                const code = (industry.code || '').toLowerCase();
+                
+                // Einfache Ähnlichkeitsprüfung
+                let score = 0;
+                if (name.includes(searchTerm) || searchTerm.includes(name.split(' ')[0])) {
+                    score = 0.8;
+                } else if (name.includes(searchTerm.split(' ')[0]) || searchTerm.includes(name.split(' ')[0])) {
+                    score = 0.6;
+                } else if (code && code.includes(searchTerm.substring(0, 2))) {
+                    score = 0.5;
+                }
+                
+                if (score > 0.4) {
+                    candidates.push({
+                        industry_uuid: industry.industry_uuid,
+                        code: industry.code,
+                        name: industry.name,
+                        score: score
+                    });
+                }
+            }
+            
+            // Sortiere nach Score
+            candidates.sort((a, b) => b.score - a.score);
+            
+            const best = candidates[0];
+            let derivedLevel1 = null;
+            
+            // Leite Level 1 ab
+            if (best) {
+                // Hole Parent (Level 1)
+                const level1Industries = await window.API.getIndustries(null, false, 1);
+                // Finde Parent über Level 2 Industry
+                try {
+                    // Hole alle Level 2 Industries mit Parent-Info
+                    const level2WithParent = await window.API.request(`/industries?level=2`);
+                    const found = level2WithParent.find(i => i.industry_uuid === best.industry_uuid);
+                    if (found && found.parent_industry_uuid) {
+                        // Finde Parent in Level 1 Industries
+                        const parent = level1Industries.find(i => i.industry_uuid === found.parent_industry_uuid);
+                        if (parent) {
+                            derivedLevel1 = {
+                                industry_uuid: parent.industry_uuid,
+                                code: parent.code,
+                                name: parent.name
+                            };
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error deriving Level 1:', error);
+                }
+            }
+            
+            return {
+                level2_candidates: candidates.slice(0, 5),
+                derived_level1: derivedLevel1
+            };
+            
+        } catch (error) {
+            console.error('Error creating suggestions:', error);
+            return {
+                level2_candidates: [],
+                derived_level1: null
+            };
+        }
+    }
+    
+    /**
+     * Committet Batch (Import in Produktion)
+     */
+    async commitBatch() {
+        if (!this.currentBatch) {
+            Utils.showError('Kein Batch vorhanden');
+            return;
+        }
+        
+        if (!confirm('Möchten Sie den Import wirklich durchführen? Die Daten werden in die Produktions-Datenbank importiert.')) {
+            return;
+        }
+        
+        try {
+            Utils.showInfo('Import wird durchgeführt...');
+            
+            const response = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mode: 'APPROVED_ONLY', // Nur approved Rows importieren
+                    start_workflows: true,  // Workflows automatisch starten
+                    dry_run: false
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Fehler beim Commit');
+            }
+            
+            const result = await response.json();
+            
+            Utils.showSuccess(`Import erfolgreich! ${result.stats?.rows_imported || 0} Organisationen importiert.`);
+            
+            // Optional: Weiterleitung oder Reset
+            setTimeout(() => {
+                this.currentBatch = null;
+                this.currentStep = 1;
+                this.goToStep(1);
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Commit error:', error);
+            Utils.showError('Fehler beim Import: ' + error.message);
+        }
     }
 }

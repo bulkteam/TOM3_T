@@ -872,26 +872,27 @@ class OrgService extends BaseEntityService
 
         // Industry-Namen werden bereits von getOrg() über JOIN geladen
         // Falls sie fehlen, lade sie nach (Fallback)
+        // Verwende name_short wenn verfügbar, sonst name
         if ($org['industry_main_uuid'] && empty($org['industry_main_name'])) {
             $mainIndustry = $this->getIndustryByUuid($org['industry_main_uuid']);
-            $org['industry_main_name'] = $mainIndustry['name'] ?? null;
+            $org['industry_main_name'] = $mainIndustry ? ($mainIndustry['name_short'] ?? $mainIndustry['name']) : null;
         }
         if ($org['industry_sub_uuid'] && empty($org['industry_sub_name'])) {
             $subIndustry = $this->getIndustryByUuid($org['industry_sub_uuid']);
-            $org['industry_sub_name'] = $subIndustry['name'] ?? null;
+            $org['industry_sub_name'] = $subIndustry ? ($subIndustry['name_short'] ?? $subIndustry['name']) : null;
         }
         // 3-stufige Hierarchie
         if ($org['industry_level1_uuid'] && empty($org['industry_level1_name'])) {
             $level1Industry = $this->getIndustryByUuid($org['industry_level1_uuid']);
-            $org['industry_level1_name'] = $level1Industry['name'] ?? null;
+            $org['industry_level1_name'] = $level1Industry ? ($level1Industry['name_short'] ?? $level1Industry['name']) : null;
         }
         if ($org['industry_level2_uuid'] && empty($org['industry_level2_name'])) {
             $level2Industry = $this->getIndustryByUuid($org['industry_level2_uuid']);
-            $org['industry_level2_name'] = $level2Industry['name'] ?? null;
+            $org['industry_level2_name'] = $level2Industry ? ($level2Industry['name_short'] ?? $level2Industry['name']) : null;
         }
         if ($org['industry_level3_uuid'] && empty($org['industry_level3_name'])) {
             $level3Industry = $this->getIndustryByUuid($org['industry_level3_uuid']);
-            $org['industry_level3_name'] = $level3Industry['name'] ?? null;
+            $org['industry_level3_name'] = $level3Industry ? ($level3Industry['name_short'] ?? $level3Industry['name']) : null;
         }
         
         return $org;
@@ -1276,29 +1277,29 @@ class OrgService extends BaseEntityService
         // Branche (Hauptklasse)
         if ($field === 'industry_main_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
-            return $industry ? $industry['name'] : $value;
+            return $industry ? ($industry['name_short'] ?? $industry['name']) : $value;
         }
         
         // Branche (Unterklasse)
         if ($field === 'industry_sub_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
-            return $industry ? $industry['name'] : $value;
+            return $industry ? ($industry['name_short'] ?? $industry['name']) : $value;
         }
         
         // 3-stufige Hierarchie
         if ($field === 'industry_level1_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
-            return $industry ? $industry['name'] : $value;
+            return $industry ? ($industry['name_short'] ?? $industry['name']) : $value;
         }
         
         if ($field === 'industry_level2_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
-            return $industry ? $industry['name'] : $value;
+            return $industry ? ($industry['name_short'] ?? $industry['name']) : $value;
         }
         
         if ($field === 'industry_level3_uuid' && $value) {
             $industry = $this->getIndustryByUuid($value);
-            return $industry ? $industry['name'] : $value;
+            return $industry ? ($industry['name_short'] ?? $industry['name']) : $value;
         }
         
         // Account Owner

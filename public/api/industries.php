@@ -48,16 +48,31 @@ if ($method === 'POST') {
     
     try {
         $name = trim($data['name']);
+        $nameShort = isset($data['name_short']) ? trim($data['name_short']) : null;
         $code = $data['code'] ?? null;
         $parentUuid = $data['parent_industry_uuid'] ?? null;
         $description = $data['description'] ?? null;
         
+        // Wenn kein name_short angegeben, verwende name als name_short
+        if (empty($nameShort)) {
+            $nameShort = $name;
+        }
+        
         // Generiere UUID (nutze UuidHelper)
         $industryUuid = UuidHelper::generate($db);
         
-        // Prüfe, ob Branche bereits existiert
-        $stmt = $db->prepare("SELECT industry_uuid FROM industry WHERE name = :name");
-        $stmt->execute(['name' => $name]);
+        // Prüfe, ob Branche bereits existiert (mit Parent, falls vorhanden)
+        if ($parentUuid) {
+            $stmt = $db->prepare("
+                SELECT industry_uuid 
+                FROM industry 
+                WHERE name = :name AND parent_industry_uuid = :parent_uuid
+            ");
+            $stmt->execute(['name' => $name, 'parent_uuid' => $parentUuid]);
+        } else {
+            $stmt = $db->prepare("SELECT industry_uuid FROM industry WHERE name = :name AND parent_industry_uuid IS NULL");
+            $stmt->execute(['name' => $name]);
+        }
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
@@ -71,13 +86,14 @@ if ($method === 'POST') {
         
         // Füge Branche hinzu
         $stmt = $db->prepare("
-            INSERT INTO industry (industry_uuid, name, code, parent_industry_uuid, description)
-            VALUES (:uuid, :name, :code, :parent_uuid, :description)
+            INSERT INTO industry (industry_uuid, name, name_short, code, parent_industry_uuid, description)
+            VALUES (:uuid, :name, :name_short, :code, :parent_uuid, :description)
         ");
         
         $stmt->execute([
             'uuid' => $industryUuid,
             'name' => $name,
+            'name_short' => $nameShort,
             'code' => $code,
             'parent_uuid' => $parentUuid,
             'description' => $description
@@ -129,7 +145,8 @@ try {
         if ($level === 1) {
             // Level 1: Branchenbereiche (ohne parent)
             $stmt = $db->prepare("
-                SELECT industry_uuid, name, code, parent_industry_uuid, description, created_at
+                SELECT industry_uuid, name, name_short, code, parent_industry_uuid, description, created_at,
+                       COALESCE(name_short, name) as display_name
                 FROM industry 
                 WHERE parent_industry_uuid IS NULL 
                 ORDER BY name
@@ -162,7 +179,8 @@ try {
             } else {
                 // Alle Level 2 Branchen (haben einen Level 1 Parent)
                 $stmt = $db->prepare("
-                    SELECT i2.industry_uuid, i2.name, i2.code, i2.parent_industry_uuid, i2.description, i2.created_at
+                    SELECT i2.industry_uuid, i2.name, i2.name_short, i2.code, i2.parent_industry_uuid, i2.description, i2.created_at,
+                           COALESCE(i2.name_short, i2.name) as display_name
                     FROM industry i2
                     INNER JOIN industry i1 ON i2.parent_industry_uuid = i1.industry_uuid
                     WHERE i1.parent_industry_uuid IS NULL
@@ -186,7 +204,8 @@ try {
             } else {
                 // Alle Level 3 Unterbranchen (haben einen Level 2 Parent)
                 $stmt = $db->prepare("
-                    SELECT i3.industry_uuid, i3.name, i3.code, i3.parent_industry_uuid, i3.description, i3.created_at
+                    SELECT i3.industry_uuid, i3.name, i3.name_short, i3.code, i3.parent_industry_uuid, i3.description, i3.created_at,
+                           COALESCE(i3.name_short, i3.name) as display_name
                     FROM industry i3
                     INNER JOIN industry i2 ON i3.parent_industry_uuid = i2.industry_uuid
                     INNER JOIN industry i1 ON i2.parent_industry_uuid = i1.industry_uuid
@@ -220,12 +239,23 @@ try {
         }
     } elseif ($parentUuid) {
         // Rückwärtskompatibilität: Unterklassen einer bestimmten Hauptklasse
-        $stmt = $db->prepare("SELECT * FROM industry WHERE parent_industry_uuid = :parent_uuid ORDER BY name");
+        $stmt = $db->prepare("
+            SELECT industry_uuid, name, name_short, code, parent_industry_uuid, description, created_at,
+                   COALESCE(name_short, name) as display_name
+            FROM industry 
+            WHERE parent_industry_uuid = :parent_uuid 
+            ORDER BY name
+        ");
         $stmt->execute(['parent_uuid' => $parentUuid]);
         $industries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
         // Alle Industries (für Kompatibilität)
-        $stmt = $db->query("SELECT * FROM industry ORDER BY name");
+        $stmt = $db->query("
+            SELECT industry_uuid, name, name_short, code, parent_industry_uuid, description, created_at,
+                   COALESCE(name_short, name) as display_name
+            FROM industry 
+            ORDER BY name
+        ");
         $industries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     

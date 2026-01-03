@@ -465,61 +465,154 @@ class OrgImportService
     
     /**
      * Erkennt Header-Zeile
-     * Verbesserte Heuristik: Sucht nach Zeile mit Text-ähnlichen Werten (keine Zahlen)
+     * Verbesserte Heuristik mit bekannten Header-Tokens aus Templates + Aliases
+     * 
+     * @param Worksheet $worksheet
+     * @param string|null $importType Optional: Import-Typ für Token-Filter
+     * @return int Header-Zeile (1-based)
      */
-    private function detectHeaderRow(Worksheet $worksheet): int
+    private function detectHeaderRow(Worksheet $worksheet, ?string $importType = null): int
     {
-        $maxScore = 0;
-        $headerRow = 1;
-        $highestRow = min(20, $worksheet->getHighestDataRow()); // Prüfe bis Zeile 20
+        // Lade bekannte Header-Tokens (aus Templates + Aliases)
+        $templateService = new ImportTemplateService($this->db);
+        $knownHeaderTokens = $templateService->loadKnownHeaderTokens($importType);
+        
+        $maxScanRows = 30;
+        $highestRow = min($maxScanRows, $worksheet->getHighestDataRow());
+        
+        $bestRow = 1;
+        $bestScore = -INF;
+        
+        // Lese alle Zeilen als Arrays
+        $sheetRows = [];
+        $highestCol = $worksheet->getHighestDataColumn();
+        $highestColNum = $this->columnToNumber($highestCol);
         
         for ($row = 1; $row <= $highestRow; $row++) {
-            $score = 0;
-            $highestCol = $worksheet->getHighestDataColumn();
-            
-            // Erweitere Suche bis zur letzten Spalte mit Daten
-            $lastCol = 'A';
-            for ($col = 'A'; $col <= $highestCol; $col++) {
+            $rowData = [];
+            for ($colNum = 1; $colNum <= $highestColNum; $colNum++) {
+                $col = $this->numberToColumn($colNum);
                 $value = trim($worksheet->getCell($col . $row)->getFormattedValue());
-                if (!empty($value)) {
-                    $lastCol = $col;
-                }
+                $rowData[] = $value;
+            }
+            $sheetRows[] = $rowData;
+        }
+        
+        // Bewerte jede Zeile
+        for ($i = 0; $i < count($sheetRows); $i++) {
+            $row = $sheetRows[$i];
+            $score = $this->scoreHeaderRow($row, $knownHeaderTokens);
+            
+            // Bonus: Wenn nächste Zeile wie Daten aussieht
+            if ($i + 1 < count($sheetRows)) {
+                $next = $sheetRows[$i + 1];
+                $dataLikelihood = $this->dataLikelihood($next);
+                $score += $dataLikelihood * 0.5;
             }
             
-            // Prüfe alle Spalten bis zur letzten gefüllten
-            for ($col = 'A'; $col <= $lastCol; $col++) {
-                $value = trim($worksheet->getCell($col . $row)->getFormattedValue());
-                if (!empty($value)) {
-                    // Header-Zeilen enthalten meist Text, keine Zahlen
-                    // Prüfe ob Wert hauptsächlich Text ist
-                    $isText = !is_numeric($value) || preg_match('/[a-zA-ZäöüÄÖÜß]/', $value);
-                    if ($isText) {
-                        $score += 2; // Text-Werte geben mehr Punkte
-                    } else {
-                        $score += 1; // Zahlen geben weniger Punkte
-                    }
-                    
-                    // Bonus für typische Header-Wörter
-                    $valueLower = mb_strtolower($value);
-                    $headerKeywords = ['name', 'firma', 'adresse', 'straße', 'plz', 'ort', 'telefon', 'email', 
-                                      'url', 'umsatz', 'mitarbeiter', 'ust', 'vat', 'kategorie', 'branche',
-                                      'anrede', 'vorname', 'nachname', 'gf', 'geschäftsführer'];
-                    foreach ($headerKeywords as $keyword) {
-                        if (strpos($valueLower, $keyword) !== false) {
-                            $score += 5; // Großer Bonus für Header-Keywords
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if ($score > $maxScore) {
-                $maxScore = $score;
-                $headerRow = $row;
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestRow = $i + 1; // 1-based
             }
         }
         
-        return $headerRow;
+        return $bestRow;
+    }
+    
+    /**
+     * Bewertet Zeile als Header-Kandidat
+     * 
+     * @param array $row Array von Zellwerten
+     * @param array $knownHeaderTokens [normalized_header => true]
+     * @return float Score
+     */
+    private function scoreHeaderRow(array $row, array $knownHeaderTokens): float
+    {
+        $cells = array_map('strval', $row);
+        
+        $nonEmpty = 0;
+        $texty = 0;
+        $numeric = 0;
+        $unique = [];
+        $tokenHits = 0;
+        
+        foreach ($cells as $cell) {
+            $cell = trim($cell);
+            if ($cell === '' || $cell === '-' || $cell === '—') {
+                continue;
+            }
+            
+            $nonEmpty++;
+            $unique[mb_strtolower($cell)] = true;
+            
+            // Prüfe ob numerisch
+            if (preg_match('/^\d+([.,]\d+)?$/', $cell)) {
+                $numeric++;
+            } else {
+                $texty++;
+            }
+            
+            // Prüfe gegen bekannte Header-Tokens
+            $normalized = $this->normalizeHeaderForDetection($cell);
+            if ($normalized !== '' && isset($knownHeaderTokens[$normalized])) {
+                $tokenHits++;
+            }
+        }
+        
+        if ($nonEmpty === 0) {
+            return -INF;
+        }
+        
+        $uniqRatio = count($unique) / max(1, $nonEmpty);
+        $textRatio = $texty / max(1, ($texty + $numeric));
+        
+        // Gewichte: tokenHits zählt stark, Textanteil gut, viele unique gut
+        return (3.0 * $tokenHits) + (2.0 * $textRatio) + (1.0 * $uniqRatio) + (0.1 * $nonEmpty);
+    }
+    
+    /**
+     * Schätzt Wahrscheinlichkeit, dass Zeile Daten enthält (nicht Header)
+     * 
+     * @param array $row Array von Zellwerten
+     * @return float 0.0-1.0
+     */
+    private function dataLikelihood(array $row): float
+    {
+        $cells = array_map('strval', $row);
+        $nonEmpty = 0;
+        $numeric = 0;
+        
+        foreach ($cells as $cell) {
+            $cell = trim($cell);
+            if ($cell === '' || $cell === '-' || $cell === '—') {
+                continue;
+            }
+            $nonEmpty++;
+            if (preg_match('/^\d+([.,]\d+)?$/', $cell)) {
+                $numeric++;
+            }
+        }
+        
+        if ($nonEmpty === 0) {
+            return 0.0;
+        }
+        
+        return $numeric / $nonEmpty;
+    }
+    
+    /**
+     * Normalisiert Header für Detection (vereinfachte Version)
+     * 
+     * @param string $header
+     * @return string
+     */
+    private function normalizeHeaderForDetection(string $header): string
+    {
+        $h = trim(mb_strtolower($header));
+        $h = str_replace(['ä', 'ö', 'ü', 'ß'], ['ae', 'oe', 'ue', 'ss'], $h);
+        $h = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $h);
+        $h = preg_replace('/\s+/', ' ', $h);
+        return trim($h);
     }
     
     /**
