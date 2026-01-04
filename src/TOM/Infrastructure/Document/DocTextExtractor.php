@@ -259,3 +259,5 @@ class DocTextExtractor
         return $metadata;
     }
 }
+
+

@@ -125,3 +125,4 @@ CREATE TABLE industry_alias (
 4. ✅ **Beibehalten**: `effective_data`, `row_fingerprint`, `file_fingerprint`, `failure_reason`, `updated_at` (sind besser als Vorschlag)
 
 **Die Migrationen 048, 049, 050 sind erstellt und bereit zur Ausführung!**
+

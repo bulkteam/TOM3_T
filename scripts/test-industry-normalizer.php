@@ -27,3 +27,4 @@ foreach ($tests as $input => $expected) {
 }
 
 echo "✅ IndustryNormalizer funktioniert!\n";
+

@@ -168,3 +168,5 @@ export class SearchKeyboardNavigationModule {
         this.selectedIndex = -1;
     }
 }
+
+

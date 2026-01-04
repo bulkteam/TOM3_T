@@ -101,3 +101,5 @@ Write-Host "  [OK] Im Monitoring angezeigt werden" -ForegroundColor Green
 Write-Host "  [OK] Auch ohne eingeloggten Benutzer laufen (LogonType ServiceAccount)" -ForegroundColor Green
 Write-Host ""
 Write-Host "Bitte Monitoring-Seite neu laden und prüfen!" -ForegroundColor Yellow
+
+

@@ -14,3 +14,5 @@ CREATE TABLE IF NOT EXISTS duplicate_check_results (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE duplicate_check_results COMMENT = 'Ergebnisse der täglichen Duplikaten-Prüfung';
+
+

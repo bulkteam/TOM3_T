@@ -42,3 +42,4 @@ echo "Mit Level 2: " . $stats['has_level2'] . "\n";
 echo "Mit Level 3: " . $stats['has_level3'] . "\n";
 
 echo "\n✓ Migration erfolgreich!\n";
+

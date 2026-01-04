@@ -394,3 +394,5 @@ Nach dem Portieren auf ein neues System:
 7. ✅ **Backups:** Einrichten
 
 **Bei Problemen:** Siehe Abschnitt 4 (Notfall-Prozedur) und verfügbare Scripts.
+
+

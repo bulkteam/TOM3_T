@@ -53,3 +53,4 @@ if (!empty($withoutCode)) {
         echo "  - " . $industry['name'] . "\n";
     }
 }
+

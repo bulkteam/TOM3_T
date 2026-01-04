@@ -41,3 +41,4 @@ WHERE industry_sub_uuid IS NOT NULL;
 -- ============================================================================
 -- Die Spalten industry_main_uuid und industry_sub_uuid werden in einer
 -- späteren Migration entfernt, sobald alle Services/UI angepasst sind.
+

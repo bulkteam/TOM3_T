@@ -8,3 +8,4 @@ ALTER TABLE org_import_staging
 ADD COLUMN industry_resolution JSON NULL 
 COMMENT 'Vorschläge + bestätigte Branchen-Entscheidung pro Zeile (excel, suggestions, decision)'
 AFTER mapped_data;
+

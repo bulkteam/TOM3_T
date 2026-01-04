@@ -31,3 +31,5 @@ WshShell.Run """" & phpExe & """ """ & workerScript & """", 0, False
 
 ' Exit-Code wird nicht zurückgegeben (VBScript-Limitierung)
 ' Aber das Script läuft unsichtbar im Hintergrund
+
+

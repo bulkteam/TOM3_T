@@ -29,3 +29,4 @@ if (!empty($analysis['sample_rows'])) {
         }
     }
 }
+

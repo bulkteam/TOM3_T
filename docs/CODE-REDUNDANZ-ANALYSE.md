@@ -130,3 +130,5 @@ private function getCurrentUserId(): string
 - Frontend-Code ändert sich häufiger
 - Unterschiedliche Anforderungen pro Entität
 - Wartbarkeit wichtiger als DRY im Frontend
+
+

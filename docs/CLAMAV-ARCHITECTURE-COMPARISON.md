@@ -96,3 +96,5 @@ Upload → Storage → Scan (async) → Status-Update
 - Quarantäne-Logik (wenn höhere Sicherheit gewünscht)
 - Sofort-Scan für kleine Dateien (< 5MB)
 - Admin-Benachrichtigung bei Infected
+
+

@@ -90,3 +90,4 @@ CREATE TABLE employment_import_staging (
 CREATE INDEX idx_employment_staging_batch ON employment_import_staging(import_batch_uuid);
 CREATE INDEX idx_employment_staging_org ON employment_import_staging(org_staging_uuid, org_uuid);
 CREATE INDEX idx_employment_staging_person ON employment_import_staging(person_staging_uuid, person_uuid);
+

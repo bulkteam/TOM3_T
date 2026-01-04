@@ -186,3 +186,5 @@ schtasks /run /tn "TOM3-ClamAV-Scan-Worker"
 ```powershell
 Get-Content logs\scan-blob-worker.log -Tail 50
 ```
+
+

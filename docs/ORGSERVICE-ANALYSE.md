@@ -213,3 +213,5 @@ src/TOM/Service/
 - Klare Verantwortlichkeiten
 - Parallele Entwicklung möglich
 - Einfacher zu testen und warten
+
+

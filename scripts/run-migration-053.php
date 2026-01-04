@@ -174,3 +174,4 @@ if (empty($duplicates)) {
 }
 
 echo "\n=== Migration abgeschlossen ===\n";
+

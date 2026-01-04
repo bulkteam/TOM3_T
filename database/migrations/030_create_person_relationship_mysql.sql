@@ -61,3 +61,5 @@ CREATE TABLE IF NOT EXISTS person_relationship (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE person_relationship COMMENT = 'Person-zu-Person Beziehungen: kennt, freundlich, berät, etc.';
+
+

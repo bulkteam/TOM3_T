@@ -23,3 +23,5 @@ ADD INDEX idx_person_audit_activity_log (activity_log_id);
 -- ALTER TABLE person_audit_trail 
 -- ADD CONSTRAINT fk_person_audit_activity_log 
 -- FOREIGN KEY (activity_log_id) REFERENCES activity_log(activity_id) ON DELETE SET NULL;
+
+

@@ -83,3 +83,4 @@ php scripts/run-migration-045.php
 3. **Mapping-Templates:** Noch nicht implementiert (Speichern/Laden).
 4. **Telefon-Vorwahl-Validierung:** TODO in `ImportValidationService`.
 5. **Production Import:** Noch nicht implementiert (zeilenweise Transaktionen).
+

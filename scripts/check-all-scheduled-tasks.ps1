@@ -163,3 +163,5 @@ if ($missingTasks.Count -gt 0 -or $errorTasks.Count -gt 0) {
 } else {
     exit 0
 }
+
+

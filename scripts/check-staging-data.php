@@ -128,3 +128,4 @@ try {
 }
 
 echo "\n=== Prüfung abgeschlossen ===\n";
+

@@ -325,3 +325,5 @@ ports:
 **✅ Automatische Updates:**
 - FreshClam läuft automatisch im Container
 - Keine zusätzliche Konfiguration nötig
+
+

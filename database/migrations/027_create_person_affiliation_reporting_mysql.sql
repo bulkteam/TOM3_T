@@ -35,3 +35,5 @@ CREATE TABLE IF NOT EXISTS person_affiliation_reporting (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE person_affiliation_reporting COMMENT = 'Reporting-Lines: Vorgesetzte & Mitarbeiter (hängt an Affiliations)';
+
+

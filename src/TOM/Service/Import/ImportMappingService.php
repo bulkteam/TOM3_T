@@ -349,3 +349,4 @@ class ImportMappingService
         return 1.0 - ($distance / $maxLen);
     }
 }
+

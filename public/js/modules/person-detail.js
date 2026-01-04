@@ -263,3 +263,5 @@ export class PersonDetailModule extends EntityDetailBaseModule {
     }
     
 }
+
+

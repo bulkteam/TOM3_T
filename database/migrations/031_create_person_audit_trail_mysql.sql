@@ -24,3 +24,5 @@ CREATE TABLE IF NOT EXISTS person_audit_trail (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE person_audit_trail COMMENT = 'Audit-Trail für Personenänderungen';
+
+

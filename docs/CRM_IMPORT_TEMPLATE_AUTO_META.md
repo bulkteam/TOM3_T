@@ -177,3 +177,5 @@ if ($importType === 'ORG_ONLY') {
 ✅ **Implementierung:**
 - `ImportTemplateService::buildTemplateMatchMeta()` generiert Metadaten
 - Wird automatisch beim `createTemplate()` und `updateTemplate()` aufgerufen
+
+

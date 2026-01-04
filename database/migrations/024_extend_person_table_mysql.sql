@@ -79,3 +79,5 @@ CREATE INDEX idx_person_is_active ON person(is_active);
 
 -- Hinweis: Falls bereits Daten vorhanden sind, müssen Duplikate zuerst entfernt werden
 -- ALTER TABLE person ADD UNIQUE KEY uq_person_email (email);
+
+

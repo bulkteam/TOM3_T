@@ -250,3 +250,5 @@ person_audit_trail (entity-spezifisch, wie bisher)
 - ❌ Alles in eine Tabelle (Performance-Problem)
 - ❌ Audit-Trail komplett ersetzen (verliert Detailtiefe)
 - ❌ Keine Retention-Policy (Tabellen werden zu groß)
+
+

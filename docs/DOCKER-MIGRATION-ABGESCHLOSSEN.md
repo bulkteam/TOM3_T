@@ -147,3 +147,5 @@ Oder über Services.msc:
 ---
 
 *Migration abgeschlossen - TOM3 läuft vollständig auf Docker MariaDB*
+
+

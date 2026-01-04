@@ -76,3 +76,5 @@ export class SearchInputModule {
         this._timeouts.clear();
     }
 }
+
+

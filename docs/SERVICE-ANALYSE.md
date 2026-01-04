@@ -138,3 +138,5 @@ UserService.php                  (~370 Zeilen) - Kern-CRUD + Helper
 - UserService: ~320 Zeilen (Kern-CRUD)
 - UserRoleService: ~200 Zeilen (Rollen-Management)
 - UserPermissionService: ~50 Zeilen (Permission-Prüfungen)
+
+

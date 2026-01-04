@@ -37,3 +37,5 @@ if (empty($docs)) {
     echo "\n💡 Tipp: Diese Jobs können neu erstellt werden mit:\n";
     echo "   php scripts/create-missing-extraction-jobs.php\n";
 }
+
+

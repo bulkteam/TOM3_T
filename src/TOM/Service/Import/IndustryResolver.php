@@ -340,3 +340,4 @@ final class IndustryResolver
         return $result['parent_industry_uuid'] ?? null;
     }
 }
+

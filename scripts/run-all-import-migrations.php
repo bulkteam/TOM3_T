@@ -39,3 +39,4 @@ foreach ($migrations as $num => $name) {
 echo "========================================\n";
 echo "✅ All migrations completed!\n";
 echo "========================================\n";
+

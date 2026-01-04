@@ -201,3 +201,5 @@ $stats = $archiveService->getStatistics();
 ### Ohne Archivierung:
 - **Nach 5 Jahren:** ~1.800.000 Einträge = ~900 MB
 - **Query-Performance:** < 100ms (mit Indizes)
+
+

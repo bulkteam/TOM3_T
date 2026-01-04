@@ -553,3 +553,5 @@ function handleUploadVersion(DocumentService $service, ?string $groupUuid, ?int 
         handleApiException($e, 'Version upload failed');
     }
 }
+
+

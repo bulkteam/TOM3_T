@@ -92,3 +92,4 @@ if (empty($duplicates)) {
 }
 
 echo "\n=== Prüfung abgeschlossen ===\n";
+

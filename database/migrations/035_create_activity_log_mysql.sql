@@ -34,3 +34,5 @@ COMMENT='Zentrales Activity-Log für alle User-Aktionen';
 --     PARTITION p202402 VALUES LESS THAN (202403),
 --     -- Weitere Partitionen werden automatisch erstellt
 -- );
+
+

@@ -43,3 +43,5 @@ echo === Fertig ===
 echo.
 echo MySQL kann jetzt gestartet werden!
 echo.
+
+

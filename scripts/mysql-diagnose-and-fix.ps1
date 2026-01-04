@@ -295,3 +295,5 @@ Write-Host "  1. Prüfe MySQL-Logs: $errorLog" -ForegroundColor White
 Write-Host "  2. Prüfe XAMPP Control Panel" -ForegroundColor White
 Write-Host "  3. Bei Port-Konflikten: Beende andere MySQL-Instanzen" -ForegroundColor White
 Write-Host "  4. Bei Berechtigungsfehlern: Führe als Administrator aus" -ForegroundColor White
+
+

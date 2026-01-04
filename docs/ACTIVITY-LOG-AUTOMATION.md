@@ -318,3 +318,5 @@ php scripts/partition-activity-log.php
 # Einmaliger Cron-Job für alle Wartungsaufgaben
 0 2 1 * * cd /path/to/TOM3 && php scripts/jobs/activity-log-maintenance.php
 ```
+
+

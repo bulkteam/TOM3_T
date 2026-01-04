@@ -217,3 +217,5 @@ class TextFileExtractor
         return $metadata;
     }
 }
+
+

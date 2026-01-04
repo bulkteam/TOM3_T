@@ -80,3 +80,5 @@ foreach ($logFile in $logFiles) {
 
 Write-Host ""
 Write-Host "✅ Log-Rotation abgeschlossen" -ForegroundColor Green
+
+

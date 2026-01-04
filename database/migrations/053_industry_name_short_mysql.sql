@@ -137,3 +137,4 @@ WHERE i1.code = 'C28'
 -- Für MySQL/MariaDB (ohne WHERE):
 -- Erstelle Index nur wenn sicher, dass keine Duplikate mehr existieren
 -- CREATE UNIQUE INDEX uq_industry_parent_code ON industry(parent_industry_uuid, code);
+

@@ -182,3 +182,5 @@ async checkDuplicate() {
 - ✅ Personen: E-Mail-UNIQUE Constraint aktivieren + Service-Prüfung
 - ⚠️ Personen: Optional Name-Prüfung (als Warnung)
 - ⚠️ Organisationen: Service-Prüfung mit Warnung (nicht blockierend)
+
+

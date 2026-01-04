@@ -392,3 +392,4 @@ Diese exakten Strukturen sollten 1:1 übernommen werden, da sie:
 4. ✅ Alle Edge-Cases abdecken
 
 **Empfehlung:** Starte mit Phase 1 (kritische Fixes) und verwende diese exakten Strukturen als Vorlage.
+

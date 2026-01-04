@@ -235,3 +235,5 @@ GROUP BY scan_status;
 
 **Status:** MVP abgeschlossen ✅  
 **Production:** Siehe `docs/DOCUMENT-SECURITY-ROADMAP.md` 🎯
+
+

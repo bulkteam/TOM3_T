@@ -162,3 +162,5 @@ CREATE TABLE document_audit_trail (
 --     FOREIGN KEY (document_uuid) REFERENCES documents(document_uuid) ON DELETE CASCADE,
 --     FOREIGN KEY (blob_uuid) REFERENCES blobs(blob_uuid) ON DELETE RESTRICT
 -- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+

@@ -333,3 +333,5 @@ Register-ScheduledTask -TaskName "TOM3-ClamAV-Update-Check" -Action $action -Tri
 - **Docker-Lösung** nutzen (einfachste Wartung)
 - Monitoring-Script einrichten
 - Bei Problemen: Manuelles Update als Fallback
+
+

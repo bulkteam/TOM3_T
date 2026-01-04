@@ -525,3 +525,5 @@ $importType = 'ORG_ONLY'; // TODO: Aus Request oder Config
 3. **Personen-Import** - Vollständige Implementierung
 4. **Weitere Validierungen** - Vorwahl, Geodaten
 5. **Performance** - Batch-Processing für große Imports
+
+

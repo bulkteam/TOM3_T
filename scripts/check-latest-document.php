@@ -50,3 +50,5 @@ if ($doc) {
 } else {
     echo "Kein aktives Dokument gefunden\n";
 }
+
+

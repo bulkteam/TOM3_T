@@ -89,3 +89,5 @@ try {
 
 Write-Host ""
 Write-Host "=== Setup abgeschlossen ===" -ForegroundColor Green
+
+

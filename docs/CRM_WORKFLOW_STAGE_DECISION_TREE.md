@@ -207,3 +207,4 @@ OrgService::createOrg($data)
 - Keine unnötigen Workflows für bereits qualifizierte Orgs
 - Vollständige Historie (Stage History)
 - Klare Trennung: `status` (Eingabe) vs. `current_stage` (Workflow-State)
+

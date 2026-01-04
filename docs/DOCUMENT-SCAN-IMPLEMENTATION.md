@@ -146,3 +146,5 @@ Soll ich Option 1 jetzt implementieren?
 - Alert bei Definitionen älter als 48 Stunden
 
 **Weitere Informationen:** Siehe `docs/CLAMAV-UPDATE-MANAGEMENT.md`
+
+

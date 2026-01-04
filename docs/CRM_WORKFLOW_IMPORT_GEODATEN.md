@@ -388,3 +388,4 @@ public function createOrg(array $data, ?string $userId = null): array
 - ✅ Automatisch, keine manuelle Eingabe nötig
 - ✅ Flexibel: Excel-Koordinaten haben Priorität
 - ✅ Keine zusätzliche API nötig (verwendet bestehende PLZ-Lookup-Funktion)
+

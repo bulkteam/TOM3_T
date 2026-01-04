@@ -74,3 +74,5 @@ echo.
 echo MySQL sollte jetzt starten koennen!
 
 pause
+
+

@@ -64,3 +64,5 @@ echo WICHTIG: Nach erfolgreichem Start entferne innodb_force_recovery=1 aus:
 echo   %MYSQL_CONFIG%
 echo.
 pause
+
+

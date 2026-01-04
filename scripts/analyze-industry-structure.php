@@ -62,3 +62,4 @@ echo "Die Unterklassen sollten eigentlich einer Hauptklasse zugeordnet sein:\n";
 echo "  - C10, C20, C21, C28 → sollten unter 'C - Verarbeitendes Gewerbe' sein\n";
 echo "  - H49 → sollte unter 'H - Verkehr und Lagerei' sein\n";
 echo "\nDiese sollten als Subbranchen (parent_industry_uuid gesetzt) gespeichert werden.\n";
+

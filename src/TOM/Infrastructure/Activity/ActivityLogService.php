@@ -443,3 +443,5 @@ class ActivityLogService
         return (int)($result['total'] ?? 0);
     }
 }
+
+

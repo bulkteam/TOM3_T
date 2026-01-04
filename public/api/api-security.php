@@ -163,3 +163,5 @@ function sendErrorResponse(Exception $e, bool $includeTrace = false): void
     echo json_encode($error);
     exit;
 }
+
+

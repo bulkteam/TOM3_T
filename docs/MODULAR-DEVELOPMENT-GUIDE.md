@@ -491,3 +491,5 @@ Wenn 2+ Fragen mit "Nein" beantwortet werden → Neue Datei erstellen!
 *Nächste Überprüfung: Nach jedem größeren Feature*
 
 
+
+

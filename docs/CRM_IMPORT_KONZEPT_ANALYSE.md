@@ -197,3 +197,4 @@ Soll ich mit **Phase 1** starten?
 2. Anpassung von `importToStaging` 
 3. API-Endpoint für Industry-Entscheidungen
 4. Frontend-Anpassung zum Speichern
+

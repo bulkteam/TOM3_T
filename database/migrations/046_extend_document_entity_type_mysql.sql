@@ -12,3 +12,4 @@ MODIFY COLUMN entity_type ENUM(
     'email_thread',
     'import_batch'
 ) NOT NULL;
+

@@ -42,3 +42,5 @@ if (count($deleted) > 0) {
 } else {
     echo "Keine gelöschten Dokumente gefunden.\n";
 }
+
+

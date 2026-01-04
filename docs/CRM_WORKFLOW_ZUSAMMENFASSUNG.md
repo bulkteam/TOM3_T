@@ -102,3 +102,4 @@ Das vorgeschlagene CRM-Workflow-Konzept passt **sehr gut** zu TOM. Die meisten K
 ---
 
 **Fazit:** Gute Passung. Hauptaufgabe = Integration in bestehende Strukturen + Ergänzung fehlender Komponenten.
+

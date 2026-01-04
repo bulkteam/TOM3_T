@@ -156,3 +156,5 @@ echo   1. Pruefe MySQL-Logs: %ERROR_LOG%
 echo   2. Pruefe XAMPP Control Panel
 echo   3. Bei Port-Konflikten: Beende andere MySQL-Instanzen
 echo   4. Bei Berechtigungsfehlern: Fuehre als Administrator aus
+
+

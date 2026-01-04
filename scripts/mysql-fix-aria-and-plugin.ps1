@@ -152,3 +152,5 @@ Write-Host "  1. Starte MySQL über XAMPP Control Panel" -ForegroundColor White
 Write-Host "  2. Oder führe aus: scripts\ensure-mysql-running.bat" -ForegroundColor White
 Write-Host ""
 Write-Host "MySQL sollte jetzt starten können!" -ForegroundColor Green
+
+

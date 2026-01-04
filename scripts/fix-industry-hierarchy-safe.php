@@ -233,3 +233,4 @@ if ($remaining == 0) {
 } else {
     echo "⚠️  Es verbleiben noch $remaining falsch gespeicherte Unterklassen.\n";
 }
+

@@ -282,3 +282,5 @@
 - `docs/CLAMAV-DOCKER-INTEGRATION.md` - Docker-Setup
 - `docs/CLAMAV-UPDATE-MANAGEMENT.md` - Update-Verwaltung
 - `docs/DOCUMENT-SCAN-IMPLEMENTATION.md` - Aufwandsschätzung
+
+

@@ -359,3 +359,4 @@ final class IndustryDecisionService
         }
     }
 }
+

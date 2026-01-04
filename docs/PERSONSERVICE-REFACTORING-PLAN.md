@@ -116,3 +116,5 @@ class PersonService extends BaseEntityService
 - Konsistente Architektur mit OrgService
 - Parallele Entwicklung möglich
 - Einfacher zu testen und warten
+
+

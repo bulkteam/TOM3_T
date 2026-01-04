@@ -130,3 +130,4 @@
 - ❌ Finaler Import (noch nicht)
 
 **Bereit zum Testen:** Upload + Analyse + Mapping-Konfiguration
+

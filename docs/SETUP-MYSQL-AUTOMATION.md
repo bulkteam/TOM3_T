@@ -124,3 +124,5 @@ Copy-Item C:\xampp\mysql\data\my.ini.backup C:\xampp\mysql\data\my.ini -Force
 - Prüfe ob Backup-Verzeichnis existiert: `C:\xampp\mysql\backup\`
 
 
+
+

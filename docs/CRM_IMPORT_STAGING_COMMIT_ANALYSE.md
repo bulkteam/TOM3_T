@@ -239,3 +239,4 @@ function handleIndustryDecision($importService, $stagingUuid, $request) {
 ### Phase 4: Code-Uniqueness
 10. ✅ Prüfung: Code-Verwendung in Matching
 11. ✅ Sicherstellen: UI verwendet immer `uuid`, nie `code`
+

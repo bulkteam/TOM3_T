@@ -256,3 +256,5 @@ php -r "echo extension_loaded('zip') ? 'ZIP aktiv' : 'ZIP NICHT aktiv';"
 ---
 
 *Dokument erstellt: 2026-01-02*
+
+

@@ -150,3 +150,5 @@ Get-Content C:\xampp\mysql\data\mysql_error.log -Tail 50
 ✅ **Manuelle Scripts** für erweiterte Fehlerbehebung
 
 Die App sollte jetzt zuverlässiger starten, auch wenn MySQL beim ersten Start Probleme hat!
+
+

@@ -22,3 +22,4 @@ if ($row) {
 } else {
     echo "Row NICHT gefunden\n";
 }
+

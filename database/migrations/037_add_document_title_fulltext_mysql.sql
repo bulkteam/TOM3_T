@@ -6,3 +6,5 @@
 
 ALTER TABLE documents
     ADD FULLTEXT KEY idx_title (title) COMMENT 'Für Titel-Suche';
+
+

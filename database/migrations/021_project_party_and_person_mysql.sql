@@ -101,3 +101,5 @@ ALTER TABLE project_person
 -- ============================================================================
 ALTER TABLE project_party COMMENT = 'Projektparteien: Firmen mit Rollen in Projekten';
 ALTER TABLE project_person COMMENT = 'Projektpersonen: Personen mit expliziter Zuordnung zu Projektparteien';
+
+

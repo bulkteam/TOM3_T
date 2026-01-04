@@ -118,3 +118,4 @@ if (empty($farben)) {
 }
 
 echo "\n=== Prüfung abgeschlossen ===\n";
+

@@ -974,3 +974,5 @@ POST   /api/documents/{uuid}/versions
 ---
 
 *Konzept erstellt: 2026-01-01*
+
+

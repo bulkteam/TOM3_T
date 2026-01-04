@@ -41,3 +41,5 @@ DROP TABLE IF EXISTS project_stakeholder;
 -- Und folgende Tabellen sollten NICHT mehr existieren:
 -- - project_partner (alt, gelöscht)
 -- - project_stakeholder (alt, gelöscht)
+
+

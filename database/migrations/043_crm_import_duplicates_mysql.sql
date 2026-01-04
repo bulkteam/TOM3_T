@@ -34,3 +34,4 @@ CREATE INDEX idx_duplicate_staging ON import_duplicate_candidates(staging_uuid);
 CREATE INDEX idx_duplicate_org ON import_duplicate_candidates(candidate_org_uuid);
 CREATE INDEX idx_duplicate_decision ON import_duplicate_candidates(decision);
 CREATE INDEX idx_duplicate_score ON import_duplicate_candidates(match_score);
+

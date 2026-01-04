@@ -16,3 +16,5 @@ if ($event) {
 } else {
     echo "Keine unverarbeiteten Events gefunden\n";
 }
+
+

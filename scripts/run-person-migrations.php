@@ -127,3 +127,5 @@ if ($errorCount > 0) {
 }
 
 echo "\n✓ Alle Migrationen erfolgreich ausgeführt!\n";
+
+

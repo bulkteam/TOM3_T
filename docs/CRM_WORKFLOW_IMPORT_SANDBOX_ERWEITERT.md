@@ -914,3 +914,4 @@ CREATE TABLE validation_rule_set (
 8. ✅ **Qualify-Workflow nach Import** - CRM-Integration
 9. ✅ **Personen-Import separate Tabellen** - Flexibilität
 10. ✅ **UI: Diff, Bulk Actions, Queue** - Benutzerfreundlichkeit
+

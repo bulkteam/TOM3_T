@@ -124,3 +124,5 @@ Get-ScheduledTask -TaskName "TOM3-ClamAV-Scan-Worker" | Get-ScheduledTaskInfo
 - ⏳ Kürzeres Worker-Intervall (1-2 Minuten)
 - ⏳ Sofort-Scan für kleine Dateien
 - ⏳ Monitoring & Alerting
+
+

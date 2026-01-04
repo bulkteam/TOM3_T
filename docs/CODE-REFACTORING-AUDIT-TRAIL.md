@@ -146,3 +146,5 @@ Wird bereits zentral über `UuidHelper` gemacht ✅
 **Priorität 1**: Audit-Trail zentralisieren (größte Redundanz)
 **Priorität 2**: Field Value Resolver zentralisieren
 **Priorität 3**: Soft-Delete Pattern als Trait
+
+

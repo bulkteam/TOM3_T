@@ -188,3 +188,4 @@ if (!$dryRun && !$hasReferences) {
 }
 
 echo "\n=== Bereinigung abgeschlossen ===\n";
+

@@ -156,3 +156,5 @@ foreach ($alternatives as $type => $altUri) {
 }
 
 echo "\n";
+
+

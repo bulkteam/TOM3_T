@@ -42,3 +42,5 @@ CREATE TABLE IF NOT EXISTS person_org_role (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE person_org_role COMMENT = 'Mandate/Organfunktionen: Geschäftsführer, Vorstand, Prokura, etc.';
+
+

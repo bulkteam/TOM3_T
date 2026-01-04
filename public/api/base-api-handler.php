@@ -146,3 +146,4 @@ function handleApiException(\Throwable $e, string $context = 'API request'): voi
     
     jsonResponse($error, 500);
 }
+

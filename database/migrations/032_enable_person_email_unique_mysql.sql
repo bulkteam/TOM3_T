@@ -22,3 +22,5 @@ ADD UNIQUE KEY uq_person_email (email);
 -- ============================================================================
 -- Schritt 3: Index auf E-Mail bleibt erhalten (wird automatisch durch UNIQUE KEY erstellt)
 -- ============================================================================
+
+

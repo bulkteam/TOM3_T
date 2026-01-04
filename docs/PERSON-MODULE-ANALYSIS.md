@@ -965,3 +965,5 @@ ALTER TABLE person_affiliation
 ---
 
 *Analyse erstellt: 2025-12-31*
+
+

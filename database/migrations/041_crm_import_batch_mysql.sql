@@ -56,3 +56,4 @@ CREATE INDEX idx_import_batch_status ON org_import_batch(status);
 CREATE INDEX idx_import_batch_user ON org_import_batch(uploaded_by_user_id);
 CREATE INDEX idx_import_batch_file_hash ON org_import_batch(file_hash);
 CREATE INDEX idx_import_batch_created ON org_import_batch(created_at);
+

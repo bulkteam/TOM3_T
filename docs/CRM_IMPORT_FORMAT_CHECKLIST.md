@@ -160,3 +160,5 @@ private function findColumnByHeader(string $header, array $mappingConfig): ?stri
 - Sheet-Auswahl: Nur wenn Excel-Dateien mit mehreren Sheets importiert werden
 - Header-Aliases: Nur wenn ähnliche Excel-Formate häufig vorkommen
 - `findColumnByHeader()`: Nur wenn Header-Name statt Spalte verwendet wird
+
+

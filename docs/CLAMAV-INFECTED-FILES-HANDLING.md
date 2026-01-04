@@ -218,3 +218,5 @@ if ($document['scan_status'] !== 'clean') {
 - ⏳ Quarantäne-System
 - ⏳ Automatische Löschung
 - ⏳ Admin-Benachrichtigung
+
+

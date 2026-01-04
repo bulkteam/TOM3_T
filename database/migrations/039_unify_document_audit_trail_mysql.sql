@@ -99,3 +99,5 @@ WHERE document_uuid IS NOT NULL;
 -- ============================================================================
 -- Hinweis: Backup-Tabelle kann nach erfolgreicher Migration manuell gelöscht werden
 -- ============================================================================
+
+

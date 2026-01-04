@@ -18,3 +18,5 @@ cd /d "%~dp0"
 powershell -ExecutionPolicy Bypass -File "%~dp0mysql-health-check.ps1" %*
 
 pause
+
+

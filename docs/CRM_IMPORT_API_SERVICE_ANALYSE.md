@@ -347,3 +347,4 @@ ImportCommitService (Finaler Import)
 6. ⚠️ **Repositories** - Können später kommen (optional für MVP)
 
 **Empfehlung:** Starte mit Phase 1 (IndustryDecisionService + API-Endpoints). Das löst die kritischsten Probleme.
+

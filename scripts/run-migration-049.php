@@ -73,3 +73,4 @@ try {
     echo "   Datei: " . $e->getFile() . ":" . $e->getLine() . "\n";
     exit(1);
 }
+

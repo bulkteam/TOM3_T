@@ -10,3 +10,5 @@ php scripts\sync-neo4j-worker.php --quiet >nul 2>nul
 
 REM Exit-Code weitergeben
 exit /b %ERRORLEVEL%
+
+

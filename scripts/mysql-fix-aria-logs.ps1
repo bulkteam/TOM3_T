@@ -44,3 +44,5 @@ Write-Host "=== Fertig ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "MySQL kann jetzt gestartet werden!" -ForegroundColor Green
 Write-Host ""
+
+

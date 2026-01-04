@@ -47,3 +47,5 @@ try {
     echo "✗ Ein unerwarteter Fehler ist aufgetreten: " . $e->getMessage() . "\n";
     exit(1);
 }
+
+

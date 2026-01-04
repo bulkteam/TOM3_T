@@ -86,3 +86,5 @@ if (strpos($task, 'TOM3-ClamAV-Scan-Worker') !== false) {
     echo "WARNUNG: Task 'TOM3-ClamAV-Scan-Worker' nicht gefunden!\n";
     echo "Bitte einrichten mit: powershell -ExecutionPolicy Bypass -File scripts\\setup-clamav-scan-worker.ps1\n";
 }
+
+

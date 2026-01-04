@@ -97,3 +97,5 @@ try {
     Write-Host "FEHLER beim Erstellen des Tasks: $_" -ForegroundColor Red
     exit 1
 }
+
+

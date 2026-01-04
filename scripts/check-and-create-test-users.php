@@ -71,3 +71,5 @@ try {
     echo "✗ Fehler: " . $e->getMessage() . "\n";
     exit(1);
 }
+
+

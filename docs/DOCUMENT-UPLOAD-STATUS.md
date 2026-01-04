@@ -146,3 +146,5 @@
 
 *Status erstellt: 2026-01-01*  
 *Aktualisiert: 2026-01-02 (Text-Extraktion implementiert)*
+
+

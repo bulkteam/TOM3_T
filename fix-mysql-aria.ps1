@@ -69,3 +69,5 @@ Write-Host "   - Verify MySQL data directory permissions" -ForegroundColor Yello
 Write-Host "   - Consider backing up and recreating the database" -ForegroundColor Yellow
 
 
+
+

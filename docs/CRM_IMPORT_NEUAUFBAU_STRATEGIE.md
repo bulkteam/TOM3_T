@@ -347,3 +347,4 @@ php scripts/run-migration-050.php
 - Phase 3: APIs neu schreiben
 - Phase 4: Frontend neu schreiben
 - Phase 5: Alten Code entfernen
+

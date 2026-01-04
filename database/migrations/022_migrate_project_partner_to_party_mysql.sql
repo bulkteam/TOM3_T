@@ -156,3 +156,5 @@ WHERE NOT EXISTS (
 --     (SELECT COUNT(*) FROM project_party) as new_parties,
 --     (SELECT COUNT(*) FROM project_stakeholder) as old_stakeholders,
 --     (SELECT COUNT(*) FROM project_person) as new_persons;
+
+

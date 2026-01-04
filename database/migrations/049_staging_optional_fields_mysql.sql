@@ -25,3 +25,4 @@ ADD COLUMN commit_log JSON NULL
 
 -- Index für duplicate_status
 CREATE INDEX idx_staging_duplicate_status ON org_import_staging(duplicate_status);
+

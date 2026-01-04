@@ -64,3 +64,5 @@ foreach ($documents as $doc) {
 
 echo "\n✅ $created von $count Jobs erfolgreich erstellt.\n";
 echo "\nDer Worker wird diese Jobs beim nächsten Lauf (spätestens in 5 Minuten) verarbeiten.\n";
+
+

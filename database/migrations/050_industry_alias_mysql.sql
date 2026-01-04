@@ -19,3 +19,4 @@ CREATE TABLE industry_alias (
   INDEX idx_alias_level (level)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Alias-Learning: System lernt aus Bestätigungen (z.B. "Chemieindustrie" → C20)';
+

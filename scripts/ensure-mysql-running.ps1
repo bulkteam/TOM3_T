@@ -235,3 +235,5 @@ Write-Error-Info "  1. MySQL-Logs: $errorLog"
 Write-Error-Info "  2. Port 3306 ist nicht blockiert"
 Write-Error-Info "  3. MySQL-Konfiguration ist korrekt"
 exit 1
+
+

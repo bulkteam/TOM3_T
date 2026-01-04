@@ -380,3 +380,4 @@ class TaskService {
 ---
 
 **Fazit:** Das CRM-Konzept passt sehr gut zu TOM. Hauptaufgabe ist Integration in bestehende Strukturen (`case_item`, `task`) + Ergänzung um fehlende Komponenten (`activity`, `org_stage`, Workflow Templates).
+

@@ -33,3 +33,5 @@ ADD COLUMN location_type VARCHAR(50) COMMENT 'Optional: HQ | Branch | Subsidiary
 
 
 
+
+

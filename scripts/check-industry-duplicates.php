@@ -174,3 +174,4 @@ if (empty($inconsistent)) {
 }
 
 echo "\n=== Prüfung abgeschlossen ===\n";
+

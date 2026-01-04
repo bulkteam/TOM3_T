@@ -230,3 +230,5 @@ try {
     http_response_code(500);
     die('Error: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
 }
+
+

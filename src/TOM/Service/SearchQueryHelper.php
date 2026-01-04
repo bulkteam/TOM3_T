@@ -94,3 +94,5 @@ class SearchQueryHelper
         return "ORDER BY CASE " . implode(' ', $cases) . " ELSE $priority END, $fallbackOrder";
     }
 }
+
+

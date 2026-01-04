@@ -209,3 +209,4 @@ person_affiliation erstellen
 3. ⚠️ Mapping-Service erweitern (GF-Nummer erkennen)
 4. ⚠️ Review-UI erweitern (Personen anzeigen)
 5. ⚠️ Finaler Import (Personen + Employment)
+

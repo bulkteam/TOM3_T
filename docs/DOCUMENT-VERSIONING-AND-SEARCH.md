@@ -263,3 +263,5 @@ SELECT MAX(version_number) FROM documents WHERE version_group_uuid=? FOR UPDATE;
 
 *Dokument erstellt: 2026-01-01*  
 *Aktualisiert: 2026-01-02 (Text-Extraktion implementiert)*
+
+

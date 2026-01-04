@@ -168,3 +168,5 @@ php scripts/run-migration-052.php
 - Deutlich weniger manuelle Arbeit bei wiederkehrenden Formaten
 - System wird mit der Zeit "intelligenter" (durch Aliases)
 - Nachvollziehbarkeit durch Metadaten
+
+

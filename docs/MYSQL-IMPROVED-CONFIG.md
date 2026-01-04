@@ -161,3 +161,5 @@ default-character-set=utf8mb4
 3. Oder füge es zu XAMPP Startup hinzu
 
 
+
+

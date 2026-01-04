@@ -49,3 +49,5 @@ try {
     Write-Host "FEHLER beim Aktualisieren des Tasks: $_" -ForegroundColor Red
     exit 1
 }
+
+

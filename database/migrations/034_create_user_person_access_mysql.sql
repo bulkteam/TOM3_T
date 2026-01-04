@@ -19,3 +19,5 @@ CREATE TABLE IF NOT EXISTS user_person_access (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE user_person_access COMMENT = 'Tracking von Personenzugriffen (recent, favorite, tags)';
+
+

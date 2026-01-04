@@ -137,3 +137,5 @@ CREATE TABLE document_audit_trail (
 - ✅ Einfacher zu erweitern (neue Entity-Typen)
 - ✅ Konsistente API
 - ✅ Einfacher zu dokumentieren
+
+

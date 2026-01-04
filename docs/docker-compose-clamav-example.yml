@@ -63,3 +63,5 @@ volumes:
   clamav_db:      # ClamAV Virendefinitionen
   clamav_logs:     # ClamAV Logs
   # uploads Volume NICHT nötig, wenn Volume-Mount verwendet wird
+
+

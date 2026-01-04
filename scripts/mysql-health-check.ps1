@@ -369,3 +369,5 @@ Write-Host "  - scripts\mysql-repair-tables.bat"
 Write-Host "  - scripts\mysql-diagnose-and-fix.bat"
 Write-Host ""
 Write-Ok "Health check completed."
+
+

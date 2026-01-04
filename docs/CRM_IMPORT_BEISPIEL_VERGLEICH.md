@@ -395,3 +395,4 @@ $effectiveData = $this->mergeRecursive($mappedData, $corrections);
 - Phase 1: `industry_resolution` + `mapped_data` Strukturierung
 - Phase 2: `raw_data` Original speichern + `effective_data` Merge
 - Phase 3: `commit_log` (optional)
+

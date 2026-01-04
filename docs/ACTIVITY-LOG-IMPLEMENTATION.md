@@ -243,3 +243,5 @@ php scripts/run-migration-035.php
 ```
 
 Die Migration wurde bereits ausgeführt und die Tabelle `activity_log` ist verfügbar.
+
+

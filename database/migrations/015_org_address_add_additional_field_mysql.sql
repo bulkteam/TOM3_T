@@ -6,3 +6,5 @@ ADD COLUMN address_additional VARCHAR(255) NULL COMMENT 'Adresszusatz (z.B. "Geb
 
 
 
+
+

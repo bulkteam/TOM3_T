@@ -175,3 +175,5 @@ Siehe `docs/REFACTORING-ERGEBNISSE-V2.md` für Details.
 *Letzte Aktualisierung: Automatisch generiert*
 
 
+
+

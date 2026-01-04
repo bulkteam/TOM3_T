@@ -84,3 +84,4 @@ if (!empty($indexes)) {
 }
 
 echo "\n=== Prüfung abgeschlossen ===\n";
+

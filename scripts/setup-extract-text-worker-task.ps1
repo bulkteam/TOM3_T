@@ -131,3 +131,5 @@ try {
     Write-Host "Hinweis: Dieses Script muss als Administrator ausgeführt werden!" -ForegroundColor Yellow
     exit 1
 }
+
+

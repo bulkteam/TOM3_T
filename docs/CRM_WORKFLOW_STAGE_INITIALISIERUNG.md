@@ -330,3 +330,4 @@ WHERE current_stage IS NOT NULL;
 **Nachteile:**
 - ⚠️ Zwei Status-Felder (`status` + `current_stage`) - aber unterschiedliche Zwecke
 - ⚠️ Mapping muss konsistent gehalten werden
+

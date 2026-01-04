@@ -309,3 +309,4 @@ $mappingConfig = [
 3. `mapping_config` Struktur erweitern
 4. API-Endpoint für Industry-Entscheidungen
 5. Frontend: Entscheidungen per API speichern
+

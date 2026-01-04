@@ -138,3 +138,5 @@ class UserPermissionService
         return (int)($result['admin_count'] ?? 0) > 0;
     }
 }
+
+

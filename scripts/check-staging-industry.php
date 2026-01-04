@@ -56,3 +56,4 @@ foreach ($rows as $row) {
 }
 
 echo "=== Prüfung abgeschlossen ===\n";
+

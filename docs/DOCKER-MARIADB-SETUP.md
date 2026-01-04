@@ -701,3 +701,5 @@ docker cp mariadb104:/var/lib/mysql/mariadb-slow.log .\logs\
 ---
 
 *Docker-Setup-Anleitung für TOM3*
+
+

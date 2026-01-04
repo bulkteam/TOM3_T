@@ -329,3 +329,5 @@ FROM industry WHERE code = 'N' AND parent_industry_uuid IS NULL LIMIT 1;
 
 
 
+
+

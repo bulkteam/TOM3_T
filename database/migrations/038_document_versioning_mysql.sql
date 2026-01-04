@@ -40,3 +40,5 @@ ALTER TABLE documents
 
 ALTER TABLE documents
     ADD INDEX idx_version_group_number (version_group_uuid, version_number);
+
+

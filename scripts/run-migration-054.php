@@ -282,3 +282,4 @@ try {
 }
 
 echo "\n=== Migration abgeschlossen ===\n";
+

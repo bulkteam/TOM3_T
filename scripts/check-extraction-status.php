@@ -46,3 +46,5 @@ echo "Verarbeitete Extraction-Jobs: " . $result['count'] . "\n";
 if ($result['last_processed']) {
     echo "Letzte Verarbeitung: " . $result['last_processed'] . "\n";
 }
+
+

@@ -50,3 +50,5 @@ $projectRoot = dirname(__DIR__);
 $envFile = $projectRoot . DIRECTORY_SEPARATOR . '.env';
 
 loadEnvFile($envFile);
+
+

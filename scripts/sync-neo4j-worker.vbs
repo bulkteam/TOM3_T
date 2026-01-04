@@ -14,3 +14,5 @@ WshShell.Run """" & batchFile & """", 0, False
 
 ' Exit-Code wird nicht zurückgegeben (VBScript-Limitierung)
 ' Aber das ist ok, da der Task Scheduler den Exit-Code des Batch-Scripts prüft
+
+

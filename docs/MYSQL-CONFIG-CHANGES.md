@@ -134,3 +134,5 @@ Falls MySQL nach den Änderungen nicht startet:
    ```batch
    scripts\mysql-fix-aria-logs.bat
    ```
+
+

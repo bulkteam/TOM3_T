@@ -212,3 +212,5 @@ class FileTypeValidator
         return $extensionMap[$ext] ?? null;
     }
 }
+
+

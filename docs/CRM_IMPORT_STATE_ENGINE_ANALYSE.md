@@ -466,3 +466,4 @@ public function commitBatch(string $batchUuid, string $userId): array
 - Neuer Service `IndustryDecisionService` für State-Management
 - Guards serverseitig implementieren
 - Frontend nutzt API-Endpoints (keine direkte DB-Zugriffe)
+

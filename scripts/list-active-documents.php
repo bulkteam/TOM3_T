@@ -35,3 +35,5 @@ if (count($docs) > 0) {
 } else {
     echo "Keine aktiven Dokumente gefunden.\n";
 }
+
+

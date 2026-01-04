@@ -43,3 +43,5 @@ try {
     echo "❌ FEHLER: " . $e->getMessage() . "\n";
     exit(1);
 }
+
+

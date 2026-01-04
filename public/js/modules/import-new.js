@@ -877,3 +877,4 @@ export class ImportModule {
         Utils.showInfo('Commit wird in Phase 6 implementiert.');
     }
 }
+

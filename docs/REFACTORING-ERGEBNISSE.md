@@ -149,3 +149,5 @@ Nach der Audit-Trail-Zentralisierung wurden weitere Duplikationen identifiziert 
 - ✅ **Query-Parsing** - `SearchQueryHelper`
 
 **Siehe `docs/REFACTORING-ERGEBNISSE-V2.md` für Details aller Zentralisierungen.**
+
+

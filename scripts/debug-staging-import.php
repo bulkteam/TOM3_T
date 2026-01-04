@@ -134,3 +134,4 @@ try {
 }
 
 echo "\n=== Debug abgeschlossen ===\n";
+

@@ -237,3 +237,5 @@ Das würde bedeuten:
 - ✅ UI: Template-Auswahl beim Upload
 
 **Oder erst später, wenn Bedarf besteht?**
+
+

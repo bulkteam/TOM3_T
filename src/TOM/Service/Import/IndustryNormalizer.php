@@ -83,3 +83,4 @@ final class IndustryNormalizer
         return $this->normalize($a) === $this->normalize($b);
     }
 }
+

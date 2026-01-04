@@ -184,3 +184,4 @@ Dann müsst ihr bei ähnlichen Dateien nicht mal ein neues Template anlegen.
 - Header-Aliases für bessere UX
 - Sheet-Auswahl konfigurierbar
 - Heuristische Header-Erkennung
+

@@ -495,3 +495,4 @@ Wie werden Personen gehandhabt?
 4. **Personen-Import:** Separate Tabelle oder integriert?
 5. **Performance:** Wie mit großen Imports umgehen?
 6. **Direkt-Import:** Soll es eine Option geben (ohne Staging)?
+

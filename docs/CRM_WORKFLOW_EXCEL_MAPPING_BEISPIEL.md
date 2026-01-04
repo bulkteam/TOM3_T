@@ -280,3 +280,4 @@ echo "Batch UUID: " . $result['batch_uuid'] . "\n";
 ---
 
 **Fazit:** Das generische Mapping-Konzept ist erstellt. Für ein **konkretes Mapping** benötigen wir die tatsächliche Struktur der Excel-Datei. Können Sie mir ein paar Beispiel-Zeilen aus der Excel-Datei zeigen, oder soll ich einen Mapping-Konfigurator implementieren?
+

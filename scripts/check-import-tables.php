@@ -25,3 +25,4 @@ foreach ($tables as $table) {
     $exists = $stmt->rowCount() > 0;
     echo sprintf("%-35s: %s\n", $table, $exists ? '✅ EXISTS' : '❌ MISSING');
 }
+

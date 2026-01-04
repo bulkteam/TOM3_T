@@ -189,3 +189,4 @@ WHERE code IS NOT NULL;
 
 -- Für MySQL/MariaDB (ohne WHERE):
 -- CREATE UNIQUE INDEX uq_industry_parent_code ON industry(parent_industry_uuid, code);
+

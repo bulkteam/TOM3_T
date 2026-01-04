@@ -96,3 +96,4 @@ try {
 } catch (\Exception $e) {
     die("Fehler: " . $e->getMessage() . "\n");
 }
+

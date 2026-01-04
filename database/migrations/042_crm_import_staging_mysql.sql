@@ -52,3 +52,4 @@ CREATE INDEX idx_staging_disposition ON org_import_staging(disposition);
 CREATE INDEX idx_staging_import ON org_import_staging(import_status);
 CREATE INDEX idx_staging_fingerprint ON org_import_staging(row_fingerprint);
 CREATE UNIQUE INDEX unique_batch_row ON org_import_staging(import_batch_uuid, row_number);
+

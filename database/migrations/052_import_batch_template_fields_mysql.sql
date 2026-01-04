@@ -10,3 +10,5 @@ ADD COLUMN detected_template_score DECIMAL(3,2) NULL
     COMMENT 'Fit-Score des Template-Matchings (0.00-1.00)';
 
 CREATE INDEX idx_batch_template ON org_import_batch(detected_template_uuid);
+
+

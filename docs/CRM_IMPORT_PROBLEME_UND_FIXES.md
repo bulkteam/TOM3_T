@@ -332,3 +332,4 @@ public function saveAlias(string $excelLabel, string $industryUuid, int $level, 
 ## Nächste Schritte
 
 Soll ich mit **Phase 1** starten? Das würde die kritischsten Bugs sofort beheben.
+

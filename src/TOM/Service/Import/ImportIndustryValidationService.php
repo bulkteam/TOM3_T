@@ -999,3 +999,4 @@ class ImportIndustryValidationService
         return $suggestions;
     }
 }
+

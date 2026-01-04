@@ -75,3 +75,5 @@ CREATE INDEX idx_affiliation_is_primary ON person_affiliation(is_primary);
 -- ============================================================================
 -- Hinweis: Composite Primary Key bleibt erhalten für Backward Compatibility
 -- ============================================================================
+
+

@@ -60,3 +60,4 @@ echo "  \"parent_industry_uuid\": \"{$c20['industry_uuid']}\"\n";
 echo "}\n\n";
 
 echo "=== Beispiel abgeschlossen ===\n";
+

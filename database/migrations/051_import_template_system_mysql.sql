@@ -63,3 +63,5 @@ CREATE TABLE IF NOT EXISTS import_header_alias (
 
 CREATE INDEX idx_alias_type ON import_header_alias(import_type);
 CREATE INDEX idx_alias_target ON import_header_alias(target_key);
+
+

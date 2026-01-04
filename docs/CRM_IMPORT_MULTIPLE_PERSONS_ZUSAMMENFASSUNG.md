@@ -151,3 +151,4 @@ employment_import_staging:
 - ❌ Person-Extraktion fehlt
 - ❌ Review-UI für Personen fehlt
 - ❌ Finaler Import für Personen fehlt
+

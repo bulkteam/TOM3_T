@@ -113,3 +113,5 @@ foreach ($blobs as $blob) {
 echo "=== Zusammenfassung ===\n";
 echo "Gescannt: {$scanned}\n";
 echo "Fehler: {$errors}\n";
+
+

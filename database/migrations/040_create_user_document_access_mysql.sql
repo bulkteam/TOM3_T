@@ -19,3 +19,5 @@ CREATE TABLE IF NOT EXISTS user_document_access (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE user_document_access COMMENT = 'Tracking von Dokumentzugriffen (recent, favorite, tags)';
+
+

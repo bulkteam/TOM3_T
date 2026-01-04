@@ -37,3 +37,4 @@ JSON_OBJECT(
     )
 ),
 'Standard-Validierungsregeln für Org-Import v1.0');
+
