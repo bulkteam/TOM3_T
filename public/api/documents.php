@@ -17,6 +17,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Service\DocumentService;
+use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $method = $_SERVER['REQUEST_METHOD'];
