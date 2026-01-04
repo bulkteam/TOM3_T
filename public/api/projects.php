@@ -3,6 +3,10 @@
  * TOM3 - Projects API
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+require_once __DIR__ . '/api-security.php';
+initApiErrorHandling();
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -25,6 +29,17 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+// Auth prüfen für geschützte Endpoints
+// GET-Endpoints sind öffentlich, POST/PUT/DELETE benötigen Auth
+$currentUser = null;
+$currentUserId = null;
+if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
+    $currentUser = requireAuth();
+    $currentUserId = (string)$currentUser['user_id'];
+    // CSRF prüfen für state-changing Requests
+    validateCsrfToken($method);
+}
 // Verwende die vom Router übergebenen Parameter
 $projectUuid = $id ?? null;
 // $action wird bereits vom Router übergeben
@@ -61,8 +76,8 @@ switch ($method) {
                 $case = $caseService->getCase($caseUuid);
                 if ($case && !empty($case['org_uuid'])) {
                     $orgService = new OrgService($db);
-                    $userId = $_GET['user_id'] ?? 'default_user';
-                    $orgService->trackAccess($userId, $case['org_uuid'], 'recent');
+                    // $currentUserId ist bereits durch requireAuth() gesetzt
+                    $orgService->trackAccess($currentUserId, $case['org_uuid'], 'recent');
                 }
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
@@ -78,8 +93,8 @@ switch ($method) {
             if (!empty($data['sponsor_org_uuid'])) {
                 try {
                     $orgService = new OrgService($db);
-                    $userId = $_GET['user_id'] ?? 'default_user';
-                    $orgService->trackAccess($userId, $data['sponsor_org_uuid'], 'recent');
+                    // $currentUserId ist bereits durch requireAuth() gesetzt
+                    $orgService->trackAccess($currentUserId, $data['sponsor_org_uuid'], 'recent');
                 } catch (Exception $e) {
                     // Tracking-Fehler sollten die Antwort nicht beeinflussen
                 }

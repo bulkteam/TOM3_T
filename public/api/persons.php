@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/base-api-handler.php';
+require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
 if (!defined('TOM3_AUTOLOADED')) {
@@ -22,6 +23,15 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+// Auth prüfen für geschützte Endpoints (außer GET ohne state-changing actions)
+// GET-Endpoints sind öffentlich, POST/PUT/DELETE benötigen Auth
+if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
+    requireAuth();
+    // CSRF prüfen für state-changing Requests
+    validateCsrfToken($method);
+}
+
 $personUuid = $id ?? null;
 $action = $action ?? null;
 

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/base-api-handler.php';
+require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
 if (!defined('TOM3_AUTOLOADED')) {
@@ -16,10 +17,24 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Service\DocumentService;
-use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $method = $_SERVER['REQUEST_METHOD'];
+    
+    // Auth prüfen für geschützte Endpoints
+    // GET-Endpoints sind öffentlich, POST/PUT/DELETE benötigen Auth
+    $currentUser = null;
+    $userId = null;
+    if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
+        $currentUser = requireAuth();
+        $userId = $currentUser['user_id'] ?? null;
+        // CSRF prüfen für state-changing Requests
+        validateCsrfToken($method);
+    } else {
+        // Für GET: Optional Auth (für user_id bei track-access)
+        $currentUser = AuthHelper::getCurrentUser();
+        $userId = $currentUser['user_id'] ?? null;
+    }
     
     // Router übergibt bereits geparste Parameter
     $documentId = $id ?? null;
@@ -41,12 +56,6 @@ try {
     $subId = $parts[2] ?? null;
     
     $documentService = new DocumentService();
-    $currentUser = AuthHelper::getCurrentUser();
-    $userId = $currentUser['user_id'] ?? null;
-    
-    $documentService = new DocumentService();
-    $currentUser = AuthHelper::getCurrentUser();
-    $userId = $currentUser['user_id'] ?? null;
     
     switch ($method) {
         case 'POST':

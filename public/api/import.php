@@ -7,6 +7,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/base-api-handler.php';
+require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
 if (!defined('TOM3_AUTOLOADED')) {
@@ -22,22 +23,21 @@ use TOM\Service\Import\ImportTemplateService;
 use TOM\Service\Import\ImportReviewService;
 use TOM\Service\DocumentService;
 use TOM\Service\Document\BlobService;
-use TOM\Infrastructure\Auth\AuthHelper;
 use TOM\Infrastructure\Activity\ActivityLogService;
 
 try {
     $method = $_SERVER['REQUEST_METHOD'];
-    $currentUser = AuthHelper::getCurrentUser();
-    $userId = $currentUser['user_id'] ?? null;
     
-    if (!$userId) {
-        jsonResponse(['error' => 'Unauthorized'], 401);
-        exit;
-    }
+    // Auth prüfen für alle Import-Endpoints (alle benötigen Auth)
+    $currentUser = requireAuth();
+    $userId = (string)$currentUser['user_id'];
     
     // userId bleibt als int (wird von DocumentService als ?int erwartet)
     // Nur für Import-Services wird es zu String konvertiert
-    $userIdInt = is_int($userId) ? $userId : (int)$userId;
+    $userIdInt = is_int($currentUser['user_id']) ? $currentUser['user_id'] : (int)$currentUser['user_id'];
+    
+    // CSRF prüfen für state-changing Requests
+    validateCsrfToken($method);
     
     // Parse URL
     $requestUri = $_SERVER['REQUEST_URI'];

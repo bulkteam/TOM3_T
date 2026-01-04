@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/base-api-handler.php';
+require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
 if (!defined('TOM3_AUTOLOADED')) {
@@ -13,7 +14,6 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Service\OrgService;
 use TOM\Infrastructure\Database\DatabaseConnection;
-use TOM\Infrastructure\Auth\AuthHelper;
 
 try {
     $db = DatabaseConnection::getInstance();
@@ -27,10 +27,18 @@ try {
     exit;
 }
 
-// Hole aktuellen User aus Session (Fallback: default_user für Kompatibilität)
-$currentUserId = AuthHelper::getCurrentUserId();
-
 $method = $_SERVER['REQUEST_METHOD'];
+
+// Auth prüfen für geschützte Endpoints (außer GET ohne state-changing actions)
+// GET-Endpoints sind öffentlich, POST/PUT/DELETE benötigen Auth
+$currentUser = null;
+$currentUserId = null;
+if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
+    $currentUser = requireAuth();
+    $currentUserId = (string)$currentUser['user_id'];
+    // CSRF prüfen für state-changing Requests
+    validateCsrfToken($method);
+}
 // Verwende die vom Router übergebenen Parameter
 $orgUuid = $id ?? null;
 $action = $action ?? null;
@@ -110,10 +118,17 @@ switch ($method) {
                 $auditTrail = $orgService->getAuditTrail($orgUuid, $limit);
                 echo json_encode($auditTrail);
             } elseif ($action === 'track-access') {
-                // POST /api/orgs/{uuid}/track-access
-                $userId = $_GET['user_id'] ?? $currentUserId;
-                $accessType = $_GET['access_type'] ?? 'recent';
+                // GET /api/orgs/{uuid}/track-access (GET, daher kein requireAuth)
+                // Hole User aus Query oder Session (optional für GET)
                 try {
+                    $user = AuthHelper::getCurrentUser();
+                    $userId = $_GET['user_id'] ?? ($user ? (string)$user['user_id'] : null);
+                    if (!$userId) {
+                        http_response_code(401);
+                        echo json_encode(['error' => 'User ID required']);
+                        exit;
+                    }
+                    $accessType = $_GET['access_type'] ?? 'recent';
                     $orgService->trackAccess($userId, $orgUuid, $accessType);
                     echo json_encode(['success' => true]);
                 } catch (Exception $e) {
@@ -131,9 +146,12 @@ switch ($method) {
                 // Track Zugriff beim Abrufen (optional, nur wenn explizit gewünscht)
                 $trackAccess = isset($_GET['track']) && $_GET['track'] === 'true';
                 if ($trackAccess && $org) {
-                    $userId = $_GET['user_id'] ?? $currentUserId;
                     try {
-                        $orgService->trackAccess($userId, $orgUuid, 'recent');
+                        $user = AuthHelper::getCurrentUser();
+                        $userId = $_GET['user_id'] ?? ($user ? (string)$user['user_id'] : null);
+                        if ($userId) {
+                            $orgService->trackAccess($userId, $orgUuid, 'recent');
+                        }
                     } catch (Exception $e) {
                         // Tracking-Fehler sollten die Antwort nicht beeinflussen
                     }
@@ -165,12 +183,12 @@ switch ($method) {
         if ($orgUuid && $action === 'addresses') {
             // POST /api/orgs/{uuid}/addresses
             $data = json_decode(file_get_contents('php://input'), true);
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->addAddress($orgUuid, $data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->addAddress($orgUuid, $data, $currentUserId);
             
             // Track Zugriff beim Hinzufügen einer Adresse
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -183,12 +201,12 @@ switch ($method) {
             if (!isset($data['parent_org_uuid'])) {
                 $data['parent_org_uuid'] = $orgUuid;
             }
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->addRelation($data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->addRelation($data, $currentUserId);
             
             // Track Zugriff beim Hinzufügen einer Relation
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -197,12 +215,12 @@ switch ($method) {
         } elseif ($orgUuid && $action === 'channels') {
             // POST /api/orgs/{uuid}/channels
             $data = json_decode(file_get_contents('php://input'), true);
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->addCommunicationChannel($orgUuid, $data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->addCommunicationChannel($orgUuid, $data, $currentUserId);
             
             // Track Zugriff beim Hinzufügen eines Kanals
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -226,12 +244,12 @@ switch ($method) {
             }
             
             try {
-                $userId = $_GET['user_id'] ?? $currentUserId;
-                $result = $orgService->addVatRegistration($orgUuid, $data, $userId);
+                // $currentUserId ist bereits durch requireAuth() gesetzt
+                $result = $orgService->addVatRegistration($orgUuid, $data, $currentUserId);
                 
                 // Track Zugriff beim Hinzufügen einer USt-ID
                 try {
-                    $orgService->trackAccess($userId, $orgUuid, 'recent');
+                    $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
                 } catch (Exception $e) {
                     // Tracking-Fehler sollten die Antwort nicht beeinflussen
                     error_log("Tracking error (non-fatal): " . $e->getMessage());
@@ -246,9 +264,9 @@ switch ($method) {
             }
         } elseif ($orgUuid && $action === 'archive') {
             // POST /api/orgs/{uuid}/archive
-            $userId = $_GET['user_id'] ?? $currentUserId;
+            // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
-                $result = $orgService->archiveOrg($orgUuid, $userId);
+                $result = $orgService->archiveOrg($orgUuid, $currentUserId);
                 echo json_encode($result);
             } catch (Exception $e) {
                 http_response_code(400);
@@ -256,9 +274,9 @@ switch ($method) {
             }
         } elseif ($orgUuid && $action === 'unarchive') {
             // POST /api/orgs/{uuid}/unarchive
-            $userId = $_GET['user_id'] ?? $currentUserId;
+            // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
-                $result = $orgService->unarchiveOrg($orgUuid, $userId);
+                $result = $orgService->unarchiveOrg($orgUuid, $currentUserId);
                 echo json_encode($result);
             } catch (Exception $e) {
                 http_response_code(400);
@@ -272,9 +290,9 @@ switch ($method) {
                 echo json_encode(['error' => 'Invalid JSON data']);
                 exit;
             }
-            $userId = $_GET['user_id'] ?? $currentUserId;
+            // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
-                $result = $orgService->createOrg($data, $userId);
+                $result = $orgService->createOrg($data, $currentUserId);
                 http_response_code(201);
                 // Warnungen werden im Ergebnis mit _warnings Feld zurückgegeben
                 echo json_encode($result);
@@ -298,10 +316,10 @@ switch ($method) {
             }
             
             // Track Zugriff beim Bearbeiten
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->updateOrg($orgUuid, $data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->updateOrg($orgUuid, $data, $currentUserId);
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -317,12 +335,12 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->updateAddress($addressUuid, $data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->updateAddress($addressUuid, $data, $currentUserId);
             
             // Track Zugriff beim Bearbeiten einer Adresse
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -337,12 +355,12 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->updateRelation($relationUuid, $data, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->updateRelation($relationUuid, $data, $currentUserId);
             
             // Track Zugriff beim Bearbeiten einer Relation
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -357,14 +375,14 @@ switch ($method) {
                 exit;
             }
             $data = json_decode(file_get_contents('php://input'), true);
-            $userId = $_GET['user_id'] ?? $currentUserId;
+            // $currentUserId ist bereits durch requireAuth() gesetzt
             
             try {
-                $result = $orgService->updateCommunicationChannel($channelUuid, $data, $userId);
+                $result = $orgService->updateCommunicationChannel($channelUuid, $data, $currentUserId);
                 
                 // Track Zugriff beim Bearbeiten eines Kanals
                 try {
-                    $orgService->trackAccess($userId, $orgUuid, 'recent');
+                    $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
                 } catch (Exception $e) {
                     // Tracking-Fehler sollten die Antwort nicht beeinflussen
                 }
@@ -398,8 +416,8 @@ switch ($method) {
                 error_log("VAT Update - Received data: " . json_encode($data));
                 error_log("VAT Update - VAT UUID: " . $vatUuid);
                 
-                $userId = $_GET['user_id'] ?? $currentUserId;
-                $result = $orgService->updateVatRegistration($vatUuid, $data, $userId);
+                // $currentUserId ist bereits durch requireAuth() gesetzt
+                $result = $orgService->updateVatRegistration($vatUuid, $data, $currentUserId);
                 
                 if (!$result) {
                     http_response_code(404);
@@ -476,8 +494,8 @@ switch ($method) {
                 echo json_encode(['error' => 'address_uuid required']);
                 exit;
             }
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->deleteAddress($addressUuid, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->deleteAddress($addressUuid, $currentUserId);
             echo json_encode(['success' => $result]);
         } elseif ($orgUuid && $action === 'relations') {
             // DELETE /api/orgs/{uuid}/relations/{relation_uuid}
@@ -487,8 +505,8 @@ switch ($method) {
                 echo json_encode(['error' => 'relation_uuid required']);
                 exit;
             }
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->deleteRelation($relationUuid, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->deleteRelation($relationUuid, $currentUserId);
             echo json_encode(['success' => $result]);
         } elseif ($orgUuid && $action === 'channels') {
             // DELETE /api/orgs/{uuid}/channels/{channel_uuid}
@@ -522,9 +540,9 @@ switch ($method) {
             }
             
             // Track Zugriff beim Löschen eines Kanals
-            $userId = $_GET['user_id'] ?? $currentUserId;
+            // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
@@ -548,8 +566,8 @@ switch ($method) {
                 exit;
             }
             
-            $userId = $_GET['user_id'] ?? $currentUserId;
-            $result = $orgService->deleteVatRegistration($vatUuid, $userId);
+            // $currentUserId ist bereits durch requireAuth() gesetzt
+            $result = $orgService->deleteVatRegistration($vatUuid, $currentUserId);
             
             if (!$result) {
                 http_response_code(404);
@@ -558,9 +576,8 @@ switch ($method) {
             }
             
             // Track Zugriff beim Löschen einer USt-ID
-            $userId = $_GET['user_id'] ?? $currentUserId;
             try {
-                $orgService->trackAccess($userId, $orgUuid, 'recent');
+                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
             } catch (Exception $e) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
