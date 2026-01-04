@@ -78,18 +78,20 @@ Phase 2 (P1-Verbesserungen) ist vollständig implementiert:
   - Automatisches Commit/Rollback
 
 - **Services angepasst**
-  - `OrgCrudService::createOrg()` - Transaktion um INSERT
-  - `OrgCrudService::updateOrg()` - Transaktion um UPDATE
-  - `PersonService::createPerson()` - Transaktion um INSERT
-  - `PersonService::updatePerson()` - Transaktion um UPDATE
-  - `OrgArchiveService::archiveOrg()` - Transaktion um UPDATE
-  - `OrgArchiveService::unarchiveOrg()` - Transaktion um UPDATE
+- `OrgCrudService::createOrg()` - Transaktion um INSERT
+- `OrgCrudService::updateOrg()` - Transaktion um UPDATE
+- `PersonService::createPerson()` - Transaktion um INSERT
+- `PersonService::updatePerson()` - Transaktion um UPDATE
+- `OrgArchiveService::archiveOrg()` - Transaktion um UPDATE
+- `OrgArchiveService::unarchiveOrg()` - Transaktion um UPDATE
+- `OrgVatService::updateVatRegistration()` - Transaktion um mehrere UPDATEs (is_primary_for_country)
 
 ### Dateien
 - `src/TOM/Infrastructure/Database/TransactionHelper.php`
 - `src/TOM/Service/Org/Core/OrgCrudService.php` (angepasst)
 - `src/TOM/Service/PersonService.php` (angepasst)
 - `src/TOM/Service/Org/Management/OrgArchiveService.php` (angepasst)
+- `src/TOM/Service/Org/OrgVatService.php` (angepasst)
 - `docs/SECURITY-PHASE2-TRANSACTIONS.md`
 
 ---
@@ -148,7 +150,7 @@ Phase 2 (P1-Verbesserungen) ist vollständig implementiert:
    - `InputValidator` in bestehenden Endpoints verwenden
 
 2. **Weitere Services prüfen** (optional)
-   - `OrgVatService::updateVatRegistration()` (wenn mehrere Tabellen betroffen)
+   - ✅ `OrgVatService::updateVatRegistration()` - Bereits mit Transaktionen versehen
    - `OrgCommunicationService` (wenn mehrere Kanäle gleichzeitig)
    - `OrgRelationService` (wenn mehrere Relationen gleichzeitig)
 
