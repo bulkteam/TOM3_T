@@ -519,6 +519,7 @@ final class ImportStagingService
                 row_number,
                 raw_data,
                 mapped_data,
+                corrections_json,
                 industry_resolution,
                 validation_status,
                 validation_errors,
@@ -605,7 +606,8 @@ final class ImportStagingService
                 'industry_resolution' => json_decode($row['industry_resolution'] ?? '{}', true),
                 'validation_status' => $row['validation_status'],
                 'validation_errors' => json_decode($row['validation_errors'] ?? '[]', true),
-                'review_status' => $row['disposition'] ?? 'pending', // Mapping: disposition -> review_status
+                'disposition' => $row['disposition'] ?? 'pending', // Korrekte Feldname
+                'review_status' => $row['disposition'] ?? 'pending', // Für Rückwärtskompatibilität
                 'review_notes' => $row['review_notes'] ?? null,
                 'duplicate_status' => $row['duplicate_status'] ?? 'unknown',
                 'duplicate_summary' => isset($row['duplicate_summary']) ? json_decode($row['duplicate_summary'] ?? 'null', true) : null,
@@ -616,3 +618,4 @@ final class ImportStagingService
         return $rows;
     }
 }
+

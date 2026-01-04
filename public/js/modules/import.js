@@ -21,8 +21,425 @@ export class ImportModule {
         const page = document.getElementById('page-import');
         if (!page) return;
         
+        // Prüfe, ob ein Batch-Parameter in der URL ist
+        const urlParams = new URLSearchParams(window.location.search);
+        const batchUuid = urlParams.get('batch');
+        
+        if (batchUuid) {
+            // Lade bestehenden Batch
+            this.currentBatch = batchUuid;
+            await this.loadExistingBatch(batchUuid);
+        } else {
+            // Zeige Übersichtsseite
+            await this.renderOverviewPage(page);
+        }
+    }
+    
+    /**
+     * Rendert Übersichtsseite mit allen Batches
+     */
+    async renderOverviewPage(container) {
+        try {
+            container.innerHTML = `
+                <div class="page-header">
+                    <h2>📥 Import-Verwaltung</h2>
+                    <p class="page-description">Verwalten Sie Ihre Import-Batches oder starten Sie einen neuen Import</p>
+                </div>
+                
+                <div style="margin-bottom: 24px;">
+                    <button class="btn btn-primary" onclick="window.app.import.startNewImport()">
+                        ➕ Neuen Import starten
+                    </button>
+                </div>
+                
+                <div id="import-batches-list">
+                    <p>Lade Batches...</p>
+                </div>
+            `;
+            
+            await this.loadBatchesList();
+        } catch (error) {
+            console.error('Error rendering overview:', error);
+            Utils.showError('Fehler beim Laden der Übersicht');
+        }
+    }
+    
+    /**
+     * Lädt Batch-Liste
+     */
+    async loadBatchesList() {
+        try {
+            const response = await fetch('/tom3/public/api/import/batches');
+            if (!response.ok) {
+                throw new Error('Fehler beim Laden der Batches');
+            }
+            
+            const data = await response.json();
+            this.renderBatchesList(data.batches || []);
+        } catch (error) {
+            console.error('Error loading batches:', error);
+            document.getElementById('import-batches-list').innerHTML = `
+                <div class="error-message">Fehler beim Laden der Batches: ${error.message}</div>
+            `;
+        }
+    }
+    
+    /**
+     * Rendert Batch-Liste als Tabelle
+     */
+    renderBatchesList(batches) {
+        const container = document.getElementById('import-batches-list');
+        
+        if (batches.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 24px; text-align: center; background: #f5f5f5; border-radius: 8px;">
+                    <p style="margin: 0; color: #666;">Keine Batches gefunden.</p>
+                    <p style="margin: 8px 0 0 0;">Starten Sie einen neuen Import, um zu beginnen.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const statusLabels = {
+            'DRAFT': 'Entwurf',
+            'STAGED': 'In Staging',
+            'IN_REVIEW': 'In Prüfung',
+            'APPROVED': 'Freigegeben',
+            'IMPORTED': 'Importiert'
+        };
+        
+        const statusColors = {
+            'DRAFT': '#6c757d',
+            'STAGED': '#0d6efd',
+            'IN_REVIEW': '#ffc107',
+            'APPROVED': '#198754',
+            'IMPORTED': '#198754'
+        };
+        
+        // Sortiere nach Datum (neueste zuerst)
+        batches.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        
+        let html = `
+            <div style="overflow-x: auto;">
+                <table class="table" style="width: 100%; border-collapse: collapse; background: white;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 12px; text-align: left; font-weight: 600;">Dateiname</th>
+                            <th style="padding: 12px; text-align: left; font-weight: 600;">Durchgeführt von</th>
+                            <th style="padding: 12px; text-align: left; font-weight: 600;">Datum/Uhrzeit</th>
+                            <th style="padding: 12px; text-align: center; font-weight: 600;">Status</th>
+                            <th style="padding: 12px; text-align: center; font-weight: 600;">Zeilen</th>
+                            <th style="padding: 12px; text-align: center; font-weight: 600;">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        batches.forEach(batch => {
+            const stats = batch.stats || {};
+            const pendingCount = stats.pending_rows || 0;
+            const approvedCount = stats.approved_rows || 0;
+            const importedCount = stats.imported_rows || 0;
+            const totalCount = stats.total_rows || 0;
+            // Batch kann gelöscht werden, wenn nicht ALLE Rows importiert wurden
+            // Erlaube Löschen, wenn noch nicht-importierte Rows vorhanden sind
+            const canDelete = batch.status !== 'IMPORTED' && importedCount < totalCount;
+            
+            // User-Name anzeigen
+            const userName = batch.uploaded_by_name || batch.uploaded_by_email || `User ${batch.uploaded_by_user_id}`;
+            
+            // Datum formatieren
+            const date = new Date(batch.created_at);
+            const dateStr = date.toLocaleDateString('de-DE');
+            const timeStr = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            
+            // Status-Badge
+            const statusLabel = statusLabels[batch.status] || batch.status;
+            const statusColor = statusColors[batch.status] || '#6c757d';
+            
+            // Bestimme, ob Batch anklickbar ist
+            const isClickable = batch.status !== 'IMPORTED' || (stats.pending_rows || 0) > 0 || (stats.approved_rows || 0) > 0;
+            const rowStyle = isClickable 
+                ? "border-bottom: 1px solid #dee2e6; cursor: pointer;" 
+                : "border-bottom: 1px solid #dee2e6; cursor: default; opacity: 0.7;";
+            const onClick = isClickable 
+                ? `onclick="window.app.import.openBatch('${batch.batch_uuid}')"`
+                : '';
+            
+            html += `
+                <tr style="${rowStyle}"
+                    ${onClick}
+                    onmouseover="${isClickable ? "this.style.background='#f8f9fa'" : ""}" 
+                    onmouseout="${isClickable ? "this.style.background='white'" : ""}">
+                    <td style="padding: 12px;">
+                        <strong>${this.escapeHtml(batch.filename || 'Unbenannt')}</strong>
+                        ${batch.status === 'IMPORTED' && !isClickable ? '<br><small style="color: #666;">✅ Vollständig importiert</small>' : ''}
+                    </td>
+                    <td style="padding: 12px;">
+                        ${this.escapeHtml(userName)}
+                    </td>
+                    <td style="padding: 12px;">
+                        ${dateStr}<br>
+                        <small style="color: #666;">${timeStr}</small>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <span class="badge" style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                            ${statusLabel}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <div style="font-size: 13px;">
+                            <div><strong>${totalCount}</strong> gesamt</div>
+                            ${pendingCount > 0 ? `<div style="color: #ffc107; font-size: 11px;">${pendingCount} pending</div>` : ''}
+                            ${approvedCount > 0 ? `<div style="color: #198754; font-size: 11px;">${approvedCount} approved</div>` : ''}
+                            ${stats.skipped_rows > 0 ? `<div style="color: #6c757d; font-size: 11px;">${stats.skipped_rows} übersprungen</div>` : ''}
+                            ${importedCount > 0 ? `<div style="color: #198754; font-size: 11px;">${importedCount} importiert</div>` : ''}
+                        </div>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                            ${isClickable ? `
+                                <button class="btn btn-sm btn-primary" 
+                                        onclick="event.stopPropagation(); window.app.import.openBatch('${batch.batch_uuid}')"
+                                        style="padding: 4px 12px; font-size: 12px; background: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                                        title="Öffnen">
+                                    ${batch.status === 'IMPORTED' ? 'Details' : 'Öffnen'}
+                                </button>
+                            ` : `
+                                <span style="color: #666; font-size: 12px;">Abgeschlossen</span>
+                            `}
+                            ${canDelete ? `
+                                <button class="btn btn-sm btn-danger" 
+                                        onclick="event.stopPropagation(); window.app.import.deleteBatch('${batch.batch_uuid}', '${this.escapeHtml(batch.filename || 'Unbenannt')}')"
+                                        style="padding: 4px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                                        title="Löschen">
+                                    🗑️
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+    
+    /**
+     * Startet neuen Import
+     */
+    startNewImport() {
+        this.currentBatch = null;
+        this.currentStep = 1;
+        const page = document.getElementById('page-import');
         this.renderImportPage(page);
         this.setupEventHandlers();
+    }
+    
+    /**
+     * Öffnet bestehenden Batch
+     */
+    async openBatch(batchUuid) {
+        this.currentBatch = batchUuid;
+        await this.loadExistingBatch(batchUuid);
+    }
+    
+    /**
+     * Lädt bestehenden Batch
+     */
+    async loadExistingBatch(batchUuid) {
+        try {
+            const page = document.getElementById('page-import');
+            
+            // Lade Batch-Statistiken
+            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}/stats`);
+            if (!response.ok) {
+                throw new Error('Batch nicht gefunden');
+            }
+            
+            const batch = await response.json();
+            const stats = batch.stats || {};
+            
+            // Setze stagingImported-Flag basierend auf Batch-Status
+            // Wenn Batch bereits gestaged wurde, sollte stagingImported = true sein
+            if (batch.status === 'STAGED' || batch.status === 'IN_REVIEW' || 
+                batch.status === 'APPROVED' || batch.status === 'IMPORTED') {
+                this.stagingImported = true;
+            } else {
+                this.stagingImported = false;
+            }
+            
+            // IMPORTED-Batches: Zeige Zusammenfassung oder Review
+            if (batch.status === 'IMPORTED') {
+                // Prüfe, ob noch nicht-importierte Staging-Rows vorhanden sind
+                const nonImportedRows = (stats.pending_rows || 0) + (stats.approved_rows || 0);
+                
+                if (nonImportedRows > 0) {
+                    // Es gibt noch nicht importierte Rows - zeige Review
+                    this.currentStep = 4;
+                    this.renderImportPage(page);
+                    this.setupEventHandlers();
+                    // Wichtig: Warte kurz, damit DOM gerendert ist, dann goToStep() aufrufen
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                    this.goToStep(4);
+                    await this.renderReviewStep();
+                } else {
+                    // Alles importiert - zeige Zusammenfassung
+                    this.showImportSummary(batch);
+                }
+                return;
+            }
+            
+            // Bestimme aktuellen Schritt basierend auf Status
+            let step = 1;
+            if (batch.status === 'STAGED' || batch.status === 'IN_REVIEW' || batch.status === 'APPROVED') {
+                step = 4; // Review-Schritt
+            } else if (batch.status === 'DRAFT') {
+                step = 2; // Mapping-Schritt
+            }
+            
+            this.currentStep = step;
+            this.renderImportPage(page);
+            this.setupEventHandlers();
+            
+            // Wichtig: Warte kurz, damit DOM gerendert ist, dann goToStep() aufrufen
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            // Lade Daten für den aktuellen Schritt VOR goToStep (um doppelte Aufrufe zu vermeiden)
+            if (step === 4) {
+                await this.renderReviewStep();
+                this.goToStep(step);
+            } else if (step === 2) {
+                // Für DRAFT-Batches: Setze currentBatch
+                this.currentBatch = batchUuid;
+                
+                // Wenn mapping_config vorhanden ist, verwende es
+                if (batch.mapping_config) {
+                    // Konvertiere mapping_config zu analysis-Format für renderMappingStep
+                    this.analysis = {
+                        mapping_suggestion: this.convertMappingConfigToSuggestion(batch.mapping_config),
+                        industry_validation: null
+                    };
+                } else {
+                    // Kein mapping_config vorhanden - lade Analyse-Daten neu
+                    // Hole Dokument für diesen Batch und analysiere es neu
+                    await this.reloadAnalysisForBatch(batchUuid);
+                }
+                
+                // Rendere Mapping-Step VOR goToStep, damit goToStep nicht nochmal renderMappingStep aufruft
+                await this.renderMappingStep();
+                this.goToStep(step);
+            } else {
+                this.goToStep(step);
+            }
+            
+        } catch (error) {
+            console.error('Error loading batch:', error);
+            Utils.showError('Fehler beim Laden des Batches: ' + error.message);
+            // Zurück zur Übersicht
+            const page = document.getElementById('page-import');
+            await this.renderOverviewPage(page);
+        }
+    }
+    
+    /**
+     * Zeigt Zusammenfassung für vollständig importierte Batches
+     */
+    showImportSummary(batch) {
+        const page = document.getElementById('page-import');
+        const stats = batch.stats || {};
+        
+        page.innerHTML = `
+            <div class="page-header">
+                <h2>📥 Import-Zusammenfassung</h2>
+            </div>
+            
+            <div style="margin-bottom: 24px;">
+                <button class="btn btn-secondary" onclick="window.app.import.showOverview()">
+                    ← Zurück zur Übersicht
+                </button>
+            </div>
+            
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 24px;">
+                <h3 style="margin-top: 0;">${this.escapeHtml(batch.filename || 'Unbenannt')}</h3>
+                
+                <div style="margin-top: 20px;">
+                    <p><strong>Status:</strong> <span style="color: #198754; font-weight: bold;">✅ Importiert</span></p>
+                    <p><strong>Importiert am:</strong> ${batch.imported_at ? new Date(batch.imported_at).toLocaleString('de-DE') : 'N/A'}</p>
+                    <p><strong>Erstellt am:</strong> ${new Date(batch.created_at).toLocaleString('de-DE')}</p>
+                </div>
+                
+                <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #eee;">
+                    <h4>Statistiken:</h4>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="padding: 8px 0;"><strong>Gesamt Zeilen:</strong> ${stats.total_rows || 0}</li>
+                        <li style="padding: 8px 0;"><strong>Importiert:</strong> <span style="color: #198754;">${stats.imported_rows || 0}</span></li>
+                        ${stats.failed_rows > 0 ? `<li style="padding: 8px 0;"><strong>Fehlgeschlagen:</strong> <span style="color: #dc3545;">${stats.failed_rows}</span></li>` : ''}
+                    </ul>
+                </div>
+                
+                <div style="margin-top: 24px; padding: 16px; background: #d4edda; border-radius: 4px; color: #155724;">
+                    <p style="margin: 0;"><strong>✅ Import abgeschlossen</strong></p>
+                    <p style="margin: 8px 0 0 0;">Alle Daten wurden erfolgreich in die Produktivtabellen importiert.</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    /**
+     * Zeigt Übersichtsseite
+     */
+    async showOverview() {
+        const page = document.getElementById('page-import');
+        this.currentBatch = null;
+        await this.renderOverviewPage(page);
+    }
+    
+    /**
+     * Löscht einen Batch
+     */
+    async deleteBatch(batchUuid, filename) {
+        if (!confirm(`Möchten Sie den Batch "${filename}" wirklich löschen?\n\nDies kann nicht rückgängig gemacht werden.`)) {
+            return;
+        }
+        
+        try {
+            Utils.showInfo('Batch wird gelöscht...');
+            
+            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Fehler beim Löschen');
+            }
+            
+            Utils.showSuccess('Batch erfolgreich gelöscht');
+            
+            // Liste neu laden
+            await this.loadBatchesList();
+            
+        } catch (error) {
+            console.error('Delete batch error:', error);
+            Utils.showError('Fehler beim Löschen: ' + error.message);
+        }
+    }
+    
+    /**
+     * Escaped HTML
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     /**
@@ -137,7 +554,7 @@ export class ImportModule {
                 </div>
                 
                 <!-- Schritt 4: Review -->
-                <div class="wizard-step ${this.currentStep === 4 ? 'active' : ''}" data-step="4" style="display: none;">
+                <div class="wizard-step ${this.currentStep === 4 ? 'active' : ''}" data-step="4" style="${this.currentStep === 4 ? 'display: block;' : 'display: none;'}">
                     <div class="step-header">
                         <h3>Schritt 4 von 4: Review & Freigabe</h3>
                     </div>
@@ -202,9 +619,13 @@ export class ImportModule {
             }
         });
         
-        // Load step content
+        // Load step content (nur wenn nicht bereits geladen)
+        // Prüfe, ob der Container bereits Inhalt hat, um doppelte Aufrufe zu vermeiden
         if (step === 2 && this.currentBatch) {
-            this.renderMappingStep();
+            const container = document.getElementById('mapping-configurator');
+            if (container && (!container.innerHTML || container.innerHTML.trim() === '' || container.innerHTML.includes('Lädt Mapping-Vorschlag'))) {
+                this.renderMappingStep();
+            }
         } else if (step === 3 && this.currentBatch) {
             this.renderIndustryCheckStep();
         } else if (step === 4 && this.currentBatch) {
@@ -287,17 +708,22 @@ export class ImportModule {
             let analysis = this.analysis;
             
             if (!analysis || !analysis.mapping_suggestion) {
-                // Falls nicht vorhanden, hole Batch-Details
-                const batch = await window.API.request(`/import/batch/${this.currentBatch}`);
+                // Falls nicht vorhanden, hole Batch-Details (mit stats, da dort mapping_config enthalten ist)
+                const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/stats`);
+                if (!batchResponse.ok) {
+                    throw new Error('Batch nicht gefunden');
+                }
+                const batch = await batchResponse.json();
                 
-                // Analysis ist nicht in DB gespeichert, muss neu analysiert werden
-                // Für jetzt: Verwende mapping_config aus Batch, falls vorhanden
+                // Verwende mapping_config aus Batch, falls vorhanden
                 if (batch && batch.mapping_config) {
                     // Konvertiere mapping_config zu mapping_suggestion Format
                     analysis = {
                         mapping_suggestion: this.convertMappingConfigToSuggestion(batch.mapping_config),
                         industry_validation: null
                     };
+                    // Speichere für spätere Verwendung
+                    this.analysis = analysis;
                 } else {
                     throw new Error('Keine Analyse-Daten gefunden. Bitte laden Sie die Datei erneut hoch.');
                 }
@@ -321,6 +747,52 @@ export class ImportModule {
         } catch (error) {
             console.error('Error loading mapping:', error);
             container.innerHTML = `<p class="error">Fehler beim Laden: ${error.message}</p>`;
+        }
+    }
+    
+    /**
+     * Lädt Analyse-Daten für einen Batch neu (wenn mapping_config fehlt)
+     */
+    async reloadAnalysisForBatch(batchUuid) {
+        try {
+            Utils.showInfo('Lade Analyse-Daten...');
+            
+            // Rufe Analyse-Endpoint auf (analysiert die Datei neu)
+            const response = await fetch(`/tom3/public/api/import/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    batch_uuid: batchUuid
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Fehler beim Laden der Analyse-Daten');
+            }
+            
+            const result = await response.json();
+            this.analysis = result.analysis || result;
+            
+            Utils.showSuccess('Analyse-Daten geladen.');
+            
+        } catch (error) {
+            console.error('Error reloading analysis:', error);
+            // Falls Analyse fehlschlägt, versuche es mit mapping_config aus Batch
+            const batchResponse = await fetch(`/tom3/public/api/import/batch/${batchUuid}/stats`);
+            if (batchResponse.ok) {
+                const batch = await batchResponse.json();
+                if (batch.mapping_config) {
+                    this.analysis = {
+                        mapping_suggestion: this.convertMappingConfigToSuggestion(batch.mapping_config),
+                        industry_validation: null
+                    };
+                } else {
+                    throw error; // Re-throw original error
+                }
+            } else {
+                throw error; // Re-throw original error
+            }
         }
     }
     
@@ -537,44 +1009,15 @@ export class ImportModule {
         // Lade asynchron (auch wenn stagingUuid leer ist, wird Fallback verwendet)
         this.loadStagingRowForCombination(comboId, stagingUuid);
         
-        // Level 2: Branche - WICHTIG: Dies ist der primäre Matching-Schritt!
-        // Level 2 kommt direkt aus Excel (Spalte D) und wird mit System-Level 2 verglichen
-        html += `<div class="industry-step" data-step="2" data-combo-id="${comboId}">`;
-        html += `<div class="excel-value-hint">Excel-Wert (Spalte D): <strong>${combo.excel_level2 || 'N/A'}</strong></div>`;
-        html += `<label class="step-label"><strong>1. Branche (Level 2) wählen:</strong></label>`;
-        html += `<div class="step-help-text">`;
-        html += `<small>Dieser Wert kommt direkt aus Ihrer Excel-Datei. Wenn ein Match gefunden wird, wird Level 1 (Branchenbereich) automatisch abgeleitet.</small>`;
-        html += `</div>`;
-        html += `<select class="industry-level2-select" data-combo-id="${comboId}" 
-                 onchange="window.app.import.onLevel2Selected('${comboId}', this.value)" 
-                 ${level2Confirmed ? 'disabled' : ''}>`;
-        html += `<option value="">-- Bitte wählen --</option>`;
-        // Options werden dynamisch geladen
-        html += `</select>`;
-        html += `<div class="suggestion-container" id="suggestion_${comboId}_level2"></div>`;
-        if (!level2Confirmed) {
-            html += `<button type="button" class="btn btn-sm btn-primary confirm-level2-btn" 
-                     data-combo-id="${comboId}" 
-                     onclick="window.app.import.confirmLevel2('${comboId}')" 
-                     ${level2Uuid ? '' : 'disabled'}>`;
-            html += `<span class="btn-icon">✓</span> Bestätigen`;
-            html += `</button>`;
-        } else {
-            html += `<div class="level-confirmation-feedback">✅ Branche ausgewählt</div>`;
-        }
-        html += `</div>`;
-        
-        // Level 1: Branchenbereich - Wird automatisch aus Level 2 abgeleitet
+        // Level 1: Branchenbereich - ZUERST anzeigen, wird automatisch aus Level 2 vorbelegt
         html += `<div class="industry-step" data-step="1" data-combo-id="${comboId}" 
-                 style="display: ${level2Confirmed ? 'block' : 'none'}; opacity: ${level2Confirmed ? '1' : '0.5'}; 
-                 background: ${level2Confirmed ? '#f9f9f9' : '#f0f0f0'}; padding: 1rem; margin-top: 1rem; border-radius: 4px;">`;
-        html += `<label class="step-label"><strong>2. Branchenbereich (Level 1):</strong></label>`;
+                 style="display: block; padding: 1rem; margin-top: 1rem; border-radius: 4px; background: #f9f9f9;">`;
+        html += `<label class="step-label"><strong>1. Branchenbereich (Level 1):</strong></label>`;
         html += `<div class="step-help-text">`;
-        html += `<small>Level 1 wird automatisch aus Level 2 abgeleitet (nicht direkt aus Excel). `;
-        html += `Wenn "${combo.excel_level2 || 'der Excel-Wert'}" einem Level 2 zugeordnet wird, ist Level 1 automatisch festgelegt.</small>`;
+        html += `<small>Wird automatisch aus Level 2 abgeleitet, kann aber manuell geändert werden. Wenn Level 1 geändert wird, werden die Level 2 Optionen entsprechend gefiltert.</small>`;
         html += `</div>`;
         html += `<select class="industry-level1-select" data-combo-id="${comboId}" 
-                 onchange="window.app.import.onLevel1Selected('${comboId}', this.value)" 
+                 onchange="window.app.import.onLevel1Selected('${comboId}', this.value); window.app.import.updateConfirmIndustriesButton();" 
                  ${level1Confirmed ? 'disabled' : ''}>`;
         html += `<option value="">-- Bitte wählen --</option>`;
         // Options werden dynamisch geladen (wird nach Rendering geladen)
@@ -592,6 +1035,33 @@ export class ImportModule {
         }
         html += `</div>`;
         
+        // Level 2: Branche - WICHTIG: Dies ist der primäre Matching-Schritt!
+        // Level 2 kommt direkt aus Excel (Spalte D) und wird mit System-Level 2 verglichen
+        html += `<div class="industry-step" data-step="2" data-combo-id="${comboId}">`;
+        html += `<div class="excel-value-hint">Excel-Wert (Spalte D): <strong>${combo.excel_level2 || 'N/A'}</strong></div>`;
+        html += `<label class="step-label"><strong>2. Branche (Level 2) wählen:</strong></label>`;
+        html += `<div class="step-help-text">`;
+        html += `<small>Dieser Wert kommt direkt aus Ihrer Excel-Datei. Wenn ein Match gefunden wird, wird Level 1 (Branchenbereich) automatisch vorbelegt.</small>`;
+        html += `</div>`;
+        html += `<select class="industry-level2-select" data-combo-id="${comboId}" 
+                 onchange="window.app.import.onLevel2Selected('${comboId}', this.value); window.app.import.updateConfirmIndustriesButton();" 
+                 ${level2Confirmed ? 'disabled' : ''}>`;
+        html += `<option value="">-- Bitte wählen --</option>`;
+        // Options werden dynamisch geladen
+        html += `</select>`;
+        html += `<div class="suggestion-container" id="suggestion_${comboId}_level2"></div>`;
+        if (!level2Confirmed) {
+            html += `<button type="button" class="btn btn-sm btn-primary confirm-level2-btn" 
+                     data-combo-id="${comboId}" 
+                     onclick="window.app.import.confirmLevel2('${comboId}')" 
+                     ${level2Uuid ? '' : 'disabled'}>`;
+            html += `<span class="btn-icon">✓</span> Bestätigen`;
+            html += `</button>`;
+        } else {
+            html += `<div class="level-confirmation-feedback">✅ Branche ausgewählt</div>`;
+        }
+        html += `</div>`;
+        
         // Level 3: Unterbranche (nur aktiv wenn Level 2 bestätigt)
         html += `<div class="industry-step" data-step="3" data-combo-id="${comboId}" 
                  style="display: ${level2Confirmed ? 'block' : 'none'}; opacity: ${level2Confirmed ? '1' : '0.5'}; 
@@ -601,7 +1071,7 @@ export class ImportModule {
         if (level3PreSelected && level3PreSelected.industry_uuid) {
             // Bestehende Unterbranche gefunden
             html += `<select class="industry-level3-select" data-combo-id="${comboId}" 
-                     onchange="window.app.import.onLevel3Selected('${comboId}', this.value)" 
+                     onchange="window.app.import.onLevel3Selected('${comboId}', this.value); window.app.import.updateConfirmIndustriesButton();" 
                      style="width: 100%; padding: 0.5rem; margin: 0.5rem 0;">`;
             html += `<option value="">-- Bitte wählen --</option>`;
             // Options werden dynamisch geladen
@@ -634,12 +1104,35 @@ export class ImportModule {
         const comboEl = document.querySelector(`[data-combo-id="${comboId}"]`);
         if (!comboEl) return;
         
-        const stagingUuid = comboEl.dataset.stagingUuid;
-        if (!stagingUuid) return;
+        if (!level1Uuid) {
+            // Level 1 wurde zurückgesetzt - Level 2 Optionen zurücksetzen
+            const level2Select = comboEl.querySelector('.industry-level2-select');
+            if (level2Select) {
+                level2Select.innerHTML = '<option value="">-- Bitte wählen --</option>';
+                level2Select.value = '';
+            }
+            // Vorschlag ausblenden
+            const suggestionContainer2 = document.getElementById(`suggestion_${comboId}_level2`);
+            if (suggestionContainer2) {
+                suggestionContainer2.innerHTML = '';
+            }
+            return;
+        }
         
-        // Level 1 ändert sich normalerweise nicht, wenn Level 2 bereits bestätigt ist
-        // Aber wenn manuell geändert, müssen Level 2 Optionen neu geladen werden
-        // (Dies sollte eigentlich nicht passieren, da Level 1 aus Level 2 abgeleitet wird)
+        // Lade Level 2 Optionen basierend auf Level 1
+        await this.loadLevel2Options(comboId, level1Uuid);
+        
+        // Vorschlag ausblenden, da Level 1 manuell geändert wurde
+        const suggestionContainer2 = document.getElementById(`suggestion_${comboId}_level2`);
+        if (suggestionContainer2) {
+            suggestionContainer2.innerHTML = '';
+        }
+        
+        // Level 2 Select zurücksetzen (nur wenn nicht bestätigt)
+        const level2Select = comboEl.querySelector('.industry-level2-select');
+        if (level2Select && !level2Select.disabled) {
+            level2Select.value = '';
+        }
     }
     
     /**
@@ -689,6 +1182,9 @@ export class ImportModule {
             
             // Aktiviere Level 1 (wird aus Level 2 abgeleitet)
             this.activateLevel1(comboId);
+            
+            // Prüfe, ob alle Branchen bestätigt sind
+            this.updateConfirmIndustriesButton();
             
         } catch (error) {
             console.error('Error confirming Level 1:', error);
@@ -872,6 +1368,17 @@ export class ImportModule {
             // Lade Level 3 Optionen
             await this.loadLevel3Options(comboId, level2Uuid);
             
+            // Level 1 automatisch bestätigen, da es aus Level 2 abgeleitet wird
+            const level1Select = comboEl.querySelector('.industry-level1-select');
+            const level1Feedback = comboEl.querySelector('.industry-step[data-step="1"] .level-confirmation-feedback');
+            if (level1Select && level1Select.value && !level1Select.disabled && !level1Feedback) {
+                // Level 1 ist bereits aus Level 2 abgeleitet, aber noch nicht bestätigt - bestätige es automatisch
+                await this.confirmLevel1(comboId);
+            }
+            
+            // Prüfe, ob alle Branchen bestätigt sind
+            this.updateConfirmIndustriesButton();
+            
         } catch (error) {
             console.error('Error confirming Level 2:', error);
             Utils.showError('Fehler beim Bestätigen: ' + (error.message || 'Unbekannter Fehler'));
@@ -929,7 +1436,31 @@ export class ImportModule {
                 })
             });
             
+            // Update UI: Zeige Bestätigung
+            const step3 = comboEl.querySelector('.industry-step[data-step="3"]');
+            if (step3) {
+                const level3Select = comboEl.querySelector('.industry-level3-select');
+                if (level3Select) {
+                    level3Select.style.background = '#e9ecef';
+                    level3Select.disabled = true;
+                }
+                
+                const existingFeedback = step3.querySelector('.level-confirmation-feedback');
+                if (existingFeedback) existingFeedback.remove();
+                
+                const feedback = document.createElement('div');
+                feedback.className = 'level-confirmation-feedback';
+                feedback.style.cssText = 'background: #d4edda; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px;';
+                feedback.textContent = '✅ Unterbranche ausgewählt';
+                step3.appendChild(feedback);
+            }
+            
             Utils.showSuccess('Unterbranche ausgewählt');
+            
+            // Prüfe, ob alle Branchen bestätigt sind (nach kurzer Verzögerung, damit DOM aktualisiert ist)
+            setTimeout(() => {
+                this.updateConfirmIndustriesButton();
+            }, 100);
             
         } catch (error) {
             console.error('Error selecting Level 3:', error);
@@ -986,6 +1517,11 @@ export class ImportModule {
             }
             
             Utils.showSuccess(`Unterbranche "${level3Name}" wird beim Import erstellt.`);
+            
+            // Prüfe, ob alle Branchen bestätigt sind (nach kurzer Verzögerung, damit DOM aktualisiert ist)
+            setTimeout(() => {
+                this.updateConfirmIndustriesButton();
+            }, 200);
             
         } catch (error) {
             console.error('Error adding Level 3:', error);
@@ -1384,11 +1920,111 @@ export class ImportModule {
             const confirmBtn = document.getElementById('confirm-industries-btn');
             if (confirmBtn) {
                 confirmBtn.style.display = 'inline-block';
+                // Initial prüfen und Button entsprechend aktivieren/deaktivieren
+                this.updateConfirmIndustriesButton();
             }
             
         } catch (error) {
             console.error('Error loading industry check:', error);
             container.innerHTML = `<p class="error">Fehler beim Laden: ${error.message}</p>`;
+        }
+    }
+    
+    /**
+     * Prüft, ob alle Branchen-Level für alle Kombinationen bestätigt sind
+     * @returns {boolean} true wenn alle Level bestätigt sind
+     */
+    checkAllIndustriesConfirmed() {
+        const combinations = document.querySelectorAll('.industry-combination');
+        if (combinations.length === 0) {
+            return false;
+        }
+        
+        for (let i = 0; i < combinations.length; i++) {
+            const combo = combinations[i];
+            
+            // Level 1 muss bestätigt sein (disabled select + feedback vorhanden)
+            const level1Select = combo.querySelector('.industry-level1-select');
+            const level1Feedback = combo.querySelector('.industry-step[data-step="1"] .level-confirmation-feedback');
+            const level1Ok = level1Select && level1Select.disabled && level1Feedback && level1Select.value;
+            if (!level1Ok) {
+                return false;
+            }
+            
+            // Prüfe, ob Level 2 Optionen verfügbar sind
+            const level2Select = combo.querySelector('.industry-level2-select');
+            const hasLevel2Options = level2Select && level2Select.options.length > 1; // Mehr als nur "-- Bitte wählen --"
+            
+            // Wenn Level 2 Optionen verfügbar sind, muss Level 2 bestätigt sein
+            if (hasLevel2Options) {
+                const level2Ok = level2Select && level2Select.disabled && 
+                               combo.querySelector('.industry-step[data-step="2"] .level-confirmation-feedback') && 
+                               level2Select.value;
+                if (!level2Ok) {
+                    return false;
+                }
+                
+                // Wenn Level 2 bestätigt ist, muss Level 3 geprüft werden
+                const level3Step = combo.querySelector('.industry-step[data-step="3"]');
+                if (level3Step) {
+                    // Prüfe Sichtbarkeit über computed style
+                    const computedStyle = window.getComputedStyle(level3Step);
+                    const isVisible = computedStyle.display !== 'none' && 
+                                     computedStyle.visibility !== 'hidden' &&
+                                     computedStyle.opacity !== '0';
+                    
+                    if (isVisible) {
+                        // Level 3 Schritt ist sichtbar, daher muss es bestätigt sein
+                        const level3Select = combo.querySelector('.industry-level3-select');
+                        const level3Input = combo.querySelector('.industry-level3-new-input');
+                        const level3Feedback = combo.querySelector('.industry-step[data-step="3"] .level-confirmation-feedback');
+                        
+                        // Prüfe, ob Level 3 bestätigt ist
+                        let level3Confirmed = false;
+                        
+                        if (level3Select) {
+                            // Select vorhanden: muss ausgewählt UND bestätigt sein (disabled + feedback)
+                            level3Confirmed = level3Select.value && 
+                                            level3Select.value !== '' &&
+                                            level3Select.disabled && 
+                                            !!level3Feedback;
+                        } else if (level3Input) {
+                            // Input vorhanden: muss bestätigt sein (disabled + feedback)
+                            level3Confirmed = level3Input.disabled && !!level3Feedback;
+                        }
+                        
+                        if (!level3Confirmed) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Aktualisiert den "Branchen bestätigen" Button basierend auf dem Bestätigungsstatus
+     */
+    updateConfirmIndustriesButton() {
+        const confirmBtn = document.getElementById('confirm-industries-btn');
+        if (!confirmBtn) {
+            return;
+        }
+        
+        const allConfirmed = this.checkAllIndustriesConfirmed();
+        
+        if (allConfirmed) {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.cursor = 'pointer';
+            confirmBtn.title = '';
+        } else {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+            confirmBtn.style.cursor = 'not-allowed';
+            confirmBtn.title = 'Bitte bestätigen Sie zuerst alle Branchen-Level (Level 1-3) für alle Kombinationen';
         }
     }
     
@@ -1498,6 +2134,14 @@ export class ImportModule {
         container.innerHTML = '<p>Lädt Staging-Daten...</p>';
         
         try {
+            // Lade Batch-Status
+            const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/stats`);
+            if (!batchResponse.ok) {
+                throw new Error('Batch nicht gefunden');
+            }
+            const batch = await batchResponse.json();
+            const batchStats = batch.stats || {};
+            
             // Lade Staging-Rows (bereits importiert und angereichert)
             const stagingRows = await this.loadStagingRows(this.currentBatch);
             this.stagingRows = stagingRows;
@@ -1507,16 +2151,58 @@ export class ImportModule {
                 return;
             }
             
-            // Rendere Review-UI
-            container.innerHTML = this.renderReviewUI(stagingRows, { 
+            // Filtere nur nicht-importierte Rows für Review (und nicht-skipped)
+            const pendingRows = stagingRows.filter(row => 
+                row.import_status !== 'imported' && 
+                row.disposition !== 'skip'
+            );
+            
+            // Wenn alle importiert sind, zeige Zusammenfassung
+            if (pendingRows.length === 0 && batch.status === 'IMPORTED') {
+                container.innerHTML = `
+                    <div style="padding: 24px; background: #d4edda; border-radius: 8px; color: #155724;">
+                        <h3 style="margin-top: 0;">✅ Import abgeschlossen</h3>
+                        <p><strong>${batchStats.imported_rows || 0}</strong> Organisationen wurden erfolgreich importiert.</p>
+                        <p style="margin-top: 16px;">
+                            <button class="btn btn-secondary" onclick="window.app.import.showOverview()">
+                                Zurück zur Übersicht
+                            </button>
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Rendere Review-UI (nur für nicht-importierte Rows)
+            // Filtere importierte Rows heraus
+            const rowsToShow = stagingRows.filter(row => row.import_status !== 'imported');
+            
+            container.innerHTML = this.renderReviewUI(rowsToShow, { 
                 total_rows: stagingRows.length,
-                imported: stagingRows.length 
+                imported: batchStats.imported_rows || 0,
+                pending: batchStats.pending_rows || 0,
+                approved: batchStats.approved_rows || 0
             });
             
-            // Zeige Commit-Button
+            // Zeige Commit-Button wenn pending oder approved Rows vorhanden sind UND noch nicht alles importiert
             const commitBtn = document.getElementById('commit-btn');
             if (commitBtn) {
-                commitBtn.style.display = 'inline-block';
+                const hasPendingRows = (batchStats.pending_rows || 0) > 0;
+                const hasApprovedRows = (batchStats.approved_rows || 0) > 0;
+                const isNotFullyImported = batch.status !== 'IMPORTED' || hasPendingRows || hasApprovedRows;
+                
+                if ((hasPendingRows || hasApprovedRows) && isNotFullyImported) {
+                    commitBtn.style.display = 'inline-block';
+                    if (hasPendingRows && !hasApprovedRows) {
+                        commitBtn.textContent = 'Alle freigeben & importieren →';
+                    } else if (hasPendingRows && hasApprovedRows) {
+                        commitBtn.textContent = 'Freigegebene importieren →';
+                    } else {
+                        commitBtn.textContent = 'Importieren →';
+                    }
+                } else {
+                    commitBtn.style.display = 'none';
+                }
             }
             
         } catch (error) {
@@ -1582,22 +2268,61 @@ export class ImportModule {
         html += '<th>Website</th>';
         html += '<th>Status</th>';
         html += '<th>Duplikat</th>';
+        html += '<th>Freigabe</th>';
         html += '<th>Aktion</th>';
         html += '</tr></thead>';
         html += '<tbody>';
         
-        stagingRows.forEach(row => {
+        // Verwende nur nicht-importierte Rows für Anzeige
+        const visibleRows = stagingRows.filter(row => row.import_status !== 'imported');
+        
+        visibleRows.forEach((row, index) => {
             const mappedData = row.mapped_data || {};
             const orgData = mappedData.org || {};
             const validationStatus = row.validation_status || 'pending';
             const duplicateStatus = row.duplicate_status || 'unknown';
+            const disposition = row.disposition || 'pending';
+            const isImported = row.import_status === 'imported';
+            
+            // Disposition-Badge (isImported sollte hier immer false sein, da visibleRows bereits gefiltert)
+            let dispositionBadge = '';
+            if (disposition === 'approved') {
+                dispositionBadge = '<span class="badge" style="background: #198754; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">✅ Freigegeben</span>';
+            } else if (disposition === 'skip') {
+                dispositionBadge = '<span class="badge" style="background: #6c757d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏭️ Wird nicht importiert</span>';
+            } else if (disposition === 'needs_fix') {
+                dispositionBadge = '<span class="badge" style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⚠️ Muss korrigiert werden</span>';
+            } else {
+                dispositionBadge = '<span class="badge" style="background: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏳ Pending</span>';
+            }
+            
+            // Action-Buttons für Disposition (nur wenn nicht importiert)
+            let dispositionActions = '';
+            if (!isImported) {
+                if (disposition !== 'approved') {
+                    dispositionActions += `<button class="btn btn-sm btn-success" onclick="window.app.import.setRowDisposition('${row.staging_uuid}', 'approved')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Freigeben">✓</button>`;
+                }
+                if (disposition !== 'skip') {
+                    dispositionActions += `<button class="btn btn-sm btn-secondary" onclick="window.app.import.setRowDisposition('${row.staging_uuid}', 'skip')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Überspringen">⏭</button>`;
+                }
+                if (disposition !== 'needs_fix') {
+                    dispositionActions += `<button class="btn btn-sm btn-warning" onclick="window.app.import.setRowDisposition('${row.staging_uuid}', 'needs_fix')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Muss korrigiert werden">⚠</button>`;
+                }
+                // Button zum Zurücksetzen auf pending (wenn nicht bereits pending)
+                if (disposition !== 'pending') {
+                    dispositionActions += `<button class="btn btn-sm btn-outline-secondary" onclick="window.app.import.setRowDisposition('${row.staging_uuid}', 'pending')" style="padding: 2px 8px; font-size: 11px;" title="Zurücksetzen">↺</button>`;
+                }
+            } else {
+                dispositionActions = '<span style="color: #666; font-size: 11px;">Bereits importiert</span>';
+            }
             
             html += '<tr>';
-            html += `<td>${row.row_number}</td>`;
+            html += `<td>${row.row_number}</td>`; // Zeige originale row_number
             html += `<td>${orgData.name || '-'}</td>`;
             html += `<td>${orgData.website || '-'}</td>`;
             html += `<td><span class="status-badge status-${validationStatus}">${validationStatus}</span></td>`;
             html += `<td><span class="duplicate-badge duplicate-${duplicateStatus}">${duplicateStatus}</span></td>`;
+            html += `<td>${dispositionBadge}<br><div style="margin-top: 4px;">${dispositionActions}</div></td>`;
             html += `<td><button class="btn btn-sm" onclick="window.app.import.showRowDetail('${row.staging_uuid}')">Details</button></td>`;
             html += '</tr>';
         });
@@ -1608,6 +2333,138 @@ export class ImportModule {
         html += '</div>';
         
         return html;
+    }
+    
+    /**
+     * Setzt Disposition für eine einzelne Staging-Row
+     */
+    async setRowDisposition(stagingUuid, disposition) {
+        try {
+            Utils.showInfo('Setze Disposition...');
+            
+            const response = await fetch(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    disposition: disposition
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Fehler beim Setzen der Disposition');
+            }
+            
+            const labels = {
+                'approved': 'freigegeben',
+                'skip': 'übersprungen',
+                'needs_fix': 'als "muss korrigiert werden" markiert',
+                'pending': 'auf pending zurückgesetzt'
+            };
+            
+            Utils.showSuccess(`Zeile wurde ${labels[disposition] || disposition}.`);
+            
+            // Aktualisiere die Row in der Tabelle direkt (ohne vollständiges Neuladen)
+            await this.updateRowInTable(stagingUuid);
+            
+        } catch (error) {
+            console.error('Error setting disposition:', error);
+            Utils.showError('Fehler: ' + error.message);
+        }
+    }
+    
+    /**
+     * Aktualisiert eine einzelne Row in der Review-Tabelle
+     */
+    async updateRowInTable(stagingUuid) {
+        try {
+            // Lade aktualisierte Row-Daten
+            const row = await window.API.request(`/import/staging/${stagingUuid}`);
+            
+            if (!row) return;
+            
+            // Finde die Tabellenzeile
+            const table = document.querySelector('.review-table tbody');
+            if (!table) {
+                // Falls Tabelle nicht gefunden, lade Review-Seite neu
+                await this.renderReviewStep();
+                return;
+            }
+            
+            // Finde die Zeile (suche nach staging_uuid in einem data-Attribut oder über Details-Button)
+            const rows = table.querySelectorAll('tr');
+            let targetRow = null;
+            for (const tr of rows) {
+                const detailsBtn = tr.querySelector(`button[onclick*="${stagingUuid}"]`);
+                if (detailsBtn) {
+                    targetRow = tr;
+                    break;
+                }
+            }
+            
+            if (!targetRow) {
+                // Zeile nicht gefunden, lade Review-Seite neu
+                await this.renderReviewStep();
+                return;
+            }
+            
+            // Aktualisiere die Disposition-Spalte
+            const mappedData = row.mapped_data || {};
+            const orgData = mappedData.org || {};
+            const disposition = row.disposition || row.review_status || 'pending';
+            const isImported = row.import_status === 'imported';
+            
+            // Disposition-Badge
+            let dispositionBadge = '';
+            if (disposition === 'approved') {
+                dispositionBadge = '<span class="badge" style="background: #198754; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">✅ Freigegeben</span>';
+            } else if (disposition === 'skip') {
+                dispositionBadge = '<span class="badge" style="background: #6c757d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏭️ Wird nicht importiert</span>';
+            } else if (disposition === 'needs_fix') {
+                dispositionBadge = '<span class="badge" style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⚠️ Muss korrigiert werden</span>';
+            } else {
+                dispositionBadge = '<span class="badge" style="background: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏳ Pending</span>';
+            }
+            
+            // Action-Buttons für Disposition
+            let dispositionActions = '';
+            if (!isImported) {
+                if (disposition !== 'approved') {
+                    dispositionActions += `<button class="btn btn-sm btn-success" onclick="window.app.import.setRowDisposition('${stagingUuid}', 'approved')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Freigeben">✓</button>`;
+                }
+                if (disposition !== 'skip') {
+                    dispositionActions += `<button class="btn btn-sm btn-secondary" onclick="window.app.import.setRowDisposition('${stagingUuid}', 'skip')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Überspringen">⏭</button>`;
+                }
+                if (disposition !== 'needs_fix') {
+                    dispositionActions += `<button class="btn btn-sm btn-warning" onclick="window.app.import.setRowDisposition('${stagingUuid}', 'needs_fix')" style="margin-right: 4px; padding: 2px 8px; font-size: 11px;" title="Muss korrigiert werden">⚠</button>`;
+                }
+                // Button zum Zurücksetzen auf pending (wenn nicht bereits pending)
+                if (disposition !== 'pending') {
+                    dispositionActions += `<button class="btn btn-sm btn-outline-secondary" onclick="window.app.import.setRowDisposition('${stagingUuid}', 'pending')" style="padding: 2px 8px; font-size: 11px;" title="Zurücksetzen">↺</button>`;
+                }
+            } else {
+                dispositionActions = '<span style="color: #666; font-size: 11px;">Bereits importiert</span>';
+            }
+            
+            // Aktualisiere die Disposition-Spalte (6. Spalte)
+            const cells = targetRow.querySelectorAll('td');
+            if (cells.length >= 6) {
+                cells[5].innerHTML = `${dispositionBadge}<br><div style="margin-top: 4px;">${dispositionActions}</div>`;
+            }
+            
+            // Aktualisiere auch den Cache
+            if (this.stagingRows) {
+                const index = this.stagingRows.findIndex(r => r.staging_uuid === stagingUuid);
+                if (index !== -1) {
+                    this.stagingRows[index] = row;
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error updating row in table:', error);
+            // Fallback: Lade Review-Seite neu
+            await this.renderReviewStep();
+        }
     }
     
     /**
@@ -1635,14 +2492,16 @@ export class ImportModule {
             modal.setAttribute('data-staging-detail', 'true');
             modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;';
             
-            const mappedData = row.mapped_data || {};
-            const orgData = mappedData.org || {};
-            const addressData = mappedData.address || {};
-            const communicationData = mappedData.communication || {};
-            const industryData = mappedData.industry || {};
+            // Verwende effective_data (mapped_data + corrections merged), falls vorhanden
+            const effectiveData = row.effective_data || row.mapped_data || {};
+            const orgData = effectiveData.org || {};
+            const addressData = effectiveData.address || {};
+            const communicationData = effectiveData.communication || {};
+            const industryData = effectiveData.industry || {};
             const industryResolution = row.industry_resolution || {};
             const decision = industryResolution.decision || {};
             const suggestions = industryResolution.suggestions || {};
+            const hasCorrections = row.corrections && Object.keys(row.corrections).length > 0;
             
             // Baue Adress-String
             const addressParts = [];
@@ -1658,9 +2517,10 @@ export class ImportModule {
                     <button class="btn-close" onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 12px; right: 12px; background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
                     <h2 style="margin-top: 0;">Staging-Row Details</h2>
                     <p><strong>Zeile:</strong> ${row.row_number || '-'} | <strong>Staging UUID:</strong> <code style="font-size: 0.85em;">${stagingUuid}</code></p>
+                    ${hasCorrections ? `<p style="color: #198754; font-weight: 600; margin-top: 8px;">✅ Korrekturen vorhanden (werden beim Import verwendet)</p>` : ''}
                     
                     <div style="margin-top: 20px;">
-                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Organisationsdaten</h3>
+                        <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Organisationsdaten ${hasCorrections && row.corrections.org ? '<span style="color: #198754; font-size: 0.85em;">(korrigiert)</span>' : ''}</h3>
                         <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
                             <tr><td style="padding: 8px; border-bottom: 1px solid #eee; width: 180px;"><strong>Name:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.name || '-'}</td></tr>
                             ${orgData.vat_id ? `<tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>USt-IdNr.:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${orgData.vat_id}</td></tr>` : ''}
@@ -1764,6 +2624,17 @@ export class ImportModule {
                     </div>
                     ` : ''}
                     
+                    <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #ddd;">
+                        ${row.import_status !== 'imported' ? `
+                        <button class="btn btn-primary" onclick="window.app.import.showCorrectionForm('${stagingUuid}')" style="margin-right: 8px;">
+                            ✏️ Daten korrigieren
+                        </button>
+                        ` : ''}
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                            Schließen
+                        </button>
+                    </div>
+                    
                     <details style="margin-top: 24px;">
                         <summary style="cursor: pointer; font-weight: bold; padding: 8px; background: #f5f5f5; border-radius: 4px;">Raw Data (Original Excel)</summary>
                         <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px;">${JSON.stringify(row.raw_data, null, 2)}</pre>
@@ -1779,8 +2650,15 @@ export class ImportModule {
                         <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px;">${JSON.stringify(row.industry_resolution, null, 2)}</pre>
                     </details>
                     
-                    <div style="margin-top: 24px; text-align: right;">
-                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Schließen</button>
+                    <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #ddd; display: flex; gap: 8px; justify-content: flex-end;">
+                        ${row.import_status !== 'imported' ? `
+                        <button class="btn btn-primary" onclick="window.app.import.showCorrectionForm('${stagingUuid}')" style="margin-right: 8px;">
+                            ✏️ Daten korrigieren
+                        </button>
+                        ` : ''}
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                            Schließen
+                        </button>
                     </div>
                 </div>
             `;
@@ -1797,6 +2675,184 @@ export class ImportModule {
         } catch (error) {
             console.error('Error loading row detail:', error);
             Utils.showError('Fehler beim Laden der Details: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Zeigt Korrekturformular für eine Staging-Row
+     */
+    async showCorrectionForm(stagingUuid) {
+        try {
+            // Lade Row-Daten
+            const row = await window.API.request(`/import/staging/${stagingUuid}`);
+            
+            if (!row) {
+                Utils.showError('Staging-Row nicht gefunden');
+                return;
+            }
+            
+            // Schließe Details-Modal
+            const existingModal = document.querySelector('.modal-overlay[data-staging-detail]');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            const mappedData = row.mapped_data || {};
+            const orgData = mappedData.org || {};
+            const addressData = mappedData.address || {};
+            const communicationData = mappedData.communication || {};
+            
+            // Erstelle Korrektur-Modal
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.setAttribute('data-correction-form', 'true');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10001; display: flex; align-items: center; justify-content: center; padding: 20px;';
+            
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto; background: white; border-radius: 8px; padding: 24px; position: relative;">
+                    <button class="btn-close" onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 12px; right: 12px; background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+                    <h2 style="margin-top: 0;">Daten korrigieren</h2>
+                    <p><strong>Zeile:</strong> ${row.row_number || '-'}</p>
+                    
+                    <form id="correction-form" onsubmit="event.preventDefault(); window.app.import.saveCorrections('${stagingUuid}');">
+                        <div style="margin-top: 20px;">
+                            <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Organisationsdaten</h3>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">Name *</label>
+                                <input type="text" id="corr-org-name" value="${this.escapeHtml(orgData.name || '')}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">Website</label>
+                                <input type="url" id="corr-org-website" value="${this.escapeHtml(orgData.website || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">USt-IdNr.</label>
+                                <input type="text" id="corr-org-vat-id" value="${this.escapeHtml(orgData.vat_id || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 24px;">
+                            <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Adresse</h3>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">Straße</label>
+                                <input type="text" id="corr-addr-street" value="${this.escapeHtml(addressData.street || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 2fr; gap: 12px;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-weight: 600;">PLZ</label>
+                                    <input type="text" id="corr-addr-postal-code" value="${this.escapeHtml(addressData.postal_code || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-weight: 600;">Ort</label>
+                                    <input type="text" id="corr-addr-city" value="${this.escapeHtml(addressData.city || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 24px;">
+                            <h3 style="border-bottom: 2px solid #ddd; padding-bottom: 8px;">Kontaktdaten</h3>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">E-Mail</label>
+                                <input type="email" id="corr-comm-email" value="${this.escapeHtml(communicationData.email || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <label style="display: block; margin-bottom: 4px; font-weight: 600;">Telefon</label>
+                                <input type="tel" id="corr-comm-phone" value="${this.escapeHtml(communicationData.phone || '')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #ddd; display: flex; gap: 8px; justify-content: flex-end;">
+                            <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                                Abbrechen
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                Korrekturen speichern
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Klick außerhalb des Modals schließt es
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+            
+        } catch (error) {
+            console.error('Error showing correction form:', error);
+            Utils.showError('Fehler beim Laden: ' + error.message);
+        }
+    }
+    
+    /**
+     * Speichert Korrekturen für eine Staging-Row
+     */
+    async saveCorrections(stagingUuid) {
+        try {
+            // Sammle Korrekturen aus dem Formular
+            const corrections = {
+                org: {
+                    name: document.getElementById('corr-org-name')?.value || null,
+                    website: document.getElementById('corr-org-website')?.value || null,
+                    vat_id: document.getElementById('corr-org-vat-id')?.value || null
+                },
+                address: {
+                    street: document.getElementById('corr-addr-street')?.value || null,
+                    postal_code: document.getElementById('corr-addr-postal-code')?.value || null,
+                    city: document.getElementById('corr-addr-city')?.value || null
+                },
+                communication: {
+                    email: document.getElementById('corr-comm-email')?.value || null,
+                    phone: document.getElementById('corr-comm-phone')?.value || null
+                }
+            };
+            
+            // Entferne null-Werte
+            Object.keys(corrections).forEach(key => {
+                if (corrections[key]) {
+                    Object.keys(corrections[key]).forEach(subKey => {
+                        if (corrections[key][subKey] === null || corrections[key][subKey] === '') {
+                            delete corrections[key][subKey];
+                        }
+                    });
+                    if (Object.keys(corrections[key]).length === 0) {
+                        delete corrections[key];
+                    }
+                }
+            });
+            
+            // Speichere Korrekturen über API
+            const response = await fetch(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    corrections: corrections
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Fehler beim Speichern der Korrekturen');
+            }
+            
+            Utils.showSuccess('Korrekturen gespeichert.');
+            
+            // Schließe Modal
+            const modal = document.querySelector('.modal-overlay[data-correction-form]');
+            if (modal) {
+                modal.remove();
+            }
+            
+            // Aktualisiere die Row in der Tabelle
+            await this.updateRowInTable(stagingUuid);
+            
+        } catch (error) {
+            console.error('Error saving corrections:', error);
+            Utils.showError('Fehler: ' + error.message);
         }
     }
     
@@ -1846,7 +2902,6 @@ export class ImportModule {
                     }
                     
                     if (excelLevel2) {
-                        console.log(`Erstelle Vorschläge für Excel-Wert: "${excelLevel2}"`);
                         // Erstelle Vorschläge direkt aus Excel-Wert
                         suggestions = await this.createSuggestionsFromExcelValue(excelLevel2);
                         decision = {
@@ -1938,11 +2993,23 @@ export class ImportModule {
                         
                         // Zeige Vorschlag-Hinweis
                         if (suggestionContainer2) {
-                            const excelLevel2 = comboEl.querySelector('.excel-value-hint')?.textContent?.match(/Excel-Wert.*?:\s*<strong>([^<]+)<\/strong>/)?.[1]?.trim() || '';
+                            // Hole Excel-Wert aus dem DOM
+                            const excelValueHint = comboEl.querySelector('.excel-value-hint');
+                            let excelLevel2 = '';
+                            if (excelValueHint) {
+                                const strongTag = excelValueHint.querySelector('strong');
+                                excelLevel2 = strongTag ? strongTag.textContent.trim() : '';
+                            }
+                            // Fallback: Versuche aus textContent zu extrahieren
+                            if (!excelLevel2 && excelValueHint) {
+                                const match = excelValueHint.textContent.match(/Excel-Wert.*?:\s*(.+)/);
+                                excelLevel2 = match ? match[1].trim() : '';
+                            }
+                            
                             suggestionContainer2.innerHTML = `
                                 <p class="suggestion-hint">
                                     💡 <strong>Vorschlag:</strong> ${best.name}${best.code ? ` (${best.code})` : ''}
-                                    <small>(${(best.score * 100).toFixed(0)}% ähnlich zu "${excelLevel2}")</small>
+                                    ${excelLevel2 ? `<small>(${(best.score * 100).toFixed(0)}% ähnlich zu "${excelLevel2}")</small>` : `<small>(${(best.score * 100).toFixed(0)}% ähnlich)</small>`}
                                 </p>
                             `;
                         }
@@ -2090,18 +3157,42 @@ export class ImportModule {
             return;
         }
         
-        if (!confirm('Möchten Sie den Import wirklich durchführen? Die Daten werden in die Produktions-Datenbank importiert.')) {
+        // Prüfe, ob es pending Rows gibt, die automatisch approved werden sollen
+        const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/stats`);
+        const batch = await batchResponse.json();
+        const batchStats = batch.stats || {};
+        const hasPendingRows = (batchStats.pending_rows || 0) > 0;
+        const hasApprovedRows = (batchStats.approved_rows || 0) > 0;
+        
+        let confirmMessage = 'Möchten Sie den Import wirklich durchführen? Die Daten werden in die Produktions-Datenbank importiert.';
+        if (hasPendingRows && !hasApprovedRows) {
+            confirmMessage = 'Möchten Sie alle pending Zeilen freigeben und importieren? Die Daten werden in die Produktions-Datenbank importiert.';
+        } else if (hasPendingRows && hasApprovedRows) {
+            confirmMessage = 'Möchten Sie die freigegebenen Zeilen importieren? Pending Zeilen werden übersprungen.';
+        }
+        
+        if (!confirm(confirmMessage)) {
             return;
         }
         
         try {
+            // Bestimme Commit-Mode
+            let commitMode = 'APPROVED_ONLY';
+            if (hasPendingRows && !hasApprovedRows) {
+                // Nur pending Rows - verwende PENDING_AUTO_APPROVE
+                commitMode = 'PENDING_AUTO_APPROVE';
+            } else if (hasPendingRows && hasApprovedRows) {
+                // Sowohl pending als auch approved - nur approved importieren
+                commitMode = 'APPROVED_ONLY';
+            }
+            
             Utils.showInfo('Import wird durchgeführt...');
             
             const response = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    mode: 'APPROVED_ONLY', // Nur approved Rows importieren
+                    mode: commitMode,
                     start_workflows: true,  // Workflows automatisch starten
                     dry_run: false
                 })
@@ -2114,14 +3205,12 @@ export class ImportModule {
             
             const result = await response.json();
             
-            Utils.showSuccess(`Import erfolgreich! ${result.stats?.rows_imported || 0} Organisationen importiert.`);
+            Utils.showSuccess(`Import erfolgreich! ${result.result?.stats?.rows_imported || 0} Organisationen importiert.`);
             
-            // Optional: Weiterleitung oder Reset
-            setTimeout(() => {
-                this.currentBatch = null;
-                this.currentStep = 1;
-                this.goToStep(1);
-            }, 2000);
+            // Aktualisiere Review-Seite, um neue Statistiken zu zeigen
+            if (this.currentStep === 4) {
+                await this.renderReviewStep();
+            }
             
         } catch (error) {
             console.error('Commit error:', error);
@@ -2129,3 +3218,4 @@ export class ImportModule {
         }
     }
 }
+

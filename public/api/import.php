@@ -19,6 +19,7 @@ use TOM\Service\Import\ImportStagingService;
 use TOM\Service\Import\IndustryDecisionService;
 use TOM\Service\Import\ImportCommitService;
 use TOM\Service\Import\ImportTemplateService;
+use TOM\Service\Import\ImportReviewService;
 use TOM\Service\DocumentService;
 use TOM\Service\Document\BlobService;
 use TOM\Infrastructure\Auth\AuthHelper;
@@ -78,6 +79,14 @@ try {
                     $stagingService = new ImportStagingService();
                     $decisionService = new IndustryDecisionService();
                     handleIndustryDecision($decisionService, $id, $userId);
+                } elseif ($id && $subAction === 'disposition') {
+                    // POST /api/import/staging/{staging_uuid}/disposition
+                    $reviewService = new ImportReviewService();
+                    handleSetDisposition($reviewService, $id, $userId);
+                } elseif ($id && $subAction === 'corrections') {
+                    // POST /api/import/staging/{staging_uuid}/corrections
+                    $stagingService = new ImportStagingService();
+                    handleSaveCorrections($stagingService, $id, $userId);
                 } elseif ($id) {
                     // POST /api/import/staging/{batch_uuid}
                     // Importiert in Staging (nutzt neuen ImportStagingService)
@@ -90,17 +99,39 @@ try {
                 // POST /api/import/batch/{batch_uuid}/commit
                 $commitService = new \TOM\Service\Import\ImportCommitService();
                 handleCommitBatch($commitService, $id, $userId);
+            } elseif ($action === 'staging' && $id && $subAction === 'disposition') {
+                // POST /api/import/staging/{staging_uuid}/disposition
+                $reviewService = new \TOM\Service\Import\ImportReviewService();
+                handleSetDisposition($reviewService, $id, $userId);
+            } else {
+                jsonResponse(['error' => 'Invalid endpoint'], 400);
+            }
+            break;
+            
+        case 'DELETE':
+            if ($action === 'batch' && $id) {
+                // DELETE /api/import/batch/{batch_uuid}
+                $batchService = new \TOM\Service\Import\ImportBatchService();
+                handleDeleteBatch($batchService, $id, $userId);
             } else {
                 jsonResponse(['error' => 'Invalid endpoint'], 400);
             }
             break;
             
         case 'GET':
-            if ($action === 'batch' && $id) {
+            if ($action === 'batches' && !$id) {
+                // GET /api/import/batches
+                $batchService = new \TOM\Service\Import\ImportBatchService();
+                handleListBatches($batchService, $userId);
+            } elseif ($action === 'batch' && $id) {
                 if ($subAction === 'staging-rows') {
                     // GET /api/import/batch/{batch_uuid}/staging-rows
                     $stagingService = new ImportStagingService();
                     handleGetBatchStagingRows($stagingService, $id);
+                } elseif ($subAction === 'stats') {
+                    // GET /api/import/batch/{batch_uuid}/stats
+                    $batchService = new \TOM\Service\Import\ImportBatchService();
+                    handleGetBatchStats($batchService, $id);
                 } else {
                     // GET /api/import/batch/{batch_uuid}
                     handleGetBatch($importService, $id);
@@ -254,9 +285,53 @@ function handleImportUpload($documentService, $importService, $blobService, $use
  * Analysiert Excel-Datei
  */
 function handleAnalyze($importService, $documentUuid, $userId) {
-    // TODO: Hole Datei-Pfad aus DocumentService
-    // Für jetzt: Datei-Pfad muss übergeben werden
     $data = json_decode(file_get_contents('php://input'), true);
+    
+    // Unterstütze sowohl document_uuid als auch batch_uuid
+    $batchUuid = $data['batch_uuid'] ?? null;
+    
+    if ($batchUuid) {
+        // Hole Dokument für Batch
+        $db = \TOM\Infrastructure\Database\DatabaseConnection::getInstance();
+        $stmt = $db->prepare("
+            SELECT d.document_uuid, d.current_blob_uuid as blob_uuid
+            FROM document_attachments da
+            JOIN documents d ON da.document_uuid = d.document_uuid
+            WHERE da.entity_type = 'import_batch'
+            AND da.entity_uuid = :batch_uuid
+            ORDER BY da.created_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute(['batch_uuid' => $batchUuid]);
+        $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$doc || !$doc['blob_uuid']) {
+            jsonResponse(['error' => 'Dokument für Batch nicht gefunden'], 404);
+            return;
+        }
+        
+        $blobService = new BlobService();
+        $filePath = $blobService->getBlobFilePath($doc['blob_uuid']);
+        
+        if (!$filePath || !file_exists($filePath)) {
+            jsonResponse(['error' => 'Datei nicht gefunden'], 404);
+            return;
+        }
+        
+        try {
+            $importType = 'ORG_ONLY'; // TODO: Aus Batch oder Config
+            $analysis = $importService->analyzeExcel($filePath, $importType);
+            jsonResponse(['analysis' => $analysis]);
+        } catch (Exception $e) {
+            jsonResponse([
+                'error' => 'Analysis failed',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+        return;
+    }
+    
+    // Fallback: Alte Methode mit file_path
     $filePath = $data['file_path'] ?? null;
     
     if (!$filePath || !file_exists($filePath)) {
@@ -400,6 +475,46 @@ function handleImportToStaging($stagingService, $batchUuid, $userId) {
 }
 
 /**
+ * Listet alle Batches (GET /api/import/batches)
+ */
+function handleListBatches($batchService, $userId) {
+    try {
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+        $batches = $batchService->listBatches($userId ? (string)$userId : null, $limit);
+        
+        jsonResponse([
+            'batches' => $batches,
+            'count' => count($batches)
+        ]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to list batches',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Holt Batch-Statistiken (GET /api/import/batch/{batch_uuid}/stats)
+ */
+function handleGetBatchStats($batchService, $batchUuid) {
+    try {
+        $batch = $batchService->getBatchWithStats($batchUuid);
+        if (!$batch) {
+            jsonResponse(['error' => 'Batch not found'], 404);
+            return;
+        }
+        
+        jsonResponse($batch);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to get batch stats',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
  * Holt Batch-Details
  */
 function handleGetBatch($importService, $batchUuid) {
@@ -431,16 +546,30 @@ function handleGetStagingRow($stagingService, $stagingUuid) {
             return;
         }
         
+        // Merge mapped_data mit corrections_json für effective_data
+        $mappedData = json_decode($row['mapped_data'], true);
+        $corrections = isset($row['corrections_json']) && $row['corrections_json'] ? json_decode($row['corrections_json'], true) : null;
+        
+        // Merge corrections in mapped_data (effective_data)
+        // Verwende die gleiche Logik wie ImportCommitService::mergeRecursive
+        $effectiveData = $mappedData;
+        if ($corrections) {
+            $effectiveData = mergeRecursiveOverwrite($mappedData, $corrections);
+        }
+        
         jsonResponse([
             'staging_uuid' => $row['staging_uuid'],
             'batch_uuid' => $row['import_batch_uuid'],
             'row_number' => $row['row_number'],
             'raw_data' => json_decode($row['raw_data'], true),
-            'mapped_data' => json_decode($row['mapped_data'], true),
+            'mapped_data' => $mappedData,
+            'corrections' => $corrections,
+            'effective_data' => $effectiveData, // mapped_data + corrections merged
             'industry_resolution' => json_decode($row['industry_resolution'] ?? '{}', true),
             'validation_status' => $row['validation_status'],
             'validation_errors' => json_decode($row['validation_errors'] ?? '[]', true),
-            'review_status' => $row['disposition'] ?? 'pending', // Map disposition to review_status for frontend
+            'disposition' => $row['disposition'] ?? 'pending', // Korrekte Feldname
+            'review_status' => $row['disposition'] ?? 'pending', // Für Rückwärtskompatibilität
             'review_notes' => $row['review_notes'] ?? null,
             'duplicate_status' => $row['duplicate_status'] ?? 'unknown',
             'duplicate_summary' => isset($row['duplicate_summary']) ? json_decode($row['duplicate_summary'] ?? 'null', true) : null,
@@ -620,6 +749,128 @@ function handleUpdateTemplate($templateService, $templateUuid, $userId) {
 }
 
 /**
+ * Löscht einen Batch (DELETE /api/import/batch/{batch_uuid})
+ */
+function handleDeleteBatch($batchService, $batchUuid, $userId) {
+    try {
+        $batchService->deleteBatch($batchUuid, (string)$userId);
+        jsonResponse(['success' => true, 'message' => 'Batch erfolgreich gelöscht']);
+    } catch (\RuntimeException $e) {
+        jsonResponse([
+            'error' => 'Batch konnte nicht gelöscht werden',
+            'message' => $e->getMessage()
+        ], 400);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Fehler beim Löschen',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Setzt Disposition einer Staging-Row (POST /api/import/staging/{staging_uuid}/disposition)
+ */
+function handleSetDisposition($reviewService, $stagingUuid, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    if (empty($data['disposition'])) {
+        jsonResponse(['error' => 'disposition required'], 400);
+        return;
+    }
+    
+    $disposition = $data['disposition'];
+    $notes = $data['notes'] ?? null;
+    
+    try {
+        $reviewService->setDisposition($stagingUuid, $disposition, (string)$userId, $notes);
+        jsonResponse(['success' => true]);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to set disposition',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Merge-Funktion: Überschreibt Werte statt sie zu verdoppeln (wie array_merge_recursive)
+ */
+function mergeRecursiveOverwrite(array $base, array $patch): array
+{
+    foreach ($patch as $key => $value) {
+        if (is_array($value) && isset($base[$key]) && is_array($base[$key])) {
+            $base[$key] = mergeRecursiveOverwrite($base[$key], $value);
+        } else {
+            $base[$key] = $value;
+        }
+    }
+    return $base;
+}
+
+/**
+ * Speichert Korrekturen für eine Staging-Row (POST /api/import/staging/{staging_uuid}/corrections)
+ */
+function handleSaveCorrections($stagingService, $stagingUuid, $userId) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    if (empty($data['corrections'])) {
+        jsonResponse(['error' => 'corrections required'], 400);
+        return;
+    }
+    
+    $corrections = $data['corrections'];
+    
+    try {
+        // Prüfe, ob Row existiert
+        $row = $stagingService->getStagingRow($stagingUuid);
+        if (!$row) {
+            jsonResponse(['error' => 'Staging row not found'], 404);
+            return;
+        }
+        
+        // Prüfe, ob bereits importiert
+        if ($row['import_status'] === 'imported') {
+            jsonResponse(['error' => 'Row wurde bereits importiert und kann nicht mehr geändert werden'], 400);
+            return;
+        }
+        
+        // Speichere Korrekturen in corrections_json
+        $db = \TOM\Infrastructure\Database\DatabaseConnection::getInstance();
+        $stmt = $db->prepare("
+            UPDATE org_import_staging
+            SET corrections_json = :corrections
+            WHERE staging_uuid = :staging_uuid
+        ");
+        
+        $stmt->execute([
+            'staging_uuid' => $stagingUuid,
+            'corrections' => json_encode($corrections, JSON_UNESCAPED_UNICODE)
+        ]);
+        
+        // Activity-Log
+        $activityLogService = new \TOM\Infrastructure\Activity\ActivityLogService($db);
+        $activityLogService->logActivity(
+            (string)$userId,
+            'import',
+            'import_staging',
+            $stagingUuid,
+            [
+                'action' => 'corrections_saved',
+                'timestamp' => date('Y-m-d H:i:s')
+            ]
+        );
+        
+        jsonResponse(['success' => true, 'message' => 'Korrekturen gespeichert']);
+    } catch (Exception $e) {
+        jsonResponse([
+            'error' => 'Failed to save corrections',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
  * Committet Batch (POST /api/import/batch/{batch_uuid}/commit)
  */
 function handleCommitBatch($commitService, $batchUuid, $userId) {
@@ -639,11 +890,12 @@ function handleCommitBatch($commitService, $batchUuid, $userId) {
     }
     
     try {
-        $result = $commitService->commitBatch($batchUuid, (string)$userId, $startWorkflows);
+        $result = $commitService->commitBatch($batchUuid, (string)$userId, $startWorkflows, $mode);
         
         jsonResponse([
             'batch_uuid' => $batchUuid,
-            'result' => $result
+            'result' => $result,
+            'stats' => $result // Für Kompatibilität
         ]);
     } catch (Exception $e) {
         jsonResponse([
@@ -652,3 +904,4 @@ function handleCommitBatch($commitService, $batchUuid, $userId) {
         ], 500);
     }
 }
+
