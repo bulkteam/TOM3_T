@@ -5,6 +5,7 @@ namespace TOM\Service\Org\Management;
 
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Database\TransactionHelper;
 use TOM\Infrastructure\Events\EventPublisher;
 
 /**
@@ -56,21 +57,28 @@ class OrgArchiveService
             throw new \Exception("Organisation ist bereits archiviert");
         }
         
-        $stmt = $this->db->prepare("
-            UPDATE org 
-            SET archived_at = NOW(), 
-                archived_by_user_id = :user_id
-            WHERE org_uuid = :org_uuid
-        ");
+        // Führe UPDATE in Transaktion aus
+        $org = TransactionHelper::executeInTransaction($this->db, function($db) use ($orgUuid, $userId) {
+            $stmt = $db->prepare("
+                UPDATE org 
+                SET archived_at = NOW(), 
+                    archived_by_user_id = :user_id
+                WHERE org_uuid = :org_uuid
+            ");
+            
+            $stmt->execute([
+                'org_uuid' => $orgUuid,
+                'user_id' => $userId
+            ]);
+            
+            // Hole aktualisierte Organisation zurück
+            if (!$this->orgGetter) {
+                throw new \Exception("Organisation nicht gefunden");
+            }
+            return call_user_func($this->orgGetter, $orgUuid);
+        });
         
-        $stmt->execute([
-            'org_uuid' => $orgUuid,
-            'user_id' => $userId
-        ]);
-        
-        $org = call_user_func($this->orgGetter, $orgUuid);
-        
-        // Protokolliere im Audit-Trail
+        // Protokolliere im Audit-Trail (nach Commit)
         if ($org && $this->auditEntryCallback) {
             call_user_func($this->auditEntryCallback,
                 $orgUuid,
@@ -112,18 +120,25 @@ class OrgArchiveService
         $oldArchivedAt = $org['archived_at'];
         $oldArchivedAtFormatted = 'Archiviert am ' . date('d.m.Y H:i', strtotime($oldArchivedAt));
         
-        $stmt = $this->db->prepare("
-            UPDATE org 
-            SET archived_at = NULL, 
-                archived_by_user_id = NULL
-            WHERE org_uuid = :org_uuid
-        ");
+        // Führe UPDATE in Transaktion aus
+        $org = TransactionHelper::executeInTransaction($this->db, function($db) use ($orgUuid) {
+            $stmt = $db->prepare("
+                UPDATE org 
+                SET archived_at = NULL, 
+                    archived_by_user_id = NULL
+                WHERE org_uuid = :org_uuid
+            ");
+            
+            $stmt->execute(['org_uuid' => $orgUuid]);
+            
+            // Hole aktualisierte Organisation zurück
+            if (!$this->orgGetter) {
+                throw new \Exception("Organisation nicht gefunden");
+            }
+            return call_user_func($this->orgGetter, $orgUuid);
+        });
         
-        $stmt->execute(['org_uuid' => $orgUuid]);
-        
-        $org = call_user_func($this->orgGetter, $orgUuid);
-        
-        // Protokolliere im Audit-Trail
+        // Protokolliere im Audit-Trail (nach Commit)
         if ($org && $this->auditEntryCallback) {
             call_user_func($this->auditEntryCallback,
                 $orgUuid,

@@ -5,6 +5,7 @@ namespace TOM\Service;
 
 use PDO;
 use TOM\Infrastructure\Access\AccessTrackingService;
+use TOM\Infrastructure\Database\TransactionHelper;
 use TOM\Infrastructure\Utils\UuidHelper;
 use TOM\Service\BaseEntityService;
 use TOM\Service\Person\PersonAffiliationService;
@@ -62,49 +63,56 @@ class PersonService extends BaseEntityService
         // Generiere UUID (konsistent für MariaDB und Neo4j)
         $uuid = UuidHelper::generate($this->db);
         
-        try {
-            $stmt = $this->db->prepare("
-                INSERT INTO person (
-                    person_uuid, first_name, last_name, salutation, title,
-                    email, phone, mobile_phone, linkedin_url, notes, is_active
-                )
-                VALUES (
-                    :person_uuid, :first_name, :last_name, :salutation, :title,
-                    :email, :phone, :mobile_phone, :linkedin_url, :notes, :is_active
-                )
-            ");
-            
-            $stmt->execute([
-                'person_uuid' => $uuid,
-                'first_name' => $data['first_name'] ?? null,
-                'last_name' => $data['last_name'] ?? null,
-                'salutation' => $data['salutation'] ?? null,
-                'title' => $data['title'] ?? null,
-                'email' => $data['email'] ?? null,
-                'phone' => $data['phone'] ?? null,
-                'mobile_phone' => $data['mobile_phone'] ?? null,
-                'linkedin_url' => $data['linkedin_url'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'is_active' => $data['is_active'] ?? 1
-            ]);
-        } catch (\PDOException $e) {
-            // Falls UNIQUE Constraint verletzt wird (Fallback)
-            if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                throw new \InvalidArgumentException("Eine Person mit der E-Mail-Adresse '{$data['email']}' existiert bereits.");
+        // Führe INSERT in Transaktion aus
+        $person = TransactionHelper::executeInTransaction($this->db, function($db) use ($uuid, $data) {
+            try {
+                $stmt = $db->prepare("
+                    INSERT INTO person (
+                        person_uuid, first_name, last_name, salutation, title,
+                        email, phone, mobile_phone, linkedin_url, notes, is_active
+                    )
+                    VALUES (
+                        :person_uuid, :first_name, :last_name, :salutation, :title,
+                        :email, :phone, :mobile_phone, :linkedin_url, :notes, :is_active
+                    )
+                ");
+                
+                $stmt->execute([
+                    'person_uuid' => $uuid,
+                    'first_name' => $data['first_name'] ?? null,
+                    'last_name' => $data['last_name'] ?? null,
+                    'salutation' => $data['salutation'] ?? null,
+                    'title' => $data['title'] ?? null,
+                    'email' => $data['email'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                    'mobile_phone' => $data['mobile_phone'] ?? null,
+                    'linkedin_url' => $data['linkedin_url'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'is_active' => $data['is_active'] ?? 1
+                ]);
+            } catch (\PDOException $e) {
+                // Falls UNIQUE Constraint verletzt wird (Fallback)
+                if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                    throw new \InvalidArgumentException("Eine Person mit der E-Mail-Adresse '{$data['email']}' existiert bereits.");
+                }
+                throw $e;
             }
-            throw $e;
-        }
+            
+            // Hole erstellte Person zurück
+            $stmt = $db->prepare("SELECT * FROM person WHERE person_uuid = :uuid");
+            $stmt->execute(['uuid' => $uuid]);
+            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        });
         
-        $person = $this->getPerson($uuid);
+        // Audit-Trail: Erstellung protokollieren (nach Commit)
         if ($person) {
-            // Audit-Trail: Erstellung protokollieren (zentralisiert)
             $this->logCreateAuditTrail('person', $uuid, null, $person, [$this, 'resolveFieldValue']);
             
-            // Event-Publishing (zentralisiert)
+            // Event-Publishing (nach Commit)
             $this->publishEntityEvent('person', $person['person_uuid'], 'PersonCreated', $person);
         }
         
-        return $person ?: [];
+        return $person;
     }
     
     public function getPerson(string $personUuid): ?array
@@ -174,20 +182,27 @@ class PersonService extends BaseEntityService
             return $oldData ?: [];
         }
         
-        $sql = "UPDATE person SET " . implode(', ', $updates) . " WHERE person_uuid = :uuid";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        // Führe UPDATE in Transaktion aus
+        $newData = TransactionHelper::executeInTransaction($this->db, function($db) use ($personUuid, $updates, $params) {
+            $sql = "UPDATE person SET " . implode(', ', $updates) . " WHERE person_uuid = :uuid";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            
+            // Hole aktualisierte Person zurück
+            $stmt = $db->prepare("SELECT * FROM person WHERE person_uuid = :uuid");
+            $stmt->execute(['uuid' => $personUuid]);
+            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        });
         
-        $newData = $this->getPerson($personUuid);
+        // Audit-Trail: Änderungen protokollieren (nach Commit)
         if ($newData) {
-            // Audit-Trail: Änderungen protokollieren (zentralisiert)
             $this->logUpdateAuditTrail('person', $personUuid, null, $oldData, $newData, [$this, 'resolveFieldValue']);
             
-            // Event-Publishing (zentralisiert)
+            // Event-Publishing (nach Commit)
             $this->publishEntityEvent('person', $newData['person_uuid'], 'PersonUpdated', $newData);
         }
         
-        return $newData ?: [];
+        return $newData;
     }
     
     public function listPersons(?bool $activeOnly = true): array

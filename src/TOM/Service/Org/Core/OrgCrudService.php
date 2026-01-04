@@ -5,6 +5,7 @@ namespace TOM\Service\Org\Core;
 
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Database\TransactionHelper;
 use TOM\Infrastructure\Utils\UuidHelper;
 use TOM\Infrastructure\Utils\UrlHelper;
 use TOM\Service\BaseEntityService;
@@ -98,58 +99,81 @@ class OrgCrudService extends BaseEntityService
             $data['website'] = UrlHelper::normalize($data['website']);
         }
         
-        $stmt = $this->db->prepare("
-            INSERT INTO org (
-                org_uuid, name, org_kind, external_ref, 
-                industry, industry_main_uuid, industry_sub_uuid,
-                industry_level1_uuid, industry_level2_uuid, industry_level3_uuid,
-                revenue_range, employee_count, website, notes, status,
-                account_owner_user_id, account_owner_since
-            )
-            VALUES (
-                :org_uuid, :name, :org_kind, :external_ref,
-                :industry, :industry_main_uuid, :industry_sub_uuid,
-                :industry_level1_uuid, :industry_level2_uuid, :industry_level3_uuid,
-                :revenue_range, :employee_count, :website, :notes, :status,
-                :account_owner_user_id, :account_owner_since
-            )
-        ");
+        // Führe INSERT in Transaktion aus
+        $org = TransactionHelper::executeInTransaction($this->db, function($db) use ($uuid, $data) {
+            $status = $data['status'] ?? 'lead';
+            $accountOwnerSince = null;
+            if (isset($data['account_owner_user_id']) && $data['account_owner_user_id']) {
+                $accountOwnerSince = $data['account_owner_since'] ?? date('Y-m-d');
+            }
+            
+            $stmt = $db->prepare("
+                INSERT INTO org (
+                    org_uuid, name, org_kind, external_ref, 
+                    industry, industry_main_uuid, industry_sub_uuid,
+                    industry_level1_uuid, industry_level2_uuid, industry_level3_uuid,
+                    revenue_range, employee_count, website, notes, status,
+                    account_owner_user_id, account_owner_since
+                )
+                VALUES (
+                    :org_uuid, :name, :org_kind, :external_ref,
+                    :industry, :industry_main_uuid, :industry_sub_uuid,
+                    :industry_level1_uuid, :industry_level2_uuid, :industry_level3_uuid,
+                    :revenue_range, :employee_count, :website, :notes, :status,
+                    :account_owner_user_id, :account_owner_since
+                )
+            ");
+            
+            $stmt->execute([
+                'org_uuid' => $uuid,
+                'name' => $data['name'] ?? '',
+                'org_kind' => $data['org_kind'] ?? 'other',
+                'external_ref' => $data['external_ref'] ?? null,
+                'industry' => $data['industry'] ?? null,
+                'industry_main_uuid' => $data['industry_main_uuid'] ?? $data['industry_level1_uuid'] ?? null, // Rückwärtskompatibilität
+                'industry_sub_uuid' => $data['industry_sub_uuid'] ?? $data['industry_level2_uuid'] ?? null, // Rückwärtskompatibilität
+                'industry_level1_uuid' => $data['industry_level1_uuid'] ?? $data['industry_main_uuid'] ?? null, // Neue 3-stufige Hierarchie
+                'industry_level2_uuid' => $data['industry_level2_uuid'] ?? $data['industry_sub_uuid'] ?? null,
+                'industry_level3_uuid' => $data['industry_level3_uuid'] ?? null,
+                'revenue_range' => $data['revenue_range'] ?? null,
+                'employee_count' => $data['employee_count'] ?? null,
+                'website' => $data['website'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'status' => $status,
+                'account_owner_user_id' => $data['account_owner_user_id'] ?? null,
+                'account_owner_since' => $accountOwnerSince
+            ]);
+            
+            // Hole erstellte Organisation zurück
+            $stmt = $db->prepare("
+                SELECT 
+                    o.*,
+                    i_main.name as industry_main_name,
+                    i_sub.name as industry_sub_name,
+                    i_level1.name as industry_level1_name,
+                    i_level2.name as industry_level2_name,
+                    i_level3.name as industry_level3_name,
+                    u.name as account_owner_name
+                FROM org o
+                LEFT JOIN industry i_main ON o.industry_main_uuid = i_main.industry_uuid
+                LEFT JOIN industry i_sub ON o.industry_sub_uuid = i_sub.industry_uuid
+                LEFT JOIN industry i_level1 ON o.industry_level1_uuid = i_level1.industry_uuid
+                LEFT JOIN industry i_level2 ON o.industry_level2_uuid = i_level2.industry_uuid
+                LEFT JOIN industry i_level3 ON o.industry_level3_uuid = i_level3.industry_uuid
+                LEFT JOIN users u ON o.account_owner_user_id = u.user_id
+                WHERE o.org_uuid = :uuid
+            ");
+            $stmt->execute(['uuid' => $uuid]);
+            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        });
         
-        $status = $data['status'] ?? 'lead';
-        $accountOwnerSince = null;
-        if (isset($data['account_owner_user_id']) && $data['account_owner_user_id']) {
-            $accountOwnerSince = $data['account_owner_since'] ?? date('Y-m-d');
-        }
-        
-        $stmt->execute([
-            'org_uuid' => $uuid,
-            'name' => $data['name'] ?? '',
-            'org_kind' => $data['org_kind'] ?? 'other',
-            'external_ref' => $data['external_ref'] ?? null,
-            'industry' => $data['industry'] ?? null,
-            'industry_main_uuid' => $data['industry_main_uuid'] ?? $data['industry_level1_uuid'] ?? null, // Rückwärtskompatibilität
-            'industry_sub_uuid' => $data['industry_sub_uuid'] ?? $data['industry_level2_uuid'] ?? null, // Rückwärtskompatibilität
-            'industry_level1_uuid' => $data['industry_level1_uuid'] ?? $data['industry_main_uuid'] ?? null, // Neue 3-stufige Hierarchie
-            'industry_level2_uuid' => $data['industry_level2_uuid'] ?? $data['industry_sub_uuid'] ?? null,
-            'industry_level3_uuid' => $data['industry_level3_uuid'] ?? null,
-            'revenue_range' => $data['revenue_range'] ?? null,
-            'employee_count' => $data['employee_count'] ?? null,
-            'website' => $data['website'] ?? null,
-            'notes' => $data['notes'] ?? null,
-            'status' => $status,
-            'account_owner_user_id' => $data['account_owner_user_id'] ?? null,
-            'account_owner_since' => $accountOwnerSince
-        ]);
-        
-        $org = $this->getOrg($uuid);
-        
-        // Protokolliere Erstellung im Audit-Trail (zentralisiert)
+        // Protokolliere Erstellung im Audit-Trail (nach Commit)
         if ($org) {
             $fieldResolver = $this->fieldResolver ?? null;
             $this->logCreateAuditTrail('org', $uuid, $userId ?? null, $org, $fieldResolver);
         }
         
-        // Event-Publishing (zentralisiert)
+        // Event-Publishing (nach Commit)
         if ($org) {
             $this->publishEntityEvent('org', $org['org_uuid'], 'OrgCreated', $org);
         }
@@ -223,30 +247,53 @@ class OrgCrudService extends BaseEntityService
             return $this->getOrg($orgUuid) ?: [];
         }
         
-        $sql = "UPDATE org SET " . implode(', ', $updates) . " WHERE org_uuid = :uuid";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        // Führe UPDATE in Transaktion aus
+        $org = TransactionHelper::executeInTransaction($this->db, function($db) use ($orgUuid, $updates, $params) {
+            $sql = "UPDATE org SET " . implode(', ', $updates) . " WHERE org_uuid = :uuid";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            
+            // Verifiziere, dass genau eine Zeile aktualisiert wurde
+            $affectedRows = $stmt->rowCount();
+            if ($affectedRows > 1) {
+                throw new \RuntimeException("Update affected multiple organizations! This should not happen.");
+            }
+            
+            // Hole aktualisierte Organisation zurück
+            $stmt = $db->prepare("
+                SELECT 
+                    o.*,
+                    i_main.name as industry_main_name,
+                    i_sub.name as industry_sub_name,
+                    i_level1.name as industry_level1_name,
+                    i_level2.name as industry_level2_name,
+                    i_level3.name as industry_level3_name,
+                    u.name as account_owner_name
+                FROM org o
+                LEFT JOIN industry i_main ON o.industry_main_uuid = i_main.industry_uuid
+                LEFT JOIN industry i_sub ON o.industry_sub_uuid = i_sub.industry_uuid
+                LEFT JOIN industry i_level1 ON o.industry_level1_uuid = i_level1.industry_uuid
+                LEFT JOIN industry i_level2 ON o.industry_level2_uuid = i_level2.industry_uuid
+                LEFT JOIN industry i_level3 ON o.industry_level3_uuid = i_level3.industry_uuid
+                LEFT JOIN users u ON o.account_owner_user_id = u.user_id
+                WHERE o.org_uuid = :uuid
+            ");
+            $stmt->execute(['uuid' => $orgUuid]);
+            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        });
         
-        // Verifiziere, dass genau eine Zeile aktualisiert wurde
-        $affectedRows = $stmt->rowCount();
-        if ($affectedRows > 1) {
-            throw new \RuntimeException("Update affected multiple organizations! This should not happen.");
-        }
-        
-        $org = $this->getOrg($orgUuid);
-        
-        // Protokolliere Änderungen im Audit-Trail (zentralisiert)
+        // Protokolliere Änderungen im Audit-Trail (nach Commit)
         if ($org && $oldOrg) {
             $resolver = $fieldResolver ?? $this->fieldResolver ?? null;
             $this->logUpdateAuditTrail('org', $orgUuid, $userId ?? null, $oldOrg, $org, $resolver);
         }
         
-        // Event-Publishing (zentralisiert)
+        // Event-Publishing (nach Commit)
         if ($org) {
             $this->publishEntityEvent('org', $org['org_uuid'], 'OrgUpdated', $org);
         }
         
-        return $org ?: [];
+        return $org;
     }
 }
 

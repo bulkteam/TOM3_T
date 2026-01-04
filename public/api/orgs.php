@@ -284,14 +284,14 @@ switch ($method) {
             }
         } else {
             // POST /api/orgs
-            $data = json_decode(file_get_contents('php://input'), true);
-            if ($data === null) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Invalid JSON data']);
-                exit;
-            }
+            $data = getJsonBody();
+            
             // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
+                // Validierung mit InputValidator (optional, kann schrittweise migriert werden)
+                // InputValidator::validateRequired($data, 'name');
+                // InputValidator::validateLength($data['name'] ?? '', 1, 255, 'name');
+                
                 $result = $orgService->createOrg($data, $currentUserId);
                 http_response_code(201);
                 // Warnungen werden im Ergebnis mit _warnings Feld zurückgegeben
@@ -299,6 +299,8 @@ switch ($method) {
             } catch (\InvalidArgumentException $e) {
                 http_response_code(409); // Conflict
                 echo json_encode(['error' => $e->getMessage()]);
+            } catch (\Exception $e) {
+                handleApiException($e, 'Create org');
             }
         }
         break;
