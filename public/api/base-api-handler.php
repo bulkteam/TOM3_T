@@ -122,8 +122,16 @@ function getBoolQueryParam(string $key, bool $default = false): bool
  */
 function handleApiException(\Throwable $e, string $context = 'API request'): void
 {
-    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
-    $isDev = in_array($appEnv, ['local', 'dev', 'development']);
+    // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
+    $isDev = false;
+    try {
+        $appEnv = \TOM\Infrastructure\Security\SecurityHelper::requireAppEnv();
+        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
+    } catch (\RuntimeException $envError) {
+        // Wenn APP_ENV-Fehler, zeige diesen an
+        jsonError($envError->getMessage(), 500);
+        return;
+    }
     
     // Logge den Fehler
     error_log("{$context}: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());

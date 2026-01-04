@@ -38,16 +38,34 @@ class AuthHelper
     /**
      * Gibt die User-ID des aktuell eingeloggten Users zurück
      * 
-     * @return string|null User-ID oder 'default_user' wenn nicht eingeloggt (für Kompatibilität)
+     * @param bool $allowFallback Erlaubt 'default_user' Fallback nur in Dev-Mode
+     * @return string User-ID
+     * @throws \RuntimeException Wenn kein User eingeloggt und Fallback nicht erlaubt
      */
-    public static function getCurrentUserId(): string
+    public static function getCurrentUserId(bool $allowFallback = false): string
     {
         $user = self::getCurrentUser();
         if ($user) {
             return (string)$user['user_id'];
         }
-        // Fallback für Kompatibilität mit bestehendem Code
-        return 'default_user';
+        
+        // Fallback nur in Dev-Mode erlauben
+        if ($allowFallback && self::isDevMode()) {
+            return 'default_user';
+        }
+        
+        throw new \RuntimeException('Authentication required: No user logged in');
+    }
+    
+    /**
+     * Prüft ob wir in Dev-Mode sind
+     * 
+     * @return bool True wenn Dev-Mode
+     */
+    private static function isDevMode(): bool
+    {
+        $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
+        return in_array($appEnv, ['local', 'dev', 'development']);
     }
     
     /**

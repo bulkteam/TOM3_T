@@ -17,6 +17,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Infrastructure\Auth\AuthService;
 use TOM\Infrastructure\Activity\ActivityLogService;
+require_once __DIR__ . '/api-security.php';
 
 // Headers werden bereits vom Router gesetzt
 // Nur setzen, wenn noch nicht gesetzt (für direkten Aufruf)
@@ -29,8 +30,16 @@ try {
     $auth = new AuthService(null, $activityLogService);
 } catch (Exception $e) {
     http_response_code(500);
-    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
-    $isDev = in_array($appEnv, ['local', 'dev', 'development']);
+    // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
+    $isDev = false;
+    try {
+        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
+    } catch (\RuntimeException $e) {
+        // Wenn APP_ENV-Fehler, zeige diesen an
+        http_response_code(500);
+        echo json_encode(['error' => 'Configuration error', 'message' => $e->getMessage()]);
+        exit;
+    }
     
     $error = [
         'error' => 'Auth service initialization failed',
@@ -114,6 +123,18 @@ try {
                     http_response_code(500);
                     echo json_encode([
                         'error' => 'Failed to get users',
+                        'message' => $e->getMessage()
+                    ]);
+                }
+            } elseif ($action === 'csrf-token') {
+                // GET /api/auth/csrf-token - CSRF-Token für Frontend
+                try {
+                    $token = generateCsrfToken();
+                    echo json_encode(['token' => $token]);
+                } catch (\Exception $e) {
+                    http_response_code(500);
+                    echo json_encode([
+                        'error' => 'Failed to generate CSRF token',
                         'message' => $e->getMessage()
                     ]);
                 }

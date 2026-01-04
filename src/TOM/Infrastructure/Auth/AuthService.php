@@ -25,7 +25,14 @@ class AuthService
         $this->db = $db ?? DatabaseConnection::getInstance();
         $this->activityLogService = $activityLogService;
         $this->authMode = getenv('AUTH_MODE') ?: 'dev';
-        $this->appEnv = getenv('APP_ENV') ?: 'local';
+        
+        // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
+        try {
+            $this->appEnv = \TOM\Infrastructure\Security\SecurityHelper::requireAppEnv();
+        } catch (\RuntimeException $e) {
+            // In Production: Fail sofort
+            throw new \RuntimeException('Security: APP_ENV must be set. ' . $e->getMessage());
+        }
         
         // Sicherheits-Check: Dev-Auth darf nicht in Production laufen
         if ($this->appEnv === 'prod' && $this->authMode === 'dev') {

@@ -13,18 +13,26 @@ if (!defined('TOM3_AUTOLOADED')) {
 }
 
 use TOM\Infrastructure\Auth\AuthHelper;
+use TOM\Infrastructure\Security\SecurityHelper;
+use TOM\Infrastructure\Security\CsrfTokenService;
 
 /**
  * Prüft ob die App-Umgebung gesetzt ist
- * Setzt Default auf 'local' für lokale Entwicklung
+ * In Production: Fail wenn nicht gesetzt (fail-closed)
+ * In Dev: Default auf 'local'
  */
 function requireAppEnv(): void
 {
-    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV');
-    if (empty($appEnv)) {
-        // In lokaler Entwicklung: Default auf 'local' setzen
-        // In Production sollte APP_ENV explizit gesetzt sein
-        $_ENV['APP_ENV'] = 'local';
+    try {
+        SecurityHelper::requireAppEnv();
+    } catch (\RuntimeException $e) {
+        // In Production: Fail sofort
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'Configuration error',
+            'message' => $e->getMessage()
+        ]);
+        exit;
     }
 }
 
@@ -66,9 +74,10 @@ function setCorsHeaders(): void
 /**
  * Prüft ob der aktuelle User authentifiziert ist
  * 
- * @return array|null User-Daten oder null
+ * @return array User-Daten
+ * @throws \RuntimeException Wenn kein User eingeloggt
  */
-function requireAuth(): ?array
+function requireAuth(): array
 {
     $user = AuthHelper::getCurrentUser();
     if (!$user) {
@@ -131,6 +140,48 @@ function isPublicEndpoint(string $resource, ?string $id = null, ?string $action 
 }
 
 /**
+ * CSRF-Token generieren und in Session speichern
+ * 
+ * @return string CSRF-Token
+ */
+function generateCsrfToken(): string
+{
+    return CsrfTokenService::generateToken();
+}
+
+/**
+ * CSRF-Token aus Session holen
+ * 
+ * @return string|null CSRF-Token oder null
+ */
+function getCsrfToken(): ?string
+{
+    return CsrfTokenService::getToken();
+}
+
+/**
+ * Prüft CSRF-Token für state-changing Requests
+ * 
+ * @param string $method HTTP-Methode
+ * @throws \RuntimeException Wenn CSRF-Token ungültig
+ */
+function validateCsrfToken(string $method): void
+{
+    $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? null;
+    
+    try {
+        CsrfTokenService::requireValidToken($method, $token);
+    } catch (\RuntimeException $e) {
+        http_response_code(403);
+        echo json_encode([
+            'error' => 'Invalid CSRF token',
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
+/**
  * Gibt eine sichere Fehlerantwort zurück
  * 
  * @param Exception $e Exception
@@ -138,8 +189,7 @@ function isPublicEndpoint(string $resource, ?string $id = null, ?string $action 
  */
 function sendErrorResponse(Exception $e, bool $includeTrace = false): void
 {
-    $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
-    $isDev = in_array($appEnv, ['local', 'dev', 'development']);
+    $isDev = SecurityHelper::isDevMode();
     
     $error = [
         'error' => 'Internal server error',

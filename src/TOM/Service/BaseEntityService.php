@@ -82,14 +82,24 @@ abstract class BaseEntityService
     
     /**
      * Holt die aktuelle User-ID
+     * 
+     * @param bool $allowFallback Erlaubt 'default_user' Fallback nur in Dev-Mode
+     * @return string User-ID
+     * @throws \RuntimeException Wenn kein User eingeloggt und Fallback nicht erlaubt
      */
-    protected function getCurrentUserId(): string
+    protected function getCurrentUserId(bool $allowFallback = false): string
     {
         try {
-            $userId = \TOM\Infrastructure\Auth\AuthHelper::getCurrentUserId();
-            return $userId ?? 'default_user';
-        } catch (\Exception $e) {
-            return 'default_user';
+            return \TOM\Infrastructure\Auth\AuthHelper::getCurrentUserId($allowFallback);
+        } catch (\RuntimeException $e) {
+            // In Dev-Mode: Fallback erlauben
+            if ($allowFallback) {
+                $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local';
+                if (in_array($appEnv, ['local', 'dev', 'development'])) {
+                    return 'default_user';
+                }
+            }
+            throw $e;
         }
     }
 }
