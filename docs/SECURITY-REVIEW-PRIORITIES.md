@@ -8,9 +8,9 @@
 
 ---
 
-## P0 - Kritisch (Sofort umsetzen)
+## P0 - Kritisch (Sofort umsetzen) ✅ ALLE UMGESETZT
 
-### 1. ✅ Auth-Zwang ohne "default_user" Fallback
+### 1. ✅ Auth-Zwang ohne "default_user" Fallback ✅ UMGESETZT
 
 **Problem:**
 - `AuthHelper::getCurrentUserId()` fällt auf `'default_user'` zurück
@@ -42,7 +42,7 @@ public static function getCurrentUserId(): string
 
 ---
 
-### 2. ❌ CSRF-Schutz für Cookie-Session-Auth
+### 2. ✅ CSRF-Schutz für Cookie-Session-Auth ✅ UMGESETZT
 
 **Problem:**
 - Kein CSRF-Schutz für POST/PUT/DELETE
@@ -60,7 +60,7 @@ public static function getCurrentUserId(): string
 
 ---
 
-### 3. ⚠️ APP_ENV Default "local" härten
+### 3. ✅ APP_ENV Default "local" härten ✅ UMGESETZT
 
 **Problem:**
 - `APP_ENV` fällt auf `'local'` zurück
@@ -85,7 +85,7 @@ $appEnv = $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'local'; // ❌
 
 ---
 
-### 4. ⚠️ Rollen-/Rechteprüfung: Hierarchie statt "Role == Permission"
+### 4. ✅ Rollen-/Rechteprüfung: Hierarchie statt "Role == Permission" ✅ UMGESETZT
 
 **Problem:**
 - `UserPermissionService::userHasPermission()` sehr "literal"
@@ -115,9 +115,9 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
-## P1 - Sehr sinnvoll (Stabilität, Konsistenz)
+## P1 - Sehr sinnvoll (Stabilität, Konsistenz) ⚠️ TEILWEISE UMGESETZT (4/6)
 
-### 5. Input-Validation vereinheitlichen
+### 5. ✅ Input-Validation vereinheitlichen ✅ UMGESETZT
 
 **Problem:**
 - Validation-Pattern nicht überall integriert
@@ -130,7 +130,7 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
-### 6. Transaktionen bei Multi-Step Writes
+### 6. ✅ Transaktionen bei Multi-Step Writes ✅ UMGESETZT
 
 **Problem:**
 - Entities wie Org ändern mehrere Tabellen
@@ -142,7 +142,7 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
-### 7. Search/Listing: Pagination + Indizes
+### 7. ❌ Search/Listing: Pagination + Indizes ⏳ OFFEN
 
 **Problem:**
 - Keine Pagination
@@ -155,7 +155,7 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
-### 8. Neo4j-Integration: Deprecation-Suppression ersetzen
+### 8. ❌ Neo4j-Integration: Deprecation-Suppression ersetzen ⏳ OFFEN
 
 **Problem:**
 - Deprecation-Verhalten unterdrückt
@@ -168,24 +168,24 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
-## P2 - Quality of Life
+## P2 - Quality of Life ❌ NOCH OFFEN
 
-### 9. Reproduzierbarkeit / Build
+### 9. ❌ Reproduzierbarkeit / Build ⏳ OFFEN
 - composer.json + composer.lock
 - phpstan/psalm, php-cs-fixer
 - CI-Checks
 
-### 10. API-Kontrakte dokumentieren
+### 10. ❌ API-Kontrakte dokumentieren ⏳ OFFEN
 - OpenAPI/Swagger
 - Request/Response Beispiele
 
 ---
 
-## Quick-Wins (Heute umsetzbar)
+## Quick-Wins (Heute umsetzbar) ✅ ALLE UMGESETZT
 
-1. ✅ **default_user Fallback eliminieren** → Verhindert unautorisierte Writes
-2. ❌ **CSRF für POST/PUT/DELETE** → Großer Sicherheitshebel
-3. ⚠️ **Role/Permission Mapping** → Spart später Endpoint-Flickwerk
+1. ✅ **default_user Fallback eliminieren** → Verhindert unautorisierte Writes ✅ UMGESETZT
+2. ✅ **CSRF für POST/PUT/DELETE** → Großer Sicherheitshebel ✅ UMGESETZT
+3. ✅ **Role/Permission Mapping** → Spart später Endpoint-Flickwerk ✅ UMGESETZT
 
 ---
 
@@ -210,9 +210,35 @@ public function userHasPermission($userId, string $permission, ?array $userRoles
 
 ---
 
+## Status-Übersicht
+
+**P0 (Kritisch):** ✅ Alle umgesetzt (4/4)  
+**P1 (Wichtig):** ⚠️ Teilweise umgesetzt (4/6)  
+**P2 (Nice-to-have):** ❌ Noch offen (0/2)
+
+**Gesamt:** ✅ 8/12 Punkte umgesetzt (67%)
+
+---
+
 ## Nächste Schritte
 
-1. ✅ **Priorisierung bestätigen** (diese Datei)
-2. ⏳ **Phase 1 starten** (Auth-Zwang)
-3. ⏳ **Phase 2 planen** (nach Phase 1)
+1. ✅ **Priorisierung bestätigen** (diese Datei) ✅ ABGESCHLOSSEN
+2. ✅ **Phase 1 starten** (Auth-Zwang) ✅ ABGESCHLOSSEN
+3. ✅ **Phase 2 planen** (nach Phase 1) ✅ ABGESCHLOSSEN
+
+### Offene ToDos
+
+Siehe `docs/SECURITY-TODOS.md` für:
+- P1.7: Pagination + Indizes
+- P1.8: Neo4j Deprecation
+- P2.9: Reproduzierbarkeit / Build
+- P2.10: API-Dokumentation
+
+---
+
+## Dokumentation
+
+- `docs/SECURITY-PHASE1-COMPLETE.md` - Phase 1 Zusammenfassung
+- `docs/SECURITY-PHASE2-COMPLETE.md` - Phase 2 Zusammenfassung
+- `docs/SECURITY-TODOS.md` - Offene ToDos
 
