@@ -224,67 +224,72 @@ class OrgVatService
             return $this->getVatRegistration($vatRegistrationUuid);
         }
         
-        // Wenn is_primary_for_country gesetzt wird, entferne Primary von anderen
-        if (isset($data['is_primary_for_country']) && $data['is_primary_for_country']) {
-            $vatReg = $this->getVatRegistration($vatRegistrationUuid);
-            if ($vatReg) {
-                $stmt = $this->db->prepare("
-                    UPDATE org_vat_registration 
-                    SET is_primary_for_country = 0 
-                    WHERE org_uuid = :org_uuid 
-                      AND country_code = :country_code
-                      AND vat_registration_uuid != :vat_uuid
-                      AND (valid_to IS NULL OR valid_to >= CURDATE())
-                ");
-                $stmt->execute([
-                    'org_uuid' => $vatReg['org_uuid'],
-                    'country_code' => $data['country_code'] ?? $vatReg['country_code'],
-                    'vat_uuid' => $vatRegistrationUuid
-                ]);
+        // Führe alle Updates in Transaktion aus (kann mehrere Tabellen betreffen)
+        $vatReg = TransactionHelper::executeInTransaction($this->db, function($db) use ($vatRegistrationUuid, $data, $updates, $params, $oldVatReg) {
+            // Wenn is_primary_for_country gesetzt wird, entferne Primary von anderen
+            if (isset($data['is_primary_for_country']) && $data['is_primary_for_country']) {
+                $vatReg = $this->getVatRegistration($vatRegistrationUuid);
+                if ($vatReg) {
+                    $stmt = $db->prepare("
+                        UPDATE org_vat_registration 
+                        SET is_primary_for_country = 0 
+                        WHERE org_uuid = :org_uuid 
+                          AND country_code = :country_code
+                          AND vat_registration_uuid != :vat_uuid
+                          AND (valid_to IS NULL OR valid_to >= CURDATE())
+                    ");
+                    $stmt->execute([
+                        'org_uuid' => $vatReg['org_uuid'],
+                        'country_code' => $data['country_code'] ?? $vatReg['country_code'],
+                        'vat_uuid' => $vatRegistrationUuid
+                    ]);
+                }
             }
-        }
-        
-        // Prüfe nochmal, ob nach der Verarbeitung noch Updates vorhanden sind
-        if (empty($updates)) {
-            return $this->getVatRegistration($vatRegistrationUuid);
-        }
-        
-        $sql = "UPDATE org_vat_registration SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE vat_registration_uuid = :uuid";
-        $stmt = $this->db->prepare($sql);
-        
-        if (!$stmt) {
-            throw new \Exception("Failed to prepare SQL statement: " . implode(', ', $this->db->errorInfo()));
-        }
-        
-        $result = $stmt->execute($params);
-        
-        if (!$result) {
-            $errorInfo = $stmt->errorInfo();
-            throw new \Exception("Failed to execute SQL: " . ($errorInfo[2] ?? 'Unknown error'));
-        }
-        
-        // Hinweis: rowCount() kann bei MySQL/MariaDB 0 zurückgeben, auch wenn die Query erfolgreich war
-        // (z.B. wenn die Daten unverändert sind). Das ist kein Fehler.
-        $affectedRows = $stmt->rowCount();
-        
-        // Hole die aktualisierten Daten (unabhängig von rowCount)
-        $vatReg = $this->getVatRegistration($vatRegistrationUuid);
-        
-        if (!$vatReg) {
-            // Fallback: Direkt aus der DB lesen (ohne JOIN)
-            $fallbackStmt = $this->db->prepare("SELECT * FROM org_vat_registration WHERE vat_registration_uuid = :uuid");
-            $fallbackStmt->execute(['uuid' => $vatRegistrationUuid]);
-            $vatReg = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Prüfe nochmal, ob nach der Verarbeitung noch Updates vorhanden sind
+            if (empty($updates)) {
+                return $this->getVatRegistration($vatRegistrationUuid);
+            }
+            
+            $sql = "UPDATE org_vat_registration SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE vat_registration_uuid = :uuid";
+            $stmt = $db->prepare($sql);
+            
+            if (!$stmt) {
+                throw new \Exception("Failed to prepare SQL statement: " . implode(', ', $db->errorInfo()));
+            }
+            
+            $result = $stmt->execute($params);
+            
+            if (!$result) {
+                $errorInfo = $stmt->errorInfo();
+                throw new \Exception("Failed to execute SQL: " . ($errorInfo[2] ?? 'Unknown error'));
+            }
+            
+            // Hinweis: rowCount() kann bei MySQL/MariaDB 0 zurückgeben, auch wenn die Query erfolgreich war
+            // (z.B. wenn die Daten unverändert sind). Das ist kein Fehler.
+            $affectedRows = $stmt->rowCount();
+            
+            // Hole die aktualisierten Daten (unabhängig von rowCount)
+            $vatReg = $this->getVatRegistration($vatRegistrationUuid);
             
             if (!$vatReg) {
-                throw new \Exception("VAT registration not found after update (vat_registration_uuid: $vatRegistrationUuid, affected rows: $affectedRows)");
+                // Fallback: Direkt aus der DB lesen (ohne JOIN)
+                $fallbackStmt = $db->prepare("SELECT * FROM org_vat_registration WHERE vat_registration_uuid = :uuid");
+                $fallbackStmt->execute(['uuid' => $vatRegistrationUuid]);
+                $vatReg = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$vatReg) {
+                    throw new \Exception("VAT registration not found after update (vat_registration_uuid: $vatRegistrationUuid, affected rows: $affectedRows)");
+                }
+                
+                // Füge leere Adress-Felder hinzu für Konsistenz
+                $vatReg['street'] = null;
+                $vatReg['city'] = null;
+                $vatReg['country'] = null;
             }
             
-            // Füge leere Adress-Felder hinzu für Konsistenz
-            $vatReg['street'] = null;
-            $vatReg['city'] = null;
-            $vatReg['country'] = null;
-        }
+            return $vatReg;
+        });
         
         // Protokolliere Änderungen im Audit-Trail (ein Eintrag pro geändertem Feld, wie bei Stammdaten)
         if ($vatReg && $oldVatReg) {
