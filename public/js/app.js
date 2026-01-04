@@ -83,6 +83,16 @@ class TOM3App {
     }
 
     async init() {
+        // Hole CSRF-Token beim App-Start
+        if (window.csrfTokenService) {
+            try {
+                await window.csrfTokenService.fetchToken();
+            } catch (error) {
+                console.warn('Could not fetch CSRF token:', error);
+                // In Dev-Mode: Token ist optional, daher kein Fehler werfen
+            }
+        }
+        
         await this.auth.loadCurrentUser();
         this.setupEventListeners();
         this.setupNavigation();

@@ -26,12 +26,25 @@ class TOM3API {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        const method = options.method || 'GET';
+        
         const config = {
             headers: {
                 ...options.headers
             },
             ...options
         };
+
+        // CSRF-Token für state-changing Requests hinzufügen
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            // Hole CSRF-Token (wenn noch nicht vorhanden)
+            if (window.csrfTokenService) {
+                const token = await window.csrfTokenService.fetchToken();
+                if (token) {
+                    config.headers['X-CSRF-Token'] = token;
+                }
+            }
+        }
 
         // FormData nicht als JSON senden
         if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -41,6 +54,7 @@ class TOM3API {
             config.body = JSON.stringify(config.body);
         } else if (config.body instanceof FormData) {
             // FormData setzt Content-Type automatisch (inkl. boundary)
+            // CSRF-Token muss als Header gesetzt werden (nicht in FormData)
             delete config.headers['Content-Type'];
         } else if (!config.headers['Content-Type']) {
             config.headers['Content-Type'] = 'application/json';

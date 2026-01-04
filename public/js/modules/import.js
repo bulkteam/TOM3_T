@@ -412,7 +412,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Batch wird gelöscht...');
             
-            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/batch/${batchUuid}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -657,7 +657,7 @@ export class ImportModule {
         progressText.textContent = 'Wird hochgeladen...';
         
         try {
-            const response = await fetch('/tom3/public/api/import/upload', {
+            const response = await window.csrfTokenService.fetchWithToken('/tom3/public/api/import/upload', {
                 method: 'POST',
                 body: formData
             });
@@ -758,7 +758,7 @@ export class ImportModule {
             Utils.showInfo('Lade Analyse-Daten...');
             
             // Rufe Analyse-Endpoint auf (analysiert die Datei neu)
-            const response = await fetch(`/tom3/public/api/import/analyze`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1750,7 +1750,7 @@ export class ImportModule {
             }
             
             // Speichere Mapping
-            const response = await fetch(`/tom3/public/api/import/mapping/${this.currentBatch}`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/mapping/${this.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mapping_config: mappingConfig })
@@ -1802,7 +1802,7 @@ export class ImportModule {
             
             // 2. Importiere in Staging (mit Branchen-Vorschlägen)
             // Backend holt file_path automatisch aus DocumentService/BlobService
-            const stagingResponse = await fetch(`/tom3/public/api/import/staging/${this.currentBatch}`, {
+            const stagingResponse = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${this.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
                 // Kein Body nötig - Backend holt file_path selbst
@@ -2097,7 +2097,7 @@ export class ImportModule {
                     };
                     
                     // Speichere aktualisierte industry_resolution
-                    await fetch(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
+                    await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -2342,7 +2342,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Setze Disposition...');
             
-            const response = await fetch(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2826,7 +2826,7 @@ export class ImportModule {
             });
             
             // Speichere Korrekturen über API
-            const response = await fetch(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3188,7 +3188,7 @@ export class ImportModule {
             
             Utils.showInfo('Import wird durchgeführt...');
             
-            const response = await fetch(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
+            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
