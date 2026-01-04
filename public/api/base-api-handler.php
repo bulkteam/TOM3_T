@@ -122,6 +122,27 @@ function getBoolQueryParam(string $key, bool $default = false): bool
  */
 function handleApiException(\Throwable $e, string $context = 'API request'): void
 {
+    // ValidationException: 400 Bad Request mit detaillierten Fehlern
+    if ($e instanceof \TOM\Infrastructure\Validation\ValidationException) {
+        $error = [
+            'error' => 'Validation error',
+            'message' => $e->getMessage(),
+            'errors' => $e->getErrors()
+        ];
+        jsonResponse($error, 400);
+        return;
+    }
+    
+    // InvalidArgumentException: 400 Bad Request
+    if ($e instanceof \InvalidArgumentException) {
+        $error = [
+            'error' => 'Invalid request',
+            'message' => $e->getMessage()
+        ];
+        jsonResponse($error, 400);
+        return;
+    }
+    
     // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
     $isDev = false;
     try {
