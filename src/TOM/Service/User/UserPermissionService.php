@@ -5,6 +5,7 @@ namespace TOM\Service\User;
 
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Permission\CapabilityRegistry;
 
 /**
  * UserPermissionService
@@ -68,6 +69,7 @@ class UserPermissionService
     /**
      * Prüfe, ob ein User eine bestimmte Berechtigung hat
      * 
+     * @deprecated Verwende userHasCapability() für Capability-basierte Prüfung
      * @param int|string $userId User-ID
      * @param string $permission Berechtigung (admin, manager, user, readonly)
      * @param array|null $userRoles Optional: Bereits geladene User-Rollen (für Performance)
@@ -82,8 +84,83 @@ class UserPermissionService
             return true;
         }
         
-        // Spezifische Berechtigungen
+        // Spezifische Berechtigungen (für Backward Compatibility)
         return $userRole === $permission;
+    }
+    
+    /**
+     * Prüfe, ob ein User eine bestimmte Capability hat
+     * 
+     * @param int|string $userId User-ID
+     * @param string $capability Capability (z.B. 'org.write', 'person.read')
+     * @param array|null $userRoles Optional: Bereits geladene User-Rollen (für Performance)
+     * @return bool True wenn User die Capability hat
+     */
+    public function userHasCapability($userId, string $capability, ?array $userRoles = null): bool
+    {
+        $userRole = $this->getUserPermissionRole($userId, $userRoles);
+        
+        if ($userRole === null) {
+            return false;
+        }
+        
+        return CapabilityRegistry::roleHasCapability($userRole, $capability);
+    }
+    
+    /**
+     * Gibt alle Capabilities eines Users zurück
+     * 
+     * @param int|string $userId User-ID
+     * @param array|null $userRoles Optional: Bereits geladene User-Rollen (für Performance)
+     * @return array Liste von Capabilities
+     */
+    public function getUserCapabilities($userId, ?array $userRoles = null): array
+    {
+        $userRole = $this->getUserPermissionRole($userId, $userRoles);
+        
+        if ($userRole === null) {
+            return [];
+        }
+        
+        return CapabilityRegistry::getCapabilitiesForRole($userRole);
+    }
+    
+    /**
+     * Prüft ob ein User mindestens eine der angegebenen Capabilities hat
+     * 
+     * @param int|string $userId User-ID
+     * @param array $capabilities Liste von Capabilities
+     * @param array|null $userRoles Optional: Bereits geladene User-Rollen (für Performance)
+     * @return bool True wenn User mindestens eine Capability hat
+     */
+    public function userHasAnyCapability($userId, array $capabilities, ?array $userRoles = null): bool
+    {
+        foreach ($capabilities as $capability) {
+            if ($this->userHasCapability($userId, $capability, $userRoles)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Prüft ob ein User alle angegebenen Capabilities hat
+     * 
+     * @param int|string $userId User-ID
+     * @param array $capabilities Liste von Capabilities
+     * @param array|null $userRoles Optional: Bereits geladene User-Rollen (für Performance)
+     * @return bool True wenn User alle Capabilities hat
+     */
+    public function userHasAllCapabilities($userId, array $capabilities, ?array $userRoles = null): bool
+    {
+        foreach ($capabilities as $capability) {
+            if (!$this->userHasCapability($userId, $capability, $userRoles)) {
+                return false;
+            }
+        }
+        
+        return true;
     }
     
     /**

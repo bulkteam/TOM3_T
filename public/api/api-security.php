@@ -15,6 +15,7 @@ if (!defined('TOM3_AUTOLOADED')) {
 use TOM\Infrastructure\Auth\AuthHelper;
 use TOM\Infrastructure\Security\SecurityHelper;
 use TOM\Infrastructure\Security\CsrfTokenService;
+use TOM\Service\User\UserPermissionService;
 
 /**
  * Prüft ob die App-Umgebung gesetzt ist
@@ -121,6 +122,62 @@ function requireRole($requiredRole): array
 function requireAdmin(): array
 {
     return requireRole('admin');
+}
+
+/**
+ * Prüft ob der User eine bestimmte Capability hat
+ * 
+ * @param string $capability Capability (z.B. 'org.write', 'person.read')
+ * @return array User-Daten
+ */
+function requireCapability(string $capability): array
+{
+    $user = requireAuth();
+    $userId = (string)$user['user_id'];
+    
+    $permissionService = new UserPermissionService();
+    $userRoles = $user['roles'] ?? null;
+    
+    if (!$permissionService->userHasCapability($userId, $capability, $userRoles)) {
+        http_response_code(403);
+        echo json_encode([
+            'error' => 'Forbidden',
+            'message' => 'Insufficient permissions',
+            'required_capability' => $capability,
+            'user_roles' => $userRoles ?? []
+        ]);
+        exit;
+    }
+    
+    return $user;
+}
+
+/**
+ * Prüft ob der User mindestens eine der angegebenen Capabilities hat
+ * 
+ * @param array $capabilities Liste von Capabilities
+ * @return array User-Daten
+ */
+function requireAnyCapability(array $capabilities): array
+{
+    $user = requireAuth();
+    $userId = (string)$user['user_id'];
+    
+    $permissionService = new UserPermissionService();
+    $userRoles = $user['roles'] ?? null;
+    
+    if (!$permissionService->userHasAnyCapability($userId, $capabilities, $userRoles)) {
+        http_response_code(403);
+        echo json_encode([
+            'error' => 'Forbidden',
+            'message' => 'Insufficient permissions',
+            'required_capabilities' => $capabilities,
+            'user_roles' => $userRoles ?? []
+        ]);
+        exit;
+    }
+    
+    return $user;
 }
 
 /**
