@@ -140,12 +140,20 @@ export class PersonSearchModule {
             
             const results = await window.API.searchPersons(query, 50);
             
+            // Stelle sicher, dass results ein Array ist
+            if (!results || !Array.isArray(results)) {
+                resultsContainer.innerHTML = '<div class="empty-state"><p>Keine Personen gefunden</p></div>';
+                return;
+            }
+            
             if (results.length === 0) {
                 resultsContainer.innerHTML = '<div class="empty-state"><p>Keine Personen gefunden</p></div>';
                 return;
             }
             
-            resultsContainer.innerHTML = results.map(person => this.renderPersonSearchResult(person)).join('');
+            // Speichere Ergebnisse für Event-Handler
+            const searchResults = results;
+            resultsContainer.innerHTML = searchResults.map(person => this.renderPersonSearchResult(person)).join('');
             
             this.keyboardNav.resetSelection();
             
@@ -153,8 +161,20 @@ export class PersonSearchModule {
             resultsContainer.querySelectorAll('.person-search-result').forEach(result => {
                 result.addEventListener('click', () => {
                     const personUuid = result.dataset.personUuid;
-                    if (personUuid && window.app.personDetail) {
-                        window.app.personDetail.showPersonDetail(personUuid);
+                    if (!personUuid) {
+                        console.error('Person UUID nicht gefunden in search result');
+                        return;
+                    }
+                    if (window.app.personDetail) {
+                        // Finde die vollständigen Person-Daten aus den Suchergebnissen
+                        const personData = searchResults.find(p => p.person_uuid === personUuid);
+                        if (personData) {
+                            // Übergebe die vollständigen Person-Daten, um erneutes Laden zu vermeiden
+                            window.app.personDetail.showPersonDetail(personData);
+                        } else {
+                            // Fallback: Nur UUID übergeben
+                            window.app.personDetail.showPersonDetail(personUuid);
+                        }
                         if (resultsContainer) {
                             resultsContainer.innerHTML = '';
                         }

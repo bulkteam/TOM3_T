@@ -25,6 +25,12 @@ export class PersonAffiliationModule {
         try {
             const affiliations = await window.API.getPersonAffiliations(personUuid, true);
             
+            // Stelle sicher, dass affiliations ein Array ist
+            if (!affiliations || !Array.isArray(affiliations)) {
+                container.innerHTML = '<div class="empty-state"><p>Keine Affiliations gefunden</p></div>';
+                return;
+            }
+            
             if (affiliations.length === 0) {
                 container.innerHTML = '<div class="empty-state"><p>Keine Affiliations gefunden</p></div>';
                 return;

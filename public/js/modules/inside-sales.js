@@ -36,7 +36,10 @@ export class InsideSalesModule {
      */
     async init() {
         const page = document.getElementById('page-inside-sales');
-        if (!page) return;
+        if (!page) {
+            console.error('[InsideSales] page-inside-sales nicht gefunden');
+            return;
+        }
         
         // Prüfe, ob Dialer-Modus
         const hash = window.location.hash;
@@ -96,6 +99,9 @@ export class InsideSalesModule {
         // Setze Sortierung aus Hash (wenn vorhanden)
         if (sortFieldParam && sortOrderParam) {
             this.currentSort = { field: sortFieldParam, direction: sortOrderParam };
+        } else if (!this.currentSort) {
+            // Fallback: Standard-Sortierung, falls nicht gesetzt
+            this.currentSort = { field: 'stars', direction: 'desc' };
         }
         const targetMode = isDialerMode ? 'dialer' : 'queue';
         
@@ -165,14 +171,15 @@ export class InsideSalesModule {
             }
             
             let workItem = await window.API.request(`/work-items/${workItemUuid}`);
+            
             if (workItem) {
                 this.currentWorkItem = workItem;
                 
-                // NICHT automatisch auf IN_PROGRESS setzen beim Öffnen aus der Queue
+                // Status wird NICHT automatisch geändert beim Öffnen
                 // Der Lead bleibt in seinem ursprünglichen Stage (NEW, IN_PROGRESS, etc.)
-                // Nur wenn der Benutzer explizit auf "Nächster" klickt, wird NEW → IN_PROGRESS
+                // Status ändert sich nur bei tatsächlichen Änderungen (Sterne setzen, Daten ändern, etc.)
                 
-                this.renderLeadCard(workItem);
+                await this.renderLeadCard(workItem);
                 await this.loadTimeline(workItem.case_uuid);
                 
                 // Aktualisiere Mini-Queue (markiere aktiven Lead) - verwende aktuellen Tab
@@ -189,7 +196,7 @@ export class InsideSalesModule {
      */
     async initQueue(container) {
         if (!container) {
-            console.error('initQueue: Container ist null oder undefined');
+            console.error('[InsideSales] initQueue: Container ist null oder undefined');
             return;
         }
         
@@ -215,16 +222,12 @@ export class InsideSalesModule {
         // Setze Tab aus Hash (Hash hat Vorrang, da er die aktuelle Navigation widerspiegelt)
         if (tabFromHash) {
             this.currentTab = tabFromHash;
-            console.log('[DEBUG] initQueue() - Tab aus Hash gesetzt:', this.currentTab);
         }
         
         // Setze Sortierung aus Hash (Hash hat Vorrang)
         if (sortFromHash) {
             this.currentSort = sortFromHash;
-            console.log('[DEBUG] initQueue() - Sortierung aus Hash gesetzt:', this.currentSort);
         }
-        
-        console.log('[DEBUG] initQueue() - Finaler currentTab:', this.currentTab, 'currentSort:', this.currentSort);
         
         container.innerHTML = `
             <div class="page-header">
@@ -326,7 +329,12 @@ export class InsideSalesModule {
         
         // Lade initial mit aktuellem Tab (aus Hash oder Default)
         const initialTab = this.currentTab || 'new';
-        await this.loadQueue(initialTab);
+        try {
+            await this.loadQueue(initialTab);
+        } catch (error) {
+            console.error('[InsideSales] Fehler beim Laden der Queue:', error);
+            Utils.showError('Fehler beim Laden der Queue: ' + error.message);
+        }
     }
     
     /**
@@ -344,18 +352,29 @@ export class InsideSalesModule {
         
         container.innerHTML = `
             <div class="dialer-container">
-                <!-- Zeile 0: Button-Leiste (volle Breite) -->
+                <!-- Zeile 1: Button-Leiste (volle Breite) -->
                 <div class="dialer-actions-bar">
-                    <button id="btn-next-lead" class="btn btn-primary">Nächster</button>
-                    <button id="btn-close-dialer" class="btn btn-secondary">Schließen</button>
+                    <div class="dialer-nav-buttons">
+                        <button id="btn-next-lead" class="btn btn-primary">Nächster</button>
+                        <button id="btn-close-dialer" class="btn btn-secondary">Schließen</button>
+                    </div>
+                    <div class="dialer-separator"></div>
+                    <div class="dialer-outcome-buttons">
+                        <button class="outcome-btn" data-outcome="erreicht">✅ Erreicht</button>
+                        <button class="outcome-btn" data-outcome="nicht_erreicht">❌ Nicht erreicht</button>
+                        <button class="outcome-btn" data-outcome="rueckruf">📞 Rückruf</button>
+                        <button class="outcome-btn" data-outcome="falsche_nummer">⚠️ Falsche Nummer</button>
+                        <button class="outcome-btn" data-outcome="kein_bedarf">🚫 Kein Bedarf</button>
+                        <button class="outcome-btn" data-outcome="qualifiziert">⭐ Qualifiziert</button>
+                    </div>
                 </div>
                 
-                <!-- Zeile 1: Drei Spalten nebeneinander -->
+                <!-- Zeile 2: Drei Spalten nebeneinander -->
                 <div class="dialer-content-row">
                     <!-- Linke Spalte: Mini-Queue -->
                     <div class="dialer-queue">
                         <div class="dialer-queue-header">
-                            <h3>Queue</h3>
+                            <h3>Aktuelle Queue</h3>
                         </div>
                         <div id="dialer-queue-list" class="dialer-queue-list">
                             <!-- Wird dynamisch geladen -->
@@ -364,55 +383,62 @@ export class InsideSalesModule {
                     
                     <!-- Mitte: Lead-Karte -->
                     <div class="dialer-main">
-                    <div id="dialer-lead-card" class="dialer-lead-card">
-                        <div class="lead-card-header">
-                            <h2 id="lead-company-name">-</h2>
-                            <div id="lead-stars" class="lead-stars">
-                                <!-- Wird dynamisch geladen -->
-                            </div>
-                        </div>
-                        
-                        <div class="lead-card-info">
-                            <div class="info-row">
-                                <span class="info-label">📍 Ort:</span>
-                                <span id="lead-city">-</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">📞 Telefon:</span>
-                                <span id="lead-phone">-</span>
-                                <button id="btn-call" class="btn btn-sm btn-primary" style="margin-left: 1rem;">📞 Anrufen</button>
+                        <div id="dialer-lead-card" class="dialer-lead-card">
+                            <!-- Firmenansicht -->
+                            <div class="lead-company-view">
+                                <div class="lead-card-header">
+                                    <h2>
+                                        <span id="lead-company-name">-</span>
+                                        <span id="lead-company-edit" class="lead-company-edit" style="cursor: pointer; margin-left: 8px; opacity: 0.6;" title="Firma bearbeiten">✏️</span>
+                                    </h2>
+                                    <div id="lead-stars" class="lead-stars">
+                                        <!-- Wird dynamisch geladen -->
+                                    </div>
+                                </div>
+                                
+                                <div class="lead-card-info">
+                                    <div class="info-row">
+                                        <span class="info-label">📍 Ort:</span>
+                                        <span id="lead-city">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">📞 Telefon:</span>
+                                        <a id="lead-company-phone" class="phone-link" href="#" title="Anrufen">-</a>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">🌐 Website:</span>
+                                        <a id="lead-website" href="#" target="_blank">-</a>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">📅 Letzter Touch:</span>
+                                        <span id="lead-last-touch">-</span>
+                                    </div>
+                                </div>
                             </div>
                             
-                            <!-- Call Status (versteckt) -->
-                            <div id="call-status" class="call-status" style="display: none;">
-                                <div class="call-status-info">
-                                    <span id="call-status-text">-</span>
-                                    <span id="call-timer">00:00</span>
+                            <!-- Personenansicht -->
+                            <div class="lead-persons-view">
+                                <div class="lead-persons-header-inline">
+                                    <span class="lead-persons-label">👥 Personen</span>
+                                    <button id="btn-add-person" class="btn-add-person btn-add-person-white" title="Neue Person hinzufügen">+</button>
                                 </div>
-                                <button id="btn-end-call" class="btn btn-sm btn-danger">Beenden</button>
+                                
+                                <!-- Call Status (versteckt) -->
+                                <div id="call-status" class="call-status" style="display: none;">
+                                    <div class="call-status-info">
+                                        <span id="call-status-text">-</span>
+                                        <span id="call-timer">00:00</span>
+                                    </div>
+                                    <button id="btn-end-call" class="btn btn-sm btn-danger">Beenden</button>
+                                </div>
+                                
+                                <div id="lead-persons-list" class="lead-persons-list">
+                                    <!-- Wird dynamisch geladen -->
+                                </div>
                             </div>
-                            <div class="info-row">
-                                <span class="info-label">🌐 Website:</span>
-                                <a id="lead-website" href="#" target="_blank">-</a>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">📅 Letzter Touch:</span>
-                                <span id="lead-last-touch">-</span>
-                            </div>
-                        </div>
                         
-                        <!-- Outcome-Bar -->
-                        <div class="outcome-bar">
-                            <button class="outcome-btn" data-outcome="erreicht">✅ Erreicht</button>
-                            <button class="outcome-btn" data-outcome="nicht_erreicht">❌ Nicht erreicht</button>
-                            <button class="outcome-btn" data-outcome="rueckruf">📞 Rückruf</button>
-                            <button class="outcome-btn" data-outcome="falsche_nummer">⚠️ Falsche Nummer</button>
-                            <button class="outcome-btn" data-outcome="kein_bedarf">🚫 Kein Bedarf</button>
-                            <button class="outcome-btn" data-outcome="qualifiziert">⭐ Qualifiziert</button>
-                        </div>
-                        
-                        <!-- Disposition Sheet (versteckt) -->
-                        <div id="disposition-sheet" class="disposition-sheet" style="display: none;">
+                        <!-- Disposition Sheet (dauerhaft sichtbar) -->
+                        <div id="disposition-sheet" class="disposition-sheet">
                             <h3>Disposition</h3>
                             
                             <div class="form-group">
@@ -610,11 +636,24 @@ export class InsideSalesModule {
             this.closeHandoverForm();
         });
         
-        // Next Lead Button
-        document.getElementById('btn-next-lead')?.addEventListener('click', () => {
-            // Beim expliziten "Nächster"-Klick: Lead auf IN_PROGRESS setzen
-            this.loadNextLead(null, true);
-        });
+        // Next Lead Button - verwende setTimeout, um sicherzustellen, dass Button im DOM ist
+        setTimeout(() => {
+            const btnNext = document.getElementById('btn-next-lead');
+            if (btnNext) {
+                // Entferne alle alten Event-Listener, indem wir den Button ersetzen
+                const newBtn = btnNext.cloneNode(true);
+                btnNext.parentNode?.replaceChild(newBtn, btnNext);
+                newBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Nächster Lead laden - Status wird NICHT automatisch geändert
+                    // Status ändert sich nur bei tatsächlichen Änderungen (Sterne, Daten, etc.)
+                    await this.loadNextLead(null, false);
+                });
+            } else {
+                console.error('Button btn-next-lead nicht gefunden');
+            }
+        }, 100);
         
         // Close Dialer Button
         document.getElementById('btn-close-dialer')?.addEventListener('click', () => {
@@ -646,14 +685,32 @@ export class InsideSalesModule {
             window.location.hash = `inside-sales?tab=${tabToUse}&${sortParam}`;
         });
         
-        // Call Button
-        document.getElementById('btn-call')?.addEventListener('click', () => {
-            this.startCall();
+        // Phone Links - Event Delegation für alle Telefonnummern-Links
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('phone-link') || e.target.closest('.phone-link')) {
+                e.preventDefault();
+                const link = e.target.classList.contains('phone-link') ? e.target : e.target.closest('.phone-link');
+                // Verwende data-phone Attribut falls vorhanden, sonst Text-Content
+                const phoneNumber = link.dataset.phone || link.textContent.trim().replace(/📞|📱/g, '').trim();
+                if (phoneNumber && phoneNumber !== '-') {
+                    this.startCallWithNumber(phoneNumber);
+                }
+            }
         });
         
         // End Call Button
         document.getElementById('btn-end-call')?.addEventListener('click', () => {
             this.endCall();
+        });
+        
+        // Company Edit Button (Stiftsymbol)
+        document.getElementById('lead-company-edit')?.addEventListener('click', () => {
+            this.openCompanyEdit();
+        });
+        
+        // Add Person Button
+        document.getElementById('btn-add-person')?.addEventListener('click', () => {
+            this.openAddPerson();
         });
         
         // Hotkeys
@@ -742,8 +799,11 @@ export class InsideSalesModule {
         try {
             // Baue Sortier-Parameter
             const sortParam = `sort=${this.currentSort.field}&order=${this.currentSort.direction}`;
-            const response = await fetch(this.getApiUrl(`/work-items?type=LEAD&tab=${tab}&${sortParam}`));
+            const apiUrl = this.getApiUrl(`/work-items?type=LEAD&tab=${tab}&${sortParam}`);
+            const response = await fetch(apiUrl);
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[InsideSales] API Error Response:', errorText);
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             const data = await response.json();
@@ -797,9 +857,6 @@ export class InsideSalesModule {
         const cityEl = document.getElementById('lead-city');
         if (cityEl) cityEl.textContent = '-';
         
-        const phoneEl = document.getElementById('lead-phone');
-        if (phoneEl) phoneEl.textContent = '-';
-        
         const websiteEl = document.getElementById('lead-website');
         if (websiteEl) {
             websiteEl.href = '#';
@@ -825,39 +882,68 @@ export class InsideSalesModule {
     /**
      * Lädt nächsten Lead
      * @param {string} tab - Tab aus dem geladen werden soll (new, due, in_progress, snoozed, qualified)
-     * @param {boolean} markAsInProgress - Ob der Lead auf IN_PROGRESS gesetzt werden soll (nur bei explizitem "Nächster"-Klick)
+     * @param {boolean} markAsInProgress - Ob der Lead auf IN_PROGRESS gesetzt werden soll (standardmäßig false - nur bei tatsächlichen Änderungen)
      */
-    async loadNextLead(tab = null, markAsInProgress = true) {
+    async loadNextLead(tab = null, markAsInProgress = false) {
         try {
             // Verwende aktuellen Tab, falls nicht angegeben
             const targetTab = tab || this.currentTab || 'new';
             
-            let response = await window.API.request(`/queues/inside-sales/next?tab=${targetTab}`, {
-                method: 'POST'
-            });
+            // Sortierung wird in getNextLead nicht direkt unterstützt
+            // Stattdessen verwenden wir listWorkItems und nehmen den ersten Lead
+            const sortField = this.currentSort?.field || 'stars';
+            const sortOrder = this.currentSort?.direction || 'desc';
+            const sortParam = `sort=${sortField}&order=${sortOrder}`;
             
-            // Wenn kein Lead verfügbar (null zurückgegeben), zeige leeren Dialer
+            // Lade alle Leads aus dem Tab mit Sortierung
+            const data = await window.API.request(`/work-items?type=LEAD&tab=${targetTab}&${sortParam}`);
+            
+            if (!data || !data.items || data.items.length === 0) {
+                Utils.showInfo(`Keine weiteren Leads verfügbar im Tab "${targetTab}"`);
+                this.renderEmptyDialer();
+                return;
+            }
+            
+            // Finde den aktuellen Lead in der Liste
+            const currentIndex = this.currentWorkItem 
+                ? data.items.findIndex(item => item.case_uuid === this.currentWorkItem.case_uuid)
+                : -1;
+            
+            // Nimm den nächsten Lead (aktueller Index + 1, oder ersten, wenn kein aktueller)
+            let nextIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+            
+            // Wenn wir am Ende der Liste sind, nimm den ersten Lead (zirkulär)
+            if (nextIndex >= data.items.length) {
+                nextIndex = 0;
+            }
+            
+            let response = data.items[nextIndex];
+            
+            // Wenn kein Lead verfügbar, zeige leeren Dialer
             if (!response || !response.case_uuid) {
                 Utils.showInfo(`Keine weiteren Leads verfügbar im Tab "${targetTab}"`);
                 this.renderEmptyDialer();
                 return;
             }
             
-            this.currentWorkItem = response;
-            
-            // Setze Lead auf IN_PROGRESS nur wenn explizit gewünscht (z.B. bei "Nächster"-Klick)
-            // NICHT beim automatischen Laden beim Öffnen des Leadplayers
-            if (markAsInProgress && response.stage === 'NEW') {
-                await this.markLeadAsInProgress(response.case_uuid);
-                // Lade Lead neu, um aktualisierten Status zu erhalten
-                const updatedLead = await window.API.request(`/work-items/${response.case_uuid}`);
-                if (updatedLead) {
-                    this.currentWorkItem = updatedLead;
-                    response = updatedLead;
+            // Wenn keine Telefonnummer vorhanden, lade Lead neu über getWorkItem (wie bei "Öffnen")
+            if (!response.company_phone || response.company_phone === '-' || (typeof response.company_phone === 'string' && response.company_phone.trim() === '')) {
+                try {
+                    const fullLead = await window.API.request(`/work-items/${response.case_uuid}`);
+                    if (fullLead && fullLead.company_phone) {
+                        response = fullLead;
+                    }
+                } catch (error) {
+                    // Fehler beim Laden ignorieren, verwende ursprünglichen Response
                 }
             }
             
-            this.renderLeadCard(response);
+            this.currentWorkItem = response;
+            
+            // Status wird NICHT automatisch geändert beim Laden
+            // Status ändert sich nur bei tatsächlichen Änderungen (Sterne setzen, Daten ändern, etc.)
+            
+            await this.renderLeadCard(response);
             await this.loadTimeline(response.case_uuid);
             
             // Aktualisiere Mini-Queue nach dem Laden (mit gleichem Tab)
@@ -888,16 +974,20 @@ export class InsideSalesModule {
             const targetTab = tab || this.currentTab || 'new';
             
             // Lade Leads aus dem aktuellen Tab mit gleicher Sortierung wie Hauptliste
-            const sortParam = `sort=${this.currentSort.field}&order=${this.currentSort.direction}`;
+            // Stelle sicher, dass currentSort gesetzt ist
+            const sortField = this.currentSort?.field || 'stars';
+            const sortOrder = this.currentSort?.direction || 'desc';
+            const sortParam = `sort=${sortField}&order=${sortOrder}`;
             const data = await window.API.request(`/work-items?type=LEAD&tab=${targetTab}&${sortParam}`);
             
             if (data && data.items && data.items.length > 0) {
-                // Zeige max. 10 Leads
-                const items = data.items.slice(0, 10);
+                // Zeige alle Leads in der Mini-Queue (kein Limit mehr)
+                // Die Mini-Queue zeigt alle verfügbaren Leads aus dem aktuellen Tab
+                const items = data.items;
                 
                 container.innerHTML = items.map(item => {
                     const isActive = this.currentWorkItem && this.currentWorkItem.case_uuid === item.case_uuid;
-                    const activeClass = isActive ? 'dialer-queue-item-active' : '';
+                    const activeClass = isActive ? 'active' : '';
                     return `
                         <div class="dialer-queue-item ${activeClass}" data-uuid="${item.case_uuid}">
                             <div class="dialer-queue-item-name">${Utils.escapeHtml(item.company_name || '-')}</div>
@@ -931,7 +1021,7 @@ export class InsideSalesModule {
     /**
      * Rendert Lead-Karte
      */
-    renderLeadCard(workItem) {
+    async renderLeadCard(workItem) {
         // Prüfe, ob Dialer-Elemente existieren (könnte in Queue-Ansicht fehlen)
         const companyNameEl = document.getElementById('lead-company-name');
         if (!companyNameEl) {
@@ -941,22 +1031,44 @@ export class InsideSalesModule {
         
         companyNameEl.textContent = workItem.company_name || '-';
         
+        // Setze org_uuid für Edit-Button
+        const editBtn = document.getElementById('lead-company-edit');
+        if (editBtn && workItem.org_uuid) {
+            editBtn.dataset.orgUuid = workItem.org_uuid;
+        }
+        
         const cityEl = document.getElementById('lead-city');
         if (cityEl) {
             cityEl.textContent = workItem.company_city || '-';
         }
         
-        const phoneEl = document.getElementById('lead-phone');
-        if (phoneEl) {
-            phoneEl.textContent = workItem.company_phone || '-';
+        // Firmen-Telefonnummer in Firmenansicht
+        const companyPhoneEl = document.getElementById('lead-company-phone');
+        if (companyPhoneEl) {
+            // Prüfe explizit auf null, undefined, leerem String und trim
+            let phoneNumber = workItem.company_phone;
+            if (!phoneNumber || phoneNumber === '' || (typeof phoneNumber === 'string' && phoneNumber.trim() === '')) {
+                phoneNumber = '-';
+            } else if (typeof phoneNumber === 'string') {
+                phoneNumber = phoneNumber.trim();
+            }
+            
+            if (phoneNumber !== '-') {
+                // Setze data-phone Attribut für Event-Delegation
+                companyPhoneEl.setAttribute('data-phone', phoneNumber);
+                companyPhoneEl.textContent = phoneNumber;
+                companyPhoneEl.classList.add('phone-link');
+                companyPhoneEl.href = '#';
+            } else {
+                companyPhoneEl.textContent = '-';
+                companyPhoneEl.removeAttribute('data-phone');
+                companyPhoneEl.classList.remove('phone-link');
+            }
         }
         
         // Reset Call Status
         const callStatusEl = document.getElementById('call-status');
         if (callStatusEl) callStatusEl.style.display = 'none';
-        
-        const btnCallEl = document.getElementById('btn-call');
-        if (btnCallEl) btnCallEl.style.display = 'inline-block';
         
         this.currentCall = null;
         this.currentActivityId = null;
@@ -985,14 +1097,32 @@ export class InsideSalesModule {
         const starsEl = document.getElementById('lead-stars');
         if (starsEl) {
             starsEl.innerHTML = '';
+            // Stelle sicher, dass priority_stars als Zahl behandelt wird
+            // Prüfe explizit auf null, undefined, '', NaN und setze auf 0
+            let priorityStars = 0;
+            if (workItem.priority_stars !== null && workItem.priority_stars !== undefined && workItem.priority_stars !== '') {
+                priorityStars = parseInt(workItem.priority_stars, 10);
+                if (isNaN(priorityStars)) {
+                    priorityStars = 0;
+                }
+            }
             for (let i = 1; i <= 5; i++) {
                 const star = document.createElement('span');
-                star.className = `star ${i <= (workItem.priority_stars || 0) ? 'active' : ''}`;
-                star.textContent = '⭐';
+                const isActive = i <= priorityStars;
+                star.className = isActive ? 'star active' : 'star';
+                // Verwende SVG-Stern statt Emoji, damit CSS color funktioniert
+                star.innerHTML = isActive 
+                    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+                    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
                 star.dataset.stars = i;
                 star.addEventListener('click', () => this.setStars(i));
                 starsEl.appendChild(star);
             }
+        }
+        
+        // Lade Personenliste
+        if (workItem.org_uuid) {
+            await this.loadPersonsList(workItem.org_uuid);
         }
     }
     
@@ -1023,26 +1153,56 @@ export class InsideSalesModule {
             
             if (response.ok) {
                 const updatedWorkItem = await response.json();
+                const oldStars = this.currentWorkItem.priority_stars || 0;
                 this.currentWorkItem = updatedWorkItem;
-                this.renderLeadCard(updatedWorkItem);
+                
+                // Erstelle Timeline-Eintrag für Prioritätsänderung
+                if (oldStars !== stars) {
+                    try {
+                        const timelineToken = await window.csrfTokenService?.fetchToken();
+                        await fetch(this.getApiUrl(`/work-items/${this.currentWorkItem.case_uuid}/activities`), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': timelineToken || ''
+                            },
+                            body: JSON.stringify({
+                                activity_type: 'PRIORITY_CHANGED',
+                                notes: `Priorität von ${oldStars} auf ${stars} Sterne geändert`
+                            })
+                        });
+                    } catch (timelineError) {
+                        console.error('Fehler beim Erstellen des Timeline-Eintrags:', timelineError);
+                        // Timeline-Fehler nicht anzeigen, da die Hauptaktion erfolgreich war
+                    }
+                }
+                
+                await this.renderLeadCard(updatedWorkItem);
+                
+                // Aktualisiere Timeline, um den neuen Eintrag anzuzeigen
+                await this.loadTimeline(this.currentWorkItem.case_uuid);
                 
                 // Aktualisiere Mini-Queue, damit der Lead aus "Fällig" verschwindet
                 await this.loadDialerQueue();
+            } else {
+                const error = await response.json();
+                Utils.showError('Fehler beim Setzen der Sterne: ' + (error.error || 'Unbekannter Fehler'));
             }
         } catch (error) {
             console.error('Error setting stars:', error);
+            Utils.showError('Fehler beim Setzen der Sterne: ' + error.message);
         }
     }
     
     /**
-     * Öffnet Disposition Sheet
+     * Öffnet Disposition Sheet (fokussiert Notiz-Feld)
      */
     openDisposition(outcome) {
         this.isDispositionOpen = true;
         const sheet = document.getElementById('disposition-sheet');
         if (sheet) {
-            sheet.style.display = 'block';
-            document.getElementById('disposition-notes').focus();
+            // Disposition ist jetzt immer sichtbar, nur Fokus setzen
+            document.getElementById('disposition-notes')?.focus();
             
             // Wenn Call beendet, markiere Outcome-Button
             if (outcome === 'call_ended') {
@@ -1056,15 +1216,27 @@ export class InsideSalesModule {
     }
     
     /**
-     * Schließt Disposition Sheet
+     * Schließt Disposition Sheet (leert nur die Felder, versteckt nicht mehr)
      */
     closeDisposition() {
         this.isDispositionOpen = false;
-        const sheet = document.getElementById('disposition-sheet');
-        if (sheet) {
-            sheet.style.display = 'none';
-            document.getElementById('disposition-notes').value = '';
+        // Disposition bleibt sichtbar, nur Felder leeren
+        const notesField = document.getElementById('disposition-notes');
+        if (notesField) {
+            notesField.value = '';
         }
+        const snoozeField = document.getElementById('snooze-custom');
+        if (snoozeField) {
+            snoozeField.value = '';
+        }
+        // Entferne aktive Klassen von Snooze-Buttons
+        document.querySelectorAll('.snooze-btn.active').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        // Entferne aktive Klassen von Outcome-Buttons
+        document.querySelectorAll('.outcome-btn.active').forEach(btn => {
+            btn.classList.remove('active');
+        });
     }
     
     /**
@@ -1232,8 +1404,9 @@ export class InsideSalesModule {
                 : 'Lead zur Datenklärung an Sales Ops übergeben';
             Utils.showSuccess(message);
             
-            // Load Next Lead - nach Handover arbeitet Benutzer aktiv, daher IN_PROGRESS setzen
-            await this.loadNextLead(null, true);
+            // Load Next Lead - Status wird NICHT automatisch geändert
+            // Status ändert sich nur bei tatsächlichen Änderungen (Sterne, Daten, etc.)
+            await this.loadNextLead(null, false);
             
         } catch (error) {
             console.error('Error submitting handover:', error);
@@ -1242,16 +1415,24 @@ export class InsideSalesModule {
     }
     
     /**
-     * Startet Call
+     * Startet Call mit gegebener Telefonnummer
      */
-    async startCall() {
-        if (!this.currentWorkItem) return;
+    async startCallWithNumber(phoneNumber) {
+        if (!this.currentWorkItem) {
+            Utils.showError('Kein Lead ausgewählt');
+            return;
+        }
         
-        // Default Nummer: Person-Telefon > Firmen-Telefon
-        const phoneNumber = this.currentWorkItem.company_phone || '';
-        
-        if (!phoneNumber) {
+        if (!phoneNumber || phoneNumber === '-') {
             Utils.showError('Keine Telefonnummer verfügbar');
+            return;
+        }
+        
+        // Bereinige Telefonnummer (entferne Leerzeichen, Bindestriche, etc.)
+        const cleanPhoneNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+        
+        if (!cleanPhoneNumber) {
+            Utils.showError('Ungültige Telefonnummer');
             return;
         }
         
@@ -1266,7 +1447,7 @@ export class InsideSalesModule {
                 },
                 body: JSON.stringify({
                     work_item_uuid: this.currentWorkItem.case_uuid,
-                    phone_number: phoneNumber
+                    phone_number: cleanPhoneNumber
                 })
             });
             
@@ -1278,13 +1459,13 @@ export class InsideSalesModule {
             const result = await response.json();
             this.currentCall = {
                 call_ref: result.call_ref,
+                phone_number: cleanPhoneNumber,
                 activity_id: result.activity_id
             };
             this.currentActivityId = result.activity_id;
             
             // Zeige Call Status
             document.getElementById('call-status').style.display = 'block';
-            document.getElementById('btn-call').style.display = 'none';
             
             // Starte Polling
             this.startCallPolling();
@@ -1390,8 +1571,10 @@ export class InsideSalesModule {
     async endCall() {
         // sipgate Call wird serverseitig beendet, wir stoppen nur Polling
         this.stopCallPolling();
-        document.getElementById('call-status').style.display = 'none';
-        document.getElementById('btn-call').style.display = 'inline-block';
+        const callStatusEl = document.getElementById('call-status');
+        if (callStatusEl) {
+            callStatusEl.style.display = 'none';
+        }
         this.currentCall = null;
     }
     
@@ -1476,9 +1659,9 @@ export class InsideSalesModule {
             // Aktualisiere Mini-Queue
             await this.loadDialerQueue();
             
-            // Load Next Lead
-            // Nach Disposition: nächsten Lead laden und auf IN_PROGRESS setzen (Benutzer arbeitet aktiv)
-            await this.loadNextLead(null, true);
+            // Load Next Lead - Status wird NICHT automatisch geändert
+            // Status ändert sich nur bei tatsächlichen Änderungen (Sterne, Daten, etc.)
+            await this.loadNextLead(null, false);
             
             Utils.showSuccess('Disposition gespeichert');
         } catch (error) {
@@ -1533,6 +1716,201 @@ export class InsideSalesModule {
         } catch (error) {
             console.error('Error marking lead as IN_PROGRESS:', error);
             // Fehler nicht anzeigen, da dies nicht kritisch ist
+        }
+    }
+    
+    /**
+     * Öffnet Firmenbearbeitung
+     */
+    openCompanyEdit() {
+        if (!this.currentWorkItem || !this.currentWorkItem.org_uuid) {
+            Utils.showError('Keine Firma zugeordnet');
+            return;
+        }
+        
+        if (this.app.orgDetail) {
+            const orgUuid = this.currentWorkItem.org_uuid;
+            this.app.orgDetail.showOrgDetail(orgUuid);
+            
+            // Setup Listener für Modal-Schließen, um Lead-Card zu aktualisieren
+            this.setupOrgEditCloseListener(orgUuid);
+        } else {
+            Utils.showError('Org-Detail-Modul nicht verfügbar');
+        }
+    }
+    
+    /**
+     * Setup Listener für Org-Edit-Modal-Schließen
+     */
+    setupOrgEditCloseListener(orgUuid) {
+        // Prüfe, ob Modal geschlossen wurde (alle 500ms)
+        const checkInterval = setInterval(() => {
+            const modal = document.getElementById('modal-org-detail');
+            if (!modal || !modal.classList.contains('active')) {
+                clearInterval(checkInterval);
+                // Modal wurde geschlossen, aktualisiere Lead-Card
+                if (this.currentWorkItem && this.currentWorkItem.org_uuid === orgUuid) {
+                    // Lade aktualisierte Firmendaten und aktualisiere Lead-Card
+                    this.refreshCurrentLead();
+                }
+            }
+        }, 500);
+        
+        // Timeout nach 30 Sekunden (falls Modal nie geschlossen wird)
+        setTimeout(() => {
+            clearInterval(checkInterval);
+        }, 30000);
+    }
+    
+    /**
+     * Aktualisiert die aktuelle Lead-Card mit den neuesten Daten
+     */
+    async refreshCurrentLead() {
+        if (!this.currentWorkItem || !this.currentWorkItem.case_uuid) {
+            return;
+        }
+        
+        try {
+            // Lade aktualisierte WorkItem-Daten
+            const updatedWorkItem = await window.API.getWorkItem(this.currentWorkItem.case_uuid);
+            if (updatedWorkItem) {
+                this.currentWorkItem = updatedWorkItem;
+                await this.renderLeadCard(updatedWorkItem);
+            }
+        } catch (error) {
+            console.error('Error refreshing lead:', error);
+            // Fehler wird stillschweigend ignoriert, um den Workflow nicht zu stören
+        }
+    }
+    
+    /**
+     * Öffnet Dialog zum Hinzufügen einer Person
+     */
+    openAddPerson() {
+        if (!this.currentWorkItem || !this.currentWorkItem.org_uuid) {
+            Utils.showError('Keine Firma zugeordnet');
+            return;
+        }
+        
+        if (this.app.personForms) {
+            this.app.personForms.showAddPersonForm(this.currentWorkItem.org_uuid);
+            // Setup Listener für Modal-Schließen, um Personenliste zu aktualisieren
+            this.setupPersonFormCloseListener();
+        } else {
+            Utils.showError('Person-Forms-Modul nicht verfügbar');
+        }
+    }
+    
+    /**
+     * Setup Listener für Person-Formular-Schließen
+     */
+    setupPersonFormCloseListener() {
+        // Prüfe, ob Modal geschlossen wurde (alle 500ms)
+        const checkInterval = setInterval(() => {
+            const modal = document.getElementById('modal-create-person');
+            if (!modal || !modal.classList.contains('active')) {
+                clearInterval(checkInterval);
+                // Modal wurde geschlossen, aktualisiere Personenliste
+                if (this.currentWorkItem && this.currentWorkItem.org_uuid) {
+                    this.loadPersonsList(this.currentWorkItem.org_uuid);
+                }
+            }
+        }, 500);
+        
+        // Timeout nach 30 Sekunden (falls Modal nie geschlossen wird)
+        setTimeout(() => {
+            clearInterval(checkInterval);
+        }, 30000);
+    }
+    
+    /**
+     * Lädt Personenliste für Organisation
+     */
+    async loadPersonsList(orgUuid) {
+        try {
+            const persons = await window.API.getOrgPersons(orgUuid, true);
+            const container = document.getElementById('lead-persons-list');
+            if (!container) return;
+            
+            // Finde erste Telefonnummer aus Personen (falls keine Firmen-Telefonnummer vorhanden)
+            let firstPersonPhone = null;
+            if (persons && persons.length > 0) {
+                for (const person of persons) {
+                    if (person.phone) {
+                        firstPersonPhone = person.phone;
+                        break;
+                    } else if (person.mobile_phone) {
+                        firstPersonPhone = person.mobile_phone;
+                        break;
+                    }
+                }
+            }
+            
+            if (persons && persons.length > 0) {
+                container.innerHTML = persons.map(person => {
+                    const name = `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unbekannt';
+                    const details = [];
+                    if (person.email) details.push(`📧 ${Utils.escapeHtml(person.email)}`);
+                    if (person.phone) {
+                        details.push(`<a href="#" class="phone-link" data-phone="${Utils.escapeHtml(person.phone)}">📞 ${Utils.escapeHtml(person.phone)}</a>`);
+                    }
+                    if (person.mobile_phone) {
+                        details.push(`<a href="#" class="phone-link" data-phone="${Utils.escapeHtml(person.mobile_phone)}">📱 ${Utils.escapeHtml(person.mobile_phone)}</a>`);
+                    }
+                    
+                    return `
+                        <div class="lead-person-item">
+                            <div class="lead-person-info">
+                                <div class="lead-person-name">
+                                    ${Utils.escapeHtml(name)}
+                                    <button class="lead-person-edit-btn" data-person-uuid="${person.person_uuid}" title="Person bearbeiten">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                ${details.length > 0 ? `<div class="lead-person-details">${details.join(' | ')}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Event-Listener für Edit-Buttons
+                container.querySelectorAll('.lead-person-edit-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const personUuid = btn.dataset.personUuid;
+                        if (!personUuid) return;
+                        
+                        // Lade vollständige Person-Daten von der API
+                        if (this.app.personForms) {
+                            try {
+                                const fullPerson = await window.API.getPerson(personUuid);
+                                if (fullPerson) {
+                                    this.app.personForms.showEditPersonForm(fullPerson);
+                                    // Setup Listener für Modal-Schließen, um Personenliste zu aktualisieren
+                                    this.setupPersonFormCloseListener();
+                                } else {
+                                    Utils.showError('Person nicht gefunden');
+                                }
+                            } catch (error) {
+                                console.error('Error loading person:', error);
+                                Utils.showError('Fehler beim Laden der Person: ' + (error.message || 'Unbekannter Fehler'));
+                            }
+                        }
+                    });
+                });
+            } else {
+                container.innerHTML = '<div class="lead-persons-empty">Keine Personen vorhanden</div>';
+            }
+        } catch (error) {
+            console.error('Error loading persons:', error);
+            const container = document.getElementById('lead-persons-list');
+            if (container) {
+                container.innerHTML = '<div class="lead-persons-empty">Fehler beim Laden</div>';
+            }
         }
     }
 }

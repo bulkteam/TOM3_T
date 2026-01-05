@@ -55,48 +55,27 @@ final class ImportCommitService
      * @param bool $startWorkflows Ob Workflows gestartet werden sollen
      * @return array Stats: {rows_total, rows_imported, rows_failed, created_orgs, created_level3_industries, started_workflows, row_results}
      */
-    public function commitBatch(string $batchUuid, string $userId, bool $startWorkflows = true, string $mode = 'APPROVED_ONLY'): array
+    public function commitBatch(string $batchUuid, string $userId, bool $startWorkflows = true): array
     {
-        // 1. Lade approved Staging-Rows (oder pending, wenn mode = PENDING_AUTO_APPROVE)
-        $rows = $this->listApprovedRows($batchUuid, $mode);
+        // 1. Lade approved Staging-Rows
+        $rows = $this->listApprovedRows($batchUuid);
         
         $stats = [
             'rows_total' => count($rows),
             'rows_imported' => 0,
             'rows_failed' => 0,
             'rows_skipped' => 0,
-            'rows_duplicate' => 0,
             'created_orgs' => 0,
             'created_level3_industries' => 0,
             'started_workflows' => 0,
             'row_results' => []
         ];
         
-        // 2. Prüfe, ob Rows vorhanden sind
-        if (empty($rows)) {
-            // Keine Rows - Status bleibt unverändert
-            throw new \RuntimeException('Keine approved Rows zum Importieren gefunden. Bitte approven Sie zuerst die Staging-Rows.');
-        }
-        
-        // 3. Wenn mode = PENDING_AUTO_APPROVE, approve alle pending Rows zuerst
-        if ($mode === 'PENDING_AUTO_APPROVE') {
-            $this->autoApprovePendingRows($batchUuid, $userId);
-            // Lade Rows erneut nach dem Approven
-            $rows = $this->listApprovedRows($batchUuid, 'APPROVED_ONLY');
-            $stats['rows_total'] = count($rows);
-        }
-        
-        // 4. Verarbeite jede Zeile (zeilenweise Transaktionen)
+        // 2. Verarbeite jede Zeile (zeilenweise Transaktionen)
         foreach ($rows as $row) {
             try {
                 $result = $this->commitRow($row, $userId, $startWorkflows, $stats);
-                if ($result['status'] === 'imported') {
-                    $stats['rows_imported']++;
-                } elseif ($result['status'] === 'duplicate') {
-                    $stats['rows_duplicate']++;
-                } elseif ($result['status'] === 'skipped') {
-                    $stats['rows_skipped']++;
-                }
+                $stats['rows_imported']++;
                 $stats['row_results'][] = $result;
             } catch (\Exception $e) {
                 $stats['rows_failed']++;
@@ -112,46 +91,17 @@ final class ImportCommitService
             }
         }
         
-        // 5. Prüfe, ob ALLE Rows importiert wurden
-        // Zähle alle Rows im Batch (unabhängig von disposition)
-        $stmt = $this->db->prepare("
-            SELECT COUNT(*) as total,
-                   SUM(CASE WHEN import_status = 'imported' THEN 1 ELSE 0 END) as imported_count
-            FROM org_import_staging
-            WHERE import_batch_uuid = :batch_uuid
-        ");
-        $stmt->execute(['batch_uuid' => $batchUuid]);
-        $batchStats = $stmt->fetch(PDO::FETCH_ASSOC);
+        // 3. Update Batch-Status
+        $this->updateBatchStatus($batchUuid, 'IMPORTED', $stats);
         
-        $totalRows = (int)($batchStats['total'] ?? 0);
-        $importedCount = (int)($batchStats['imported_count'] ?? 0);
-        $allImported = ($totalRows > 0 && $importedCount === $totalRows);
-        
-        // Update Batch-Status
-        if ($stats['rows_imported'] > 0 || $stats['rows_duplicate'] > 0) {
-            // Mindestens eine Row wurde importiert oder verlinkt
-            if ($allImported) {
-                // Alle Rows importiert - Status = IMPORTED
-                $this->updateBatchStatus($batchUuid, 'IMPORTED', $stats);
-            } else {
-                // Nicht alle Rows importiert - Status bleibt STAGED/IN_REVIEW/APPROVED
-                // Aktualisiere nur stats_json, nicht den Status
-                $this->updateBatchStatsOnly($batchUuid, $stats);
-            }
-        } else {
-            // Keine erfolgreichen Imports - Status bleibt unverändert
-            // Logge Warnung
-            error_log("ImportCommitService: Batch {$batchUuid} - Keine Rows erfolgreich importiert. Failed: {$stats['rows_failed']}");
-        }
-        
-        // 6. Activity-Log
+        // 4. Activity-Log
         $this->activityLogService->logActivity(
             $userId,
             'import',
             'import_batch',
             $batchUuid,
             [
-                'action' => $stats['rows_imported'] > 0 ? 'batch_committed' : 'batch_commit_failed',
+                'action' => 'batch_committed',
                 'rows_total' => $stats['rows_total'],
                 'rows_imported' => $stats['rows_imported'],
                 'rows_failed' => $stats['rows_failed'],
@@ -242,25 +192,6 @@ final class ImportCommitService
         
         if (empty($orgData['name'])) {
             throw new \RuntimeException('ORG_NAME_REQUIRED: Organisationsname fehlt');
-        }
-        
-        // Prüfe auf Duplikate BEVOR wir erstellen
-        $existingOrg = $this->findExistingOrg($orgData);
-        if ($existingOrg) {
-            // Duplikat gefunden - verlinke statt zu erstellen
-            $orgUuid = $existingOrg['org_uuid'];
-            $this->markImported($row['staging_uuid'], $orgUuid, [
-                'action' => 'linked_to_existing',
-                'existing_org_uuid' => $orgUuid,
-                'existing_org_name' => $existingOrg['name']
-            ]);
-            return [
-                'staging_uuid' => $row['staging_uuid'],
-                'status' => 'duplicate',
-                'imported_org_uuid' => $orgUuid,
-                'linked_to_existing' => true,
-                'existing_org_name' => $existingOrg['name']
-            ];
         }
         
         $org = $this->orgService->createOrg($orgData, $userId);
@@ -403,124 +334,29 @@ final class ImportCommitService
     /**
      * Listet approved Staging-Rows für einen Batch
      */
-    private function listApprovedRows(string $batchUuid, string $mode = 'APPROVED_ONLY'): array
+    private function listApprovedRows(string $batchUuid): array
     {
-        if ($mode === 'PENDING_AUTO_APPROVE') {
-            // Lade pending Rows, die automatisch approved werden sollen
-            $stmt = $this->db->prepare("
-                SELECT 
-                    staging_uuid,
-                    import_batch_uuid,
-                    row_number,
-                    raw_data,
-                    mapped_data,
-                    industry_resolution,
-                    corrections_json,
-                    validation_status,
-                    disposition,
-                    import_status
-                FROM org_import_staging
-                WHERE import_batch_uuid = :batch_uuid
-                AND disposition = 'pending'
-                AND import_status != 'imported'
-                ORDER BY row_number
-            ");
-        } else {
-            // Lade nur approved Rows
-            $stmt = $this->db->prepare("
-                SELECT 
-                    staging_uuid,
-                    import_batch_uuid,
-                    row_number,
-                    raw_data,
-                    mapped_data,
-                    industry_resolution,
-                    corrections_json,
-                    validation_status,
-                    disposition,
-                    import_status
-                FROM org_import_staging
-                WHERE import_batch_uuid = :batch_uuid
-                AND disposition = 'approved'
-                AND import_status != 'imported'
-                ORDER BY row_number
-            ");
-        }
+        $stmt = $this->db->prepare("
+            SELECT 
+                staging_uuid,
+                import_batch_uuid,
+                row_number,
+                raw_data,
+                mapped_data,
+                industry_resolution,
+                corrections_json,
+                validation_status,
+                disposition,
+                import_status
+            FROM org_import_staging
+            WHERE import_batch_uuid = :batch_uuid
+            AND disposition = 'approved'
+            AND import_status != 'imported'
+            ORDER BY row_number
+        ");
         
         $stmt->execute(['batch_uuid' => $batchUuid]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-    
-    /**
-     * Approved automatisch alle pending Rows in einem Batch
-     */
-    private function autoApprovePendingRows(string $batchUuid, string $userId): void
-    {
-        $stmt = $this->db->prepare("
-            UPDATE org_import_staging
-            SET disposition = 'approved',
-                reviewed_by_user_id = :user_id,
-                reviewed_at = NOW()
-            WHERE import_batch_uuid = :batch_uuid
-            AND disposition = 'pending'
-            AND import_status != 'imported'
-        ");
-        
-        $stmt->execute([
-            'batch_uuid' => $batchUuid,
-            'user_id' => $userId
-        ]);
-    }
-    
-    /**
-     * Findet bestehende Organisation (Duplikat-Prüfung)
-     */
-    private function findExistingOrg(array $orgData): ?array
-    {
-        // Prüfe auf exakten Namen + Website Match
-        $name = trim($orgData['name'] ?? '');
-        $website = $orgData['website'] ?? null;
-        
-        if (empty($name)) {
-            return null;
-        }
-        
-        // Normalisiere Website
-        if ($website) {
-            $website = strtolower(trim($website));
-            if (!preg_match('/^https?:\/\//', $website)) {
-                $website = 'https://' . $website;
-            }
-            $parsed = parse_url($website);
-            $domain = strtolower($parsed['host'] ?? '');
-        } else {
-            $domain = null;
-        }
-        
-        // Suche nach exaktem Namen
-        $query = "
-            SELECT org_uuid, name, website
-            FROM org
-            WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))
-            AND archived_at IS NULL
-        ";
-        
-        $params = ['name' => $name];
-        
-        // Wenn Website vorhanden, prüfe auch darauf
-        if ($domain) {
-            $query .= " AND (LOWER(TRIM(website)) = LOWER(TRIM(:website)) OR LOWER(TRIM(website)) LIKE :domain_pattern)";
-            $params['website'] = $website;
-            $params['domain_pattern'] = '%' . $domain . '%';
-        }
-        
-        $query .= " LIMIT 1";
-        
-        $stmt = $this->db->prepare($query);
-        $stmt->execute($params);
-        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        return $existing ?: null;
     }
     
     /**
@@ -587,23 +423,6 @@ final class ImportCommitService
         $stmt->execute([
             'batch_uuid' => $batchUuid,
             'status' => $status,
-            'stats_json' => json_encode($stats, JSON_UNESCAPED_UNICODE)
-        ]);
-    }
-    
-    /**
-     * Aktualisiert nur Stats, nicht den Status (wenn noch nicht alle Rows importiert sind)
-     */
-    private function updateBatchStatsOnly(string $batchUuid, array $stats): void
-    {
-        $stmt = $this->db->prepare("
-            UPDATE org_import_batch
-            SET stats_json = :stats_json
-            WHERE batch_uuid = :batch_uuid
-        ");
-        
-        $stmt->execute([
-            'batch_uuid' => $batchUuid,
             'stats_json' => json_encode($stats, JSON_UNESCAPED_UNICODE)
         ]);
     }

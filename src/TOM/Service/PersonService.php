@@ -38,168 +38,116 @@ class PersonService extends BaseEntityService
             }
         }
         
-        // Optional: Prüfe auf Name-Duplikat (als Warnung, nicht blockierend)
-        // Diese Prüfung wird nur durchgeführt, wenn beide Namen vorhanden sind
-        $nameWarning = null;
-        if (!empty($data['first_name']) && !empty($data['last_name'])) {
-            $stmt = $this->db->prepare("
-                SELECT person_uuid, first_name, last_name, email 
-                FROM person 
-                WHERE LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name)) 
-                AND LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
-                AND is_active = 1
-            ");
-            $stmt->execute([
-                'first_name' => $data['first_name'],
-                'last_name' => $data['last_name']
-            ]);
-            $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($existing) {
-                $existingEmail = $existing['email'] ?? 'keine E-Mail';
-                $nameWarning = "Eine Person mit dem Namen '{$data['first_name']} {$data['last_name']}' existiert bereits (E-Mail: {$existingEmail}). Bitte prüfen Sie, ob es sich um eine Duplikat handelt.";
-            }
-        }
-        
-        // Generiere UUID (konsistent für MariaDB und Neo4j)
         $uuid = UuidHelper::generate($this->db);
+        $now = date('Y-m-d H:i:s');
         
-        // Führe INSERT in Transaktion aus
-        $person = TransactionHelper::executeInTransaction($this->db, function($db) use ($uuid, $data) {
-            try {
-                $stmt = $db->prepare("
-                    INSERT INTO person (
-                        person_uuid, first_name, last_name, salutation, title,
-                        email, phone, mobile_phone, linkedin_url, notes, is_active
-                    )
-                    VALUES (
-                        :person_uuid, :first_name, :last_name, :salutation, :title,
-                        :email, :phone, :mobile_phone, :linkedin_url, :notes, :is_active
-                    )
-                ");
-                
-                $stmt->execute([
-                    'person_uuid' => $uuid,
-                    'first_name' => $data['first_name'] ?? null,
-                    'last_name' => $data['last_name'] ?? null,
-                    'salutation' => $data['salutation'] ?? null,
-                    'title' => $data['title'] ?? null,
-                    'email' => $data['email'] ?? null,
-                    'phone' => $data['phone'] ?? null,
-                    'mobile_phone' => $data['mobile_phone'] ?? null,
-                    'linkedin_url' => $data['linkedin_url'] ?? null,
-                    'notes' => $data['notes'] ?? null,
-                    'is_active' => $data['is_active'] ?? 1
-                ]);
-            } catch (\PDOException $e) {
-                // Falls UNIQUE Constraint verletzt wird (Fallback)
-                if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                    throw new \InvalidArgumentException("Eine Person mit der E-Mail-Adresse '{$data['email']}' existiert bereits.");
-                }
-                throw $e;
-            }
-            
-            // Hole erstellte Person zurück
-            $stmt = $db->prepare("SELECT * FROM person WHERE person_uuid = :uuid");
-            $stmt->execute(['uuid' => $uuid]);
-            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        });
+        // Basis-Daten für Person
+        // display_name ist eine GENERATED COLUMN und wird automatisch aus salutation, title, first_name, last_name generiert
+        $personData = [
+            'person_uuid' => $uuid,
+            'first_name' => $data['first_name'] ?? null,
+            'last_name' => $data['last_name'] ?? null,
+            'salutation' => $data['salutation'] ?? null,
+            'title' => $data['title'] ?? null,
+            'email' => $data['email'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'mobile_phone' => $data['mobile_phone'] ?? null,
+            'linkedin_url' => $data['linkedin_url'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'is_active' => isset($data['is_active']) ? (int)$data['is_active'] : 1,
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
         
-        // Audit-Trail: Erstellung protokollieren (nach Commit)
-        if ($person) {
-            $this->logCreateAuditTrail('person', $uuid, null, $person, [$this, 'resolveFieldValue']);
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO person (
+                    person_uuid, first_name, last_name, salutation, title,
+                    email, phone, mobile_phone, linkedin_url, notes, is_active, created_at, updated_at
+                ) VALUES (
+                    :person_uuid, :first_name, :last_name, :salutation, :title,
+                    :email, :phone, :mobile_phone, :linkedin_url, :notes, :is_active, :created_at, :updated_at
+                )
+            ");
+            $stmt->execute($personData);
             
             // Event-Publishing (nach Commit)
-            $this->publishEntityEvent('person', $person['person_uuid'], 'PersonCreated', $person);
+            $this->db->commit();
+            $this->publishEntityEvent('person', $uuid, 'PersonCreated', $personData);
+            
+            return $personData;
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            throw $e;
         }
-        
-        return $person;
     }
     
     public function getPerson(string $personUuid): ?array
     {
         $stmt = $this->db->prepare("SELECT * FROM person WHERE person_uuid = :uuid");
         $stmt->execute(['uuid' => $personUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     public function updatePerson(string $personUuid, array $data): array
     {
-        // Hole alte Daten für Audit-Trail
-        $oldData = $this->getPerson($personUuid);
-        if (!$oldData) {
-            throw new \InvalidArgumentException("Person nicht gefunden");
+        // Prüfe ob Person existiert
+        $existing = $this->getPerson($personUuid);
+        if (!$existing) {
+            throw new \RuntimeException("Person nicht gefunden: {$personUuid}");
         }
         
-        // Prüfe auf E-Mail-Duplikat (nur wenn E-Mail geändert wird)
-        if (isset($data['email']) && $data['email'] !== ($oldData['email'] ?? null)) {
-            if (!empty($data['email'])) {
-                $stmt = $this->db->prepare("SELECT person_uuid, first_name, last_name FROM person WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email)) AND person_uuid != :uuid AND is_active = 1");
-                $stmt->execute(['email' => $data['email'], 'uuid' => $personUuid]);
-                $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($existing) {
-                    $existingName = trim(($existing['first_name'] ?? '') . ' ' . ($existing['last_name'] ?? ''));
-                    throw new \InvalidArgumentException("Eine Person mit der E-Mail-Adresse '{$data['email']}' existiert bereits" . ($existingName ? " ({$existingName})" : ''));
-                }
+        // Prüfe auf E-Mail-Duplikat (nur wenn E-Mail geändert wird und nicht leer ist)
+        if (!empty($data['email']) && $data['email'] !== $existing['email']) {
+            $stmt = $this->db->prepare("SELECT person_uuid FROM person WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email)) AND is_active = 1 AND person_uuid != :uuid");
+            $stmt->execute(['email' => $data['email'], 'uuid' => $personUuid]);
+            $duplicate = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($duplicate) {
+                throw new \InvalidArgumentException("Eine Person mit der E-Mail-Adresse '{$data['email']}' existiert bereits");
             }
         }
         
-        $allowedFields = [
-            'first_name', 'last_name', 'salutation', 'title',
-            'email', 'phone', 'mobile_phone', 'linkedin_url', 'notes', 'is_active'
-        ];
-        $updates = [];
-        $params = ['uuid' => $personUuid];
-        $changedFields = [];
+        $now = date('Y-m-d H:i:s');
         
+        // Aktualisiere nur gesetzte Felder
+        $updateFields = [];
+        $updateValues = ['uuid' => $personUuid];
+        
+        // display_name ist eine GENERATED COLUMN und kann nicht direkt aktualisiert werden
+        // Sie wird automatisch aus salutation, title, first_name, last_name generiert
+        $allowedFields = ['first_name', 'last_name', 'salutation', 'title', 'email', 'phone', 'mobile_phone', 'linkedin_url', 'notes', 'is_active'];
         foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                $oldValue = $oldData[$field] ?? null;
-                $newValue = $data[$field];
-                
-                // Nur updaten, wenn sich der Wert geändert hat
-                if ($oldValue != $newValue) {
-                    $updates[] = "$field = :$field";
-                    $params[$field] = $newValue;
-                    $changedFields[$field] = true;
-                }
+            if (array_key_exists($field, $data)) {
+                $updateFields[] = "{$field} = :{$field}";
+                $updateValues[$field] = $field === 'is_active' ? (int)$data[$field] : ($data[$field] ?? null);
             }
         }
         
-        // Soft-Delete: Wenn is_active = 0, setze archived_at
-        if (isset($data['is_active']) && $data['is_active'] == 0) {
-            if (($oldData['is_active'] ?? 1) != 0) {
-                $updates[] = "archived_at = NOW()";
-                $changedFields['is_active'] = true;
-            }
-        } elseif (isset($data['is_active']) && $data['is_active'] == 1) {
-            if (($oldData['is_active'] ?? 0) != 1) {
-                $updates[] = "archived_at = NULL";
-                $changedFields['is_active'] = true;
-            }
+        if (empty($updateFields)) {
+            return $existing; // Keine Änderungen
         }
         
-        if (empty($updates)) {
-            return $oldData ?: [];
-        }
+        $updateFields[] = "updated_at = :updated_at";
+        $updateValues['updated_at'] = $now;
         
-        // Führe UPDATE in Transaktion aus
-        $newData = TransactionHelper::executeInTransaction($this->db, function($db) use ($personUuid, $updates, $params) {
-            $sql = "UPDATE person SET " . implode(', ', $updates) . " WHERE person_uuid = :uuid";
-            $stmt = $db->prepare($sql);
-            $stmt->execute($params);
+        $this->db->beginTransaction();
+        try {
+            $sql = "UPDATE person SET " . implode(', ', $updateFields) . " WHERE person_uuid = :uuid";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($updateValues);
             
-            // Hole aktualisierte Person zurück
-            $stmt = $db->prepare("SELECT * FROM person WHERE person_uuid = :uuid");
-            $stmt->execute(['uuid' => $personUuid]);
-            return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        });
-        
-        // Audit-Trail: Änderungen protokollieren (nach Commit)
-        if ($newData) {
-            $this->logUpdateAuditTrail('person', $personUuid, null, $oldData, $newData, [$this, 'resolveFieldValue']);
+            // Lade aktualisierte Daten
+            $newData = $this->getPerson($personUuid);
             
             // Event-Publishing (nach Commit)
-            $this->publishEntityEvent('person', $newData['person_uuid'], 'PersonUpdated', $newData);
+            $this->db->commit();
+            
+            // Event-Publishing (nach Commit)
+            $this->publishEntityEvent('person', $personUuid, 'PersonUpdated', $newData);
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            throw $e;
         }
         
         return $newData;
@@ -243,7 +191,36 @@ class PersonService extends BaseEntityService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['search' => $terms['search']]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+    
+    /**
+     * Holt alle Personen einer Organisation über person_affiliation
+     */
+    public function listPersonsByOrg(string $orgUuid, ?bool $includeInactive = false): array
+    {
+        $sql = "
+            SELECT DISTINCT
+                p.*,
+                pa.is_primary,
+                pa.since_date as affiliation_since,
+                pa.until_date as affiliation_until
+            FROM person p
+            INNER JOIN person_affiliation pa ON pa.person_uuid = p.person_uuid
+            WHERE pa.org_uuid = :org_uuid
+        ";
+        
+        if (!$includeInactive) {
+            // Nur aktive Personen und aktive Affiliations
+            $sql .= " AND p.is_active = 1";
+            $sql .= " AND (pa.until_date IS NULL OR pa.until_date >= CURDATE())";
+        }
+        
+        $sql .= " ORDER BY pa.is_primary DESC, p.last_name, p.first_name";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(['org_uuid' => $orgUuid]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     // ============================================================================
@@ -272,141 +249,121 @@ class PersonService extends BaseEntityService
     // RELATIONSHIP MANAGEMENT (delegiert an PersonRelationshipService)
     // ============================================================================
     
-    /**
-     * Erstellt eine Person-zu-Person Beziehung
-     */
     public function createRelationship(array $data): array
     {
         return $this->relationshipService->createRelationship($data);
     }
     
-    /**
-     * Holt eine Person-zu-Person Beziehung
-     */
     public function getRelationship(string $relationshipUuid): ?array
     {
         return $this->relationshipService->getRelationship($relationshipUuid);
     }
     
-    /**
-     * Holt alle Beziehungen einer Person
-     */
     public function getPersonRelationships(string $personUuid, ?bool $activeOnly = true): array
     {
         return $this->relationshipService->getPersonRelationships($personUuid, $activeOnly);
     }
     
-    /**
-     * Löscht eine Person-zu-Person Beziehung
-     */
     public function deleteRelationship(string $relationshipUuid): bool
     {
         return $this->relationshipService->deleteRelationship($relationshipUuid);
     }
     
-    /**
-     * Holt alle Org Units einer Organisation
-     */
+    // ============================================================================
+    // ORG UNIT MANAGEMENT
+    // ============================================================================
+    
     public function getOrgUnits(string $orgUuid): array
     {
         $stmt = $this->db->prepare("
             SELECT * FROM org_unit
-            WHERE org_uuid = :org_uuid AND is_active = 1
+            WHERE org_uuid = :org_uuid
             ORDER BY name
         ");
         $stmt->execute(['org_uuid' => $orgUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
-    /**
-     * Erstellt eine Org Unit
-     */
     public function createOrgUnit(array $data): array
     {
         $uuid = UuidHelper::generate($this->db);
+        $now = date('Y-m-d H:i:s');
         
-        $stmt = $this->db->prepare("
-            INSERT INTO org_unit (
-                org_unit_uuid, org_uuid, parent_org_unit_uuid, name, code, is_active
-            )
-            VALUES (
-                :org_unit_uuid, :org_uuid, :parent_org_unit_uuid, :name, :code, :is_active
-            )
-        ");
-        
-        $stmt->execute([
+        $orgUnitData = [
             'org_unit_uuid' => $uuid,
             'org_uuid' => $data['org_uuid'],
+            'name' => $data['name'] ?? '',
+            'description' => $data['description'] ?? null,
             'parent_org_unit_uuid' => $data['parent_org_unit_uuid'] ?? null,
-            'name' => $data['name'],
-            'code' => $data['code'] ?? null,
-            'is_active' => $data['is_active'] ?? 1
-        ]);
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
         
-        $orgUnit = $this->getOrgUnit($uuid);
-        if ($orgUnit) {
-            $this->eventPublisher->publish('org_unit', $orgUnit['org_unit_uuid'], 'OrgUnitCreated', $orgUnit);
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO org_unit (
+                    org_unit_uuid, org_uuid, name, description, parent_org_unit_uuid, created_at, updated_at
+                ) VALUES (
+                    :org_unit_uuid, :org_uuid, :name, :description, :parent_org_unit_uuid, :created_at, :updated_at
+                )
+            ");
+            $stmt->execute($orgUnitData);
+            
+            $this->db->commit();
+            return $orgUnitData;
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            throw $e;
         }
-        
-        return $orgUnit ?: [];
     }
     
-    /**
-     * Holt eine Org Unit
-     */
     public function getOrgUnit(string $orgUnitUuid): ?array
     {
-        $stmt = $this->db->prepare("
-            SELECT 
-                ou.*,
-                o.name as org_name
-            FROM org_unit ou
-            JOIN org o ON o.org_uuid = ou.org_uuid
-            WHERE ou.org_unit_uuid = :uuid
-        ");
+        $stmt = $this->db->prepare("SELECT * FROM org_unit WHERE org_unit_uuid = :uuid");
         $stmt->execute(['uuid' => $orgUnitUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
-    /**
-     * Holt das Audit-Trail für eine Person
-     */
+    // ============================================================================
+    // AUDIT TRAIL
+    // ============================================================================
+    
     public function getAuditTrail(string $personUuid, int $limit = 100): array
     {
-        return $this->auditTrailService->getAuditTrail('person', $personUuid, $limit);
+        return $this->accessTrackingService->getEntityAuditTrail('person', $personUuid, $limit);
     }
     
-    /**
-     * Formatiert einen Feldwert für die Anzeige (für Audit-Trail)
-     */
+    // ============================================================================
+    // FIELD RESOLUTION (für Event-Publishing)
+    // ============================================================================
+    
     public function resolveFieldValue(string $field, $value): string
     {
-        if ($value === null || $value === '') {
-            return '(leer)';
+        // Spezielle Behandlung für Person-Felder
+        switch ($field) {
+            case 'person_uuid':
+                return $value ?? '';
+            case 'display_name':
+                return $value ?? 'Unbekannt';
+            case 'email':
+                return $value ?? '';
+            default:
+                return parent::resolveFieldValue($field, $value);
         }
-        
-        if ($field === 'is_active') {
-            return $value ? 'Aktiv' : 'Inaktiv';
-        }
-        
-        return (string)$value;
     }
     
-    /**
-     * Protokolliert den Zugriff auf eine Person (für "Zuletzt angesehen")
-     */
+    // ============================================================================
+    // ACCESS TRACKING
+    // ============================================================================
+    
     public function trackAccess(string $userId, string $personUuid, string $accessType = 'recent'): void
     {
         $this->accessTrackingService->trackAccess('person', $userId, $personUuid, $accessType);
     }
     
-    /**
-     * Holt die zuletzt angesehenen Personen für einen Benutzer
-     */
     public function getRecentPersons(string $userId, int $limit = 10): array
     {
-        return $this->accessTrackingService->getRecentEntities('person', $userId, $limit);
+        return $this->accessTrackingService->getRecentEntities($userId, 'person', $limit);
     }
 }
-
-

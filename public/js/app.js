@@ -16,6 +16,8 @@ import { DocumentUploadModule } from './modules/document-upload.js';
 import { DocumentListModule } from './modules/document-list.js';
 import { DocumentSearchModule } from './modules/document-search.js';
 import { ImportModule } from './modules/import.js';
+import { InsideSalesModule } from './modules/inside-sales.js';
+import { SalesOpsModule } from './modules/sales-ops.js';
 import { Utils } from './modules/utils.js';
 
 class TOM3App {
@@ -36,6 +38,8 @@ class TOM3App {
         this.documentList = new DocumentListModule(this);
         this.documentSearch = new DocumentSearchModule(this);
         this.import = new ImportModule(this);
+        this.insideSales = new InsideSalesModule(this);
+        this.salesOps = new SalesOpsModule(this);
         
         // Module-Referenz für Zugriff von anderen Modulen
         this.modules = {
@@ -83,22 +87,12 @@ class TOM3App {
     }
 
     async init() {
-        // Hole CSRF-Token beim App-Start
-        if (window.csrfTokenService) {
-            try {
-                await window.csrfTokenService.fetchToken();
-            } catch (error) {
-                console.warn('Could not fetch CSRF token:', error);
-                // In Dev-Mode: Token ist optional, daher kein Fehler werfen
-            }
-        }
-        
         await this.auth.loadCurrentUser();
         this.setupEventListeners();
         this.setupNavigation();
         // Expandiere das Menü für die aktuelle Seite
         this.expandMenuForPage(this.currentPage);
-        this.navigateTo(this.currentPage, false);
+        await this.navigateTo(this.currentPage, false);
     }
     
     expandMenuForPage(page) {
@@ -155,11 +149,11 @@ class TOM3App {
         
         // Untermenü-Links (Navigation)
         document.querySelectorAll('.nav-child').forEach(childLink => {
-            childLink.addEventListener('click', (e) => {
+            childLink.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const page = childLink.dataset.page;
                 if (page) {
-                    this.navigateTo(page);
+                    await this.navigateTo(page);
                     // Update URL hash
                     window.location.hash = page;
                 }
@@ -168,22 +162,33 @@ class TOM3App {
         
         // Hash-Change-Listener für Browser-Navigation (nur einmal registrieren)
         if (!this.hashChangeListenerAttached) {
-            window.addEventListener('hashchange', () => {
+            window.addEventListener('hashchange', async () => {
                 const hash = window.location.hash.replace('#', '');
-                if (hash && hash !== this.currentPage) {
-                    this.navigateTo(hash);
+                if (hash) {
+                    // Extrahiere Seitennamen aus Hash (z.B. "inside-sales/dialer?..." -> "inside-sales")
+                    const page = hash.split('/')[0].split('?')[0];
+                    if (page && page !== this.currentPage) {
+                        await this.navigateTo(page);
+                    } else if (page === this.currentPage) {
+                        // Gleiche Seite, aber Hash hat sich geändert (z.B. Parameter) -> Modul neu initialisieren
+                        await this.navigateTo(page, false);
+                    }
                 }
             });
             this.hashChangeListenerAttached = true;
         }
     }
 
-    navigateTo(page, storePage = true) {
+    async navigateTo(page, storePage = true) {
+        // Extrahiere Seitennamen aus Hash (falls Hash übergeben wurde)
+        // z.B. "inside-sales/dialer?tab=..." -> "inside-sales"
+        let pageName = page.split('/')[0].split('?')[0];
+        
         // Update navigation - nur Untermenü-Links aktivieren
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
         });
-        const navLink = document.querySelector(`[data-page="${page}"]`);
+        const navLink = document.querySelector(`[data-page="${pageName}"]`);
         if (navLink) {
             navLink.classList.add('active');
             // Expandiere das übergeordnete Menü, falls vorhanden
@@ -195,25 +200,25 @@ class TOM3App {
 
         // Update pages
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        const targetPage = document.getElementById(`page-${page}`);
+        const targetPage = document.getElementById(`page-${pageName}`);
         if (targetPage) {
             targetPage.classList.add('active');
         } else {
-            console.warn(`Page "${page}" not found, falling back to dashboard`);
-            page = 'dashboard';
+            console.warn(`Page "${pageName}" not found, falling back to dashboard`);
+            pageName = 'dashboard';
             document.getElementById('page-dashboard')?.classList.add('active');
             const dashboardLink = document.querySelector('[data-page="dashboard"]');
             if (dashboardLink) dashboardLink.classList.add('active');
         }
 
-        this.currentPage = page;
+        this.currentPage = pageName;
         
         if (storePage) {
-            localStorage.setItem('currentPage', page);
+            localStorage.setItem('currentPage', pageName);
         }
 
         // Load page data - delegiere an Module
-        switch(page) {
+        switch(pageName) {
             case 'dashboard':
                 // this.loadDashboard();
                 break;
@@ -257,6 +262,23 @@ class TOM3App {
             case 'monitoring':
                 if (this.monitoring) {
                     this.monitoring.init();
+                }
+                break;
+            case 'inside-sales':
+                if (this.insideSales) {
+                    try {
+                        await this.insideSales.init();
+                    } catch (error) {
+                        console.error('[app.js] Fehler in insideSales.init():', error);
+                        Utils.showError('Fehler beim Laden von Inside Sales: ' + error.message);
+                    }
+                } else {
+                    Utils.showError('Inside Sales Modul nicht geladen!');
+                }
+                break;
+            case 'sales-ops':
+                if (this.salesOps) {
+                    this.salesOps.init();
                 }
                 break;
         }

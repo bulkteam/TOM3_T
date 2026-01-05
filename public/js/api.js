@@ -26,25 +26,12 @@ class TOM3API {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
-        const method = options.method || 'GET';
-        
         const config = {
             headers: {
                 ...options.headers
             },
             ...options
         };
-
-        // CSRF-Token für state-changing Requests hinzufügen
-        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-            // Hole CSRF-Token (wenn noch nicht vorhanden)
-            if (window.csrfTokenService) {
-                const token = await window.csrfTokenService.fetchToken();
-                if (token) {
-                    config.headers['X-CSRF-Token'] = token;
-                }
-            }
-        }
 
         // FormData nicht als JSON senden
         if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -54,7 +41,6 @@ class TOM3API {
             config.body = JSON.stringify(config.body);
         } else if (config.body instanceof FormData) {
             // FormData setzt Content-Type automatisch (inkl. boundary)
-            // CSRF-Token muss als Header gesetzt werden (nicht in FormData)
             delete config.headers['Content-Type'];
         } else if (!config.headers['Content-Type']) {
             config.headers['Content-Type'] = 'application/json';
@@ -91,12 +77,27 @@ class TOM3API {
                 if (response.status === 404 && url.includes('/recent')) {
                     return [];
                 }
-                throw new Error(data.error || data.message || `HTTP ${response.status}`);
+                // Verwende message (vollständige Nachricht) falls vorhanden, sonst error
+                const errorMessage = data.message || data.error || `HTTP ${response.status}`;
+                const error = new Error(errorMessage);
+                // Speichere zusätzliche Daten im Error-Objekt für bessere Fehlerbehandlung
+                error.error = data.error;
+                error.message = data.message || data.error;
+                error.status = response.status;
+                // Für erwartete Fehler (400 Bad Request, z.B. Duplikate) kein console.error
+                // Nur für unerwartete Fehler (500, etc.) loggen
+                if (response.status >= 500) {
+                    console.error('API Error:', error);
+                }
+                throw error;
             }
             
             return data;
         } catch (error) {
-            console.error('API Error:', error);
+            // Nur unerwartete Fehler loggen (nicht 400 Bad Request, die sind erwartete Validierungsfehler)
+            if (!error.status || error.status >= 500) {
+                console.error('API Error:', error);
+            }
             throw error;
         }
     }
@@ -329,6 +330,12 @@ class TOM3API {
             method: 'PUT',
             body: data
         });
+    }
+    
+    // Persons by Organization
+    async getOrgPersons(orgUuid, includeInactive = false) {
+        const endpoint = `/persons/by-org?org_uuid=${orgUuid}${includeInactive ? '&include_inactive=1' : ''}`;
+        return this.request(endpoint);
     }
     
     async deleteOrgAddress(orgUuid, addressUuid) {

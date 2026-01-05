@@ -25,6 +25,12 @@ export class PersonRelationshipModule {
         try {
             const relationships = await window.API.getPersonRelationships(personUuid, true);
             
+            // Stelle sicher, dass relationships ein Array ist
+            if (!relationships || !Array.isArray(relationships)) {
+                container.innerHTML = '<div class="empty-state"><p>Keine Beziehungen gefunden</p></div>';
+                return;
+            }
+            
             if (relationships.length === 0) {
                 container.innerHTML = '<div class="empty-state"><p>Keine Beziehungen gefunden</p></div>';
                 return;

@@ -11,7 +11,7 @@ use TOM\Infrastructure\Audit\AuditTrailService;
 
 /**
  * PersonAffiliationService
- * Handles affiliation management for persons (Historie/Beschäftigungsverlauf)
+ * Handles affiliation management for persons (Historie/Besch├ñftigungsverlauf)
  */
 class PersonAffiliationService
 {
@@ -113,7 +113,7 @@ class PersonAffiliationService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['person_uuid' => $personUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }
 

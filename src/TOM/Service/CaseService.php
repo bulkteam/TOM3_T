@@ -6,7 +6,6 @@ namespace TOM\Service;
 use PDO;
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Events\EventPublisher;
-use TOM\Infrastructure\Utils\UuidHelper;
 
 class CaseService
 {
@@ -21,8 +20,9 @@ class CaseService
     
     public function createCase(array $data): array
     {
-        // Generiere UUID (konsistent für MariaDB und Neo4j)
-        $uuid = UuidHelper::generate($this->db);
+        // Generiere UUID für MySQL
+        $uuidStmt = $this->db->query("SELECT UUID() as uuid");
+        $uuid = $uuidStmt->fetch()['uuid'];
         
         $stmt = $this->db->prepare("
             INSERT INTO case_item (case_uuid, case_type, engine, phase, status, owner_role, title, description, org_uuid, project_uuid, priority)
@@ -107,8 +107,9 @@ class CaseService
     
     public function addNote(string $caseUuid, string $note): array
     {
-        // Generiere UUID (konsistent für MariaDB und Neo4j)
-        $uuid = UuidHelper::generate($this->db);
+        // Generiere UUID für MySQL
+        $uuidStmt = $this->db->query("SELECT UUID() as uuid");
+        $uuid = $uuidStmt->fetch()['uuid'];
         
         $stmt = $this->db->prepare("
             INSERT INTO case_note (note_uuid, case_uuid, note_type, body)

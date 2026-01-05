@@ -3,21 +3,14 @@
 RewriteEngine On
 RewriteBase /TOM3/public/
 
-# API Routes - Alle API-Aufrufe über Router (auch direkte .php-Dateien)
-# Verhindert Bypass durch direkten Aufruf von api/*.php
-RewriteCond %{REQUEST_URI} ^/TOM3/public/api/ [NC]
-RewriteCond %{REQUEST_URI} !^/TOM3/public/api/index\.php [NC]
-RewriteRule ^api/(.*)$ api/index.php [QSA,L]
-
-# Umleitung von index.html zu index.php (für Auth-Prüfung)
-RewriteCond %{THE_REQUEST} \s/index\.html[\s?] [NC]
-RewriteRule ^index\.html$ index.php [R=301,L]
-
-# Frontend Routes (SPA)
-# Alle Routen zu index.php (für SPA-Routing und Auth-Prüfung)
+# API Routes
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteCond %{REQUEST_URI} !^/TOM3/public/api/
-RewriteRule ^(.*)$ index.php [QSA,L]
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+# Frontend Routes (SPA)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.html [QSA,L]
 
 

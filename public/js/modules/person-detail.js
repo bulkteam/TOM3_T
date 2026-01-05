@@ -38,7 +38,7 @@ export class PersonDetailModule extends EntityDetailBaseModule {
         this._menuHandlers = new Map();
     }
     
-    async showPersonDetail(personUuid) {
+    async showPersonDetail(personUuidOrObject) {
         // Überschreibe onTabChange für person-spezifische Logik
         this.config.onTabChange = (tabName, uuid, container) => {
             if (tabName === 'historie') {
@@ -48,11 +48,44 @@ export class PersonDetailModule extends EntityDetailBaseModule {
             }
         };
         
+        // Unterstütze sowohl UUID (String) als auch Person-Objekt
+        let personUuid;
+        let personData = null;
+        
+        if (typeof personUuidOrObject === 'string') {
+            personUuid = personUuidOrObject;
+        } else if (personUuidOrObject && personUuidOrObject.person_uuid) {
+            // Person-Objekt wurde übergeben
+            personData = personUuidOrObject;
+            personUuid = personUuidOrObject.person_uuid;
+        } else {
+            Utils.showError('Ungültige Person-Referenz');
+            return;
+        }
+        
         await this.showEntityDetail(
             personUuid,
-            async (uuid) => await window.API.getPerson(uuid),
+            async (uuid) => {
+                // Wenn Person-Daten bereits vorhanden sind, verwende diese
+                if (personData && personData.person_uuid === uuid) {
+                    return personData;
+                }
+                // Sonst lade von der API
+                return await window.API.getPerson(uuid);
+            },
             (person) => this.viewModule.renderPersonDetail(person),
-            (person) => person.display_name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unbekannt',
+            (person) => {
+                // display_name ist eine GENERATED COLUMN, kann aber leer sein wenn first_name/last_name leer sind
+                // Fallback: Verwende first_name + last_name, dann display_name, dann 'Unbekannt'
+                let displayName = '';
+                if (person.first_name || person.last_name) {
+                    displayName = `${person.first_name || ''} ${person.last_name || ''}`.trim();
+                }
+                if (!displayName && person.display_name) {
+                    displayName = person.display_name.trim();
+                }
+                return displayName || 'Unbekannt';
+            },
             async (uuid, userId) => await window.API.trackPersonAccess(uuid, userId, 'recent'),
             (modalBody, person, uuid) => {
                 // Setup Tabs mit person-spezifischen Handlern
@@ -62,7 +95,7 @@ export class PersonDetailModule extends EntityDetailBaseModule {
                 this.updateDocumentsCount(uuid);
                 
                 // Load initial data für aktiven Tab (Stammdaten ist standardmäßig aktiv)
-                // Historie und Relationen werden beim Tab-Wechsel geladen
+                // Lebenslauf und Relationen werden beim Tab-Wechsel geladen
                 
                 // Edit Button
                 const editBtn = modalBody.querySelector('#btn-edit-person');
@@ -74,7 +107,7 @@ export class PersonDetailModule extends EntityDetailBaseModule {
                     });
                 }
                 
-                // Buttons für Historie und Relationen
+                // Buttons für Lebenslauf und Relationen
                 const addAffiliationBtn = modalBody.querySelector('#btn-add-affiliation');
                 if (addAffiliationBtn) {
                     addAffiliationBtn.addEventListener('click', () => {
@@ -136,6 +169,11 @@ export class PersonDetailModule extends EntityDetailBaseModule {
                     this.loadDocuments(personUuid);
                     // Event-Listener für Upload-Button registrieren, wenn Dokumente-Tab geöffnet wird
                     this.setupUploadButton(container, personUuid);
+                }
+                
+                // Optional: Callback für Tab-Wechsel (für Konsistenz mit Basis-Klasse)
+                if (this.config.onTabChange) {
+                    this.config.onTabChange(tabName, personUuid, container);
                 }
             };
             

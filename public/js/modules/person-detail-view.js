@@ -16,7 +16,18 @@ export class PersonDetailViewModule {
             throw new Error('personUuid fehlt in den Daten');
         }
         
-        const displayName = person.display_name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unbekannt';
+        // display_name ist eine GENERATED COLUMN, kann aber leer sein wenn first_name/last_name leer sind
+        // Fallback: Verwende first_name + last_name, dann display_name, dann 'Unbekannt'
+        let displayName = '';
+        if (person.first_name || person.last_name) {
+            displayName = `${person.first_name || ''} ${person.last_name || ''}`.trim();
+        }
+        if (!displayName && person.display_name) {
+            displayName = person.display_name.trim();
+        }
+        if (!displayName) {
+            displayName = 'Unbekannt';
+        }
         const isActive = person.is_active !== 0;
         
         return `
@@ -51,7 +62,7 @@ export class PersonDetailViewModule {
                 <!-- Tabs -->
                 <div class="person-detail-tabs">
                     <button class="person-detail-tab active" data-tab="stammdaten">Stammdaten</button>
-                    <button class="person-detail-tab" data-tab="historie">Historie</button>
+                    <button class="person-detail-tab" data-tab="historie">Lebenslauf</button>
                     <button class="person-detail-tab" data-tab="relationen">Relationen</button>
                     <button class="person-detail-tab" data-tab="dokumente">
                         Dokumente<span id="person-documents-count-badge" class="person-detail-tab-badge" style="display: none;"></span>
@@ -65,7 +76,7 @@ export class PersonDetailViewModule {
                         ${this.renderStammdaten(person)}
                     </div>
                     
-                    <!-- Historie Tab -->
+                    <!-- Lebenslauf Tab -->
                     <div class="person-detail-tab-content" data-tab-content="historie">
                         ${this.renderHistorie(person)}
                     </div>
@@ -177,7 +188,7 @@ export class PersonDetailViewModule {
                     <button class="btn btn-primary btn-sm" id="btn-add-affiliation">+ Affiliation hinzufügen</button>
                 </div>
                 <div id="person-affiliations-list" class="affiliations-list">
-                    <div class="loading">Lade Historie...</div>
+                    <div class="loading">Lade Lebenslauf...</div>
                 </div>
             </div>
         `;

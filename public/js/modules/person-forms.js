@@ -16,12 +16,12 @@ export class PersonFormsModule {
         this._editCloseHandler = null;
     }
     
-    showCreatePersonForm() {
+    showCreatePersonForm(orgUuid = null) {
         const modal = Utils.getOrCreateModal('modal-create-person', 'Neue Person');
         const modalBody = document.getElementById('modal-create-person-body');
         
         if (modalBody) {
-            modalBody.innerHTML = this.renderCreatePersonForm();
+            modalBody.innerHTML = this.renderCreatePersonForm(orgUuid);
         }
         
         // Setze Close-Button-Handler für dieses Modal (nur Submodal schließen)
@@ -45,13 +45,25 @@ export class PersonFormsModule {
             closeBtn.addEventListener('click', this._createCloseHandler);
         }
         
-        this.setupCreatePersonForm();
+        this.setupCreatePersonForm(orgUuid);
         Utils.showModal('modal-create-person');
     }
     
-    renderCreatePersonForm() {
+    /**
+     * Öffnet Formular zum Anlegen einer neuen Person für eine Organisation
+     * Erstellt automatisch eine Affiliation nach dem Anlegen der Person
+     */
+    showAddPersonForm(orgUuid) {
+        if (!orgUuid) {
+            Utils.showError('Keine Organisation angegeben');
+            return;
+        }
+        this.showCreatePersonForm(orgUuid);
+    }
+    
+    renderCreatePersonForm(orgUuid = null) {
         return `
-            <form id="form-create-person">
+            <form id="form-create-person" data-org-uuid="${orgUuid || ''}">
                 <div class="form-section">
                     <h3>Persönliche Daten</h3>
                     <div class="form-grid">
@@ -125,34 +137,61 @@ export class PersonFormsModule {
         `;
     }
     
-    setupCreatePersonForm() {
-        const form = document.getElementById('form-create-person');
-        if (!form) return;
-        
-        // Submit-Handler
-        if (this._createSubmitHandler) {
-            form.removeEventListener('submit', this._createSubmitHandler);
-        }
-        this._createSubmitHandler = async (e) => {
-            e.preventDefault();
-            await this.submitCreatePerson();
-        };
-        form.addEventListener('submit', this._createSubmitHandler);
-        
-        // Cancel-Button
-        const cancelBtn = document.getElementById('btn-cancel-create-person');
-        if (cancelBtn) {
-            if (this._createCancelHandler) {
-                cancelBtn.removeEventListener('click', this._createCancelHandler);
+    setupCreatePersonForm(orgUuid = null) {
+        // WICHTIG: Mit Verzögerung, damit das Formular vollständig im DOM ist
+        setTimeout(() => {
+            const form = document.getElementById('form-create-person');
+            if (!form) {
+                console.error('Form form-create-person nicht gefunden');
+                return;
             }
-            this._createCancelHandler = () => Utils.closeSpecificModal('modal-create-person');
-            cancelBtn.addEventListener('click', this._createCancelHandler);
-        }
+            
+            // Setze org_uuid im Formular-Dataset (falls nicht bereits gesetzt)
+            if (orgUuid && !form.dataset.orgUuid) {
+                form.dataset.orgUuid = orgUuid;
+            }
+            
+            // Submit-Handler
+            if (this._createSubmitHandler) {
+                form.removeEventListener('submit', this._createSubmitHandler);
+            }
+            this._createSubmitHandler = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this.submitCreatePerson();
+            };
+            form.addEventListener('submit', this._createSubmitHandler);
+            
+            // Cancel-Button
+            const cancelBtn = document.getElementById('btn-cancel-create-person');
+            if (cancelBtn) {
+                if (this._createCancelHandler) {
+                    cancelBtn.removeEventListener('click', this._createCancelHandler);
+                }
+                this._createCancelHandler = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    Utils.closeSpecificModal('modal-create-person');
+                };
+                cancelBtn.addEventListener('click', this._createCancelHandler);
+            }
+        }, 100);
     }
     
     async submitCreatePerson() {
         const form = document.getElementById('form-create-person');
-        if (!form) return;
+        if (!form) {
+            console.error('Form form-create-person nicht gefunden beim Submit');
+            Utils.showError('Formular nicht gefunden');
+            return;
+        }
+        
+        // Validiere Pflichtfelder
+        const lastName = form.querySelector('#person-create-last-name')?.value?.trim();
+        if (!lastName) {
+            Utils.showError('Bitte geben Sie einen Nachnamen ein');
+            return;
+        }
         
         const data = Utils.processFormData(form, {
             checkboxFields: ['is_active'],
@@ -164,16 +203,51 @@ export class PersonFormsModule {
         
         try {
             const person = await window.API.createPerson(data);
+            
+            // Wenn org_uuid im Formular gesetzt ist, erstelle automatisch eine Affiliation
+            const orgUuid = form?.dataset.orgUuid;
+            
+            if (orgUuid && person.person_uuid) {
+                try {
+                    // Erstelle Affiliation
+                    await window.API.createPersonAffiliation(person.person_uuid, {
+                        org_uuid: orgUuid,
+                        kind: 'employee', // Standard: Angestellter
+                        is_primary: false, // Standard: nicht primär
+                        since_date: new Date().toISOString().split('T')[0] // Heute
+                    });
+                } catch (affiliationError) {
+                    console.error('Error creating affiliation:', affiliationError);
+                    // Person wurde erstellt, aber Affiliation fehlgeschlagen - zeige Warnung
+                    Utils.showWarning('Person wurde angelegt, aber die Zuordnung zur Firma konnte nicht erstellt werden.');
+                }
+            }
+            
             Utils.showSuccess('Person wurde erfolgreich angelegt');
             Utils.closeSpecificModal('modal-create-person');
             
+            // Aktualisiere Personenliste im Leadplayer (falls vorhanden)
+            if (orgUuid && window.app.insideSales && window.app.insideSales.currentWorkItem && 
+                window.app.insideSales.currentWorkItem.org_uuid === orgUuid) {
+                // Warte kurz, damit die Affiliation gespeichert ist
+                setTimeout(async () => {
+                    await window.app.insideSales.loadPersonsList(orgUuid);
+                }, 500);
+            }
+            
             // Zeige die neue Person an (öffnet neues Modal)
+            // Übergebe das Person-Objekt direkt, um erneutes Laden zu vermeiden
             if (person.person_uuid && window.app.personDetail) {
-                await window.app.personDetail.showPersonDetail(person.person_uuid);
+                await window.app.personDetail.showPersonDetail(person);
             }
         } catch (error) {
-            console.error('Error creating person:', error);
-            Utils.showError('Fehler beim Anlegen der Person: ' + (error.message || 'Unbekannter Fehler'));
+            // Verwende die vollständige Nachricht (message) falls vorhanden, sonst error
+            let errorMessage = error.message || error.error || 'Fehler beim Anlegen der Person';
+            // Nur unerwartete Fehler in der Konsole loggen (nicht 400 Bad Request)
+            if (!error.status || error.status >= 500) {
+                console.error('Error creating person:', error);
+            }
+            Utils.showError(errorMessage);
         }
     }
     
@@ -215,7 +289,7 @@ export class PersonFormsModule {
             closeBtn.addEventListener('click', this._editCloseHandler);
         }
         
-        this.setupEditPersonForm(person.person_uuid);
+        this.setupEditPersonForm(person.person_uuid || person.uuid);
         Utils.showModal('modal-edit-person');
     }
     
@@ -357,5 +431,3 @@ export class PersonFormsModule {
         }
     }
 }
-
-

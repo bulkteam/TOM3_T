@@ -124,7 +124,7 @@ class PersonRelationshipService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['person_uuid' => $personUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/monitoring.css">
     <link rel="stylesheet" href="css/import-wizard.css">
+    <link rel="stylesheet" href="css/inside-sales.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -34,6 +35,12 @@
                         <li><a href="#accounts" class="nav-link nav-child" data-page="accounts">
                             <span class="icon">👥</span> Meine Kunden
                         </a></li>
+                        <li><a href="#inside-sales" class="nav-link nav-child" data-page="inside-sales">
+                            <span class="icon">📞</span> Inside Sales
+                        </a></li>
+                        <li><a href="#sales-ops" class="nav-link nav-child" data-page="sales-ops">
+                            <span class="icon">📊</span> Sales Ops
+                        </a></li>
                     </ul>
                 </li>
                 
@@ -49,6 +56,22 @@
                         </a></li>
                         <li><a href="#projects" class="nav-link nav-child" data-page="projects">
                             <span class="icon">📁</span> Projekte
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <!-- Sales -->
+                <li class="nav-menu-item">
+                    <a href="#" class="nav-link nav-parent" data-menu="sales">
+                        <span class="icon">💼</span> Sales
+                        <span class="nav-arrow">▾</span>
+                    </a>
+                    <ul class="nav-submenu">
+                        <li><a href="#inside-sales" class="nav-link nav-child" data-page="inside-sales">
+                            <span class="icon">📞</span> Inside Sales
+                        </a></li>
+                        <li><a href="#sales-ops" class="nav-link nav-child" data-page="sales-ops">
+                            <span class="icon">📊</span> Sales Ops
                         </a></li>
                     </ul>
                 </li>
@@ -92,9 +115,6 @@
                         <span class="nav-arrow">▾</span>
                     </a>
                     <ul class="nav-submenu">
-                        <li><a href="#admin" class="nav-link nav-child" data-page="admin">
-                            <span class="icon">👥</span> User & Rollenverwaltung
-                        </a></li>
                         <li><a href="#monitoring" class="nav-link nav-child" data-page="monitoring">
                             <span class="icon">🔍</span> Monitoring
                         </a></li>
@@ -1200,13 +1220,27 @@
             <div id="page-import" class="page">
                 <!-- Wird dynamisch von ImportModule gerendert -->
             </div>
+
+            <!-- Inside Sales Page -->
+            <div id="page-inside-sales" class="page">
+                <!-- Wird dynamisch von InsideSalesModule gerendert -->
+            </div>
+
+            <!-- Sales Ops Page -->
+            <div id="page-sales-ops" class="page">
+                <div class="page-header">
+                    <h2>Sales Ops</h2>
+                </div>
+                <div class="page-content">
+                    <p>Sales Operations - In Entwicklung</p>
+                </div>
+            </div>
         </main>
     </div>
     
     <!-- Toast Notifications - Muss vor den Scripts sein -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="js/modules/csrf-token.js"></script>
     <script src="js/api.js"></script>
     <script src="js/monitoring.js"></script>
     <script type="module" src="js/app.js"></script>

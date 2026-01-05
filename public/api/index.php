@@ -150,6 +150,10 @@ try {
             } elseif ($id === 'track') {
                 // POST /api/persons/track - Track Zugriff
                 require __DIR__ . '/persons-track.php';
+            } elseif ($id === 'by-org' || $id === 'search') {
+                // GET /api/persons/by-org?org_uuid=...&include_inactive=1
+                // GET /api/persons/search?q=...
+                require __DIR__ . '/persons.php';
             } else {
                 require __DIR__ . '/persons.php';
             }
@@ -173,6 +177,15 @@ try {
             } else {
                 require __DIR__ . '/documents.php';
             }
+            break;
+        case 'queues':
+            require __DIR__ . '/queues.php';
+            break;
+        case 'work-items':
+            require __DIR__ . '/work-items.php';
+            break;
+        case 'telephony':
+            require __DIR__ . '/telephony.php';
             break;
         default:
             http_response_code(404);

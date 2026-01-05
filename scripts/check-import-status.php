@@ -397,3 +397,4 @@ function checkBatch($db, $batchUuid) {
     echo "=== Prüfung abgeschlossen ===\n";
 }
 
+
