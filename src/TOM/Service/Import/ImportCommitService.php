@@ -53,11 +53,17 @@ final class ImportCommitService
      * @param string $batchUuid
      * @param string $userId
      * @param bool $startWorkflows Ob Workflows gestartet werden sollen
+     * @param string $mode Commit-Mode: 'APPROVED_ONLY' (nur approved) oder 'PENDING_AUTO_APPROVE' (pending automatisch approven)
      * @return array Stats: {rows_total, rows_imported, rows_failed, created_orgs, created_level3_industries, started_workflows, row_results}
      */
-    public function commitBatch(string $batchUuid, string $userId, bool $startWorkflows = true): array
+    public function commitBatch(string $batchUuid, string $userId, bool $startWorkflows = true, string $mode = 'APPROVED_ONLY'): array
     {
-        // 1. Lade approved Staging-Rows
+        // 1. Wenn PENDING_AUTO_APPROVE: Setze alle pending Rows auf approved
+        if ($mode === 'PENDING_AUTO_APPROVE') {
+            $this->autoApprovePendingRows($batchUuid, $userId);
+        }
+        
+        // 2. Lade approved Staging-Rows
         $rows = $this->listApprovedRows($batchUuid);
         
         $stats = [
@@ -405,6 +411,44 @@ final class ImportCommitService
             'staging_uuid' => $stagingUuid,
             'commit_log' => json_encode($commitLog, JSON_UNESCAPED_UNICODE)
         ]);
+    }
+    
+    /**
+     * Setzt alle pending Rows eines Batches automatisch auf approved
+     */
+    private function autoApprovePendingRows(string $batchUuid, string $userId): void
+    {
+        $stmt = $this->db->prepare("
+            UPDATE org_import_staging
+            SET disposition = 'approved',
+                reviewed_by_user_id = :user_id,
+                reviewed_at = NOW()
+            WHERE import_batch_uuid = :batch_uuid
+            AND disposition = 'pending'
+            AND import_status != 'imported'
+        ");
+        
+        $stmt->execute([
+            'batch_uuid' => $batchUuid,
+            'user_id' => $userId
+        ]);
+        
+        $affected = $stmt->rowCount();
+        
+        // Activity-Log
+        if ($affected > 0) {
+            $this->activityLogService->logActivity(
+                $userId,
+                'import',
+                'import_batch',
+                $batchUuid,
+                [
+                    'action' => 'auto_approve_pending_rows',
+                    'rows_approved' => $affected,
+                    'timestamp' => date('Y-m-d H:i:s')
+                ]
+            );
+        }
     }
     
     /**

@@ -15,6 +15,39 @@ export class ImportModule {
     }
     
     /**
+     * Helper-Methode für fetch mit CSRF-Token
+     * Fallback falls csrfTokenService nicht verfügbar ist
+     */
+    async fetchWithToken(url, options = {}) {
+        // Wenn csrfTokenService verfügbar ist, verwende diesen
+        if (window.csrfTokenService && typeof window.csrfTokenService.fetchWithToken === 'function') {
+            return await window.csrfTokenService.fetchWithToken(url, options);
+        }
+        
+        // Fallback: Manuell Token holen und Request senden
+        const method = options.method || 'GET';
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            try {
+                // Versuche Token zu holen
+                const tokenResponse = await fetch(`${window.API?.baseUrl || '/api'}/auth/csrf-token`);
+                if (tokenResponse.ok) {
+                    const tokenData = await tokenResponse.json();
+                    if (tokenData.token) {
+                        if (!options.headers) {
+                            options.headers = {};
+                        }
+                        options.headers['X-CSRF-Token'] = tokenData.token;
+                    }
+                }
+            } catch (error) {
+                console.warn('Could not fetch CSRF token, continuing without it:', error);
+            }
+        }
+        
+        return fetch(url, options);
+    }
+    
+    /**
      * Initialisiert Import-Seite
      */
     async init() {
@@ -412,7 +445,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Batch wird gelöscht...');
             
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/batch/${batchUuid}`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/batch/${batchUuid}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -657,7 +690,7 @@ export class ImportModule {
         progressText.textContent = 'Wird hochgeladen...';
         
         try {
-            const response = await window.csrfTokenService.fetchWithToken('/tom3/public/api/import/upload', {
+            const response = await this.fetchWithToken('/tom3/public/api/import/upload', {
                 method: 'POST',
                 body: formData
             });
@@ -758,7 +791,7 @@ export class ImportModule {
             Utils.showInfo('Lade Analyse-Daten...');
             
             // Rufe Analyse-Endpoint auf (analysiert die Datei neu)
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/analyze`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1750,7 +1783,7 @@ export class ImportModule {
             }
             
             // Speichere Mapping
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/mapping/${this.currentBatch}`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/mapping/${this.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mapping_config: mappingConfig })
@@ -1802,7 +1835,7 @@ export class ImportModule {
             
             // 2. Importiere in Staging (mit Branchen-Vorschlägen)
             // Backend holt file_path automatisch aus DocumentService/BlobService
-            const stagingResponse = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${this.currentBatch}`, {
+            const stagingResponse = await this.fetchWithToken(`/tom3/public/api/import/staging/${this.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
                 // Kein Body nötig - Backend holt file_path selbst
@@ -2097,7 +2130,7 @@ export class ImportModule {
                     };
                     
                     // Speichere aktualisierte industry_resolution
-                    await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
+                    await this.fetchWithToken(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -2342,7 +2375,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Setze Disposition...');
             
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2826,7 +2859,7 @@ export class ImportModule {
             });
             
             // Speichere Korrekturen über API
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3188,7 +3221,7 @@ export class ImportModule {
             
             Utils.showInfo('Import wird durchgeführt...');
             
-            const response = await window.csrfTokenService.fetchWithToken(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
+            const response = await this.fetchWithToken(`/tom3/public/api/import/batch/${this.currentBatch}/commit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3205,11 +3238,25 @@ export class ImportModule {
             
             const result = await response.json();
             
-            Utils.showSuccess(`Import erfolgreich! ${result.result?.stats?.rows_imported || 0} Organisationen importiert.`);
+            const rowsImported = result.result?.stats?.rows_imported || result.stats?.rows_imported || 0;
+            Utils.showSuccess(`Import erfolgreich! ${rowsImported} Organisationen importiert.`);
             
-            // Aktualisiere Review-Seite, um neue Statistiken zu zeigen
-            if (this.currentStep === 4) {
-                await this.renderReviewStep();
+            // Setze State zurück
+            this.currentBatch = null;
+            this.currentStep = 1;
+            
+            // Navigiere zur Übersichtsseite
+            // Entferne batch Parameter aus URL und navigiere
+            const url = new URL(window.location.href);
+            url.searchParams.delete('batch');
+            
+            // Verwende replaceState, um die URL zu ändern ohne Reload
+            window.history.replaceState({}, '', url);
+            
+            // Rendere Übersichtsseite
+            const page = document.getElementById('page-import');
+            if (page) {
+                await this.renderOverviewPage(page);
             }
             
         } catch (error) {
