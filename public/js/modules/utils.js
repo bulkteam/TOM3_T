@@ -289,9 +289,24 @@ export const Utils = {
             
             level2SelectElement.innerHTML = '<option value="">-- Bitte wählen --</option>';
             level2SelectElement.disabled = false;
-            level2SelectElement.required = true; // Level 2 ist required
+            
+            // Hole Label für dynamische Anpassung
+            const label = level2SelectElement.closest('.form-group')?.querySelector('label');
+            const originalLabelText = label ? label.textContent.replace(/\s*\(.*?\)\s*$/, '').replace(/\s*\*.*$/, '').trim() : null;
+            const requiredSpan = label ? label.querySelector('.required') : null;
             
             if (industries && industries.length > 0) {
+                // Level 2 ist nur required, wenn Optionen verfügbar sind
+                level2SelectElement.required = true;
+                
+                // Stelle sicher, dass required-Markierung sichtbar ist
+                if (requiredSpan) {
+                    requiredSpan.style.display = '';
+                }
+                if (label && originalLabelText) {
+                    label.textContent = originalLabelText + ' *';
+                }
+                
                 industries.forEach(industry => {
                     const option = document.createElement('option');
                     option.value = industry.industry_uuid;
@@ -300,7 +315,17 @@ export const Utils = {
                     level2SelectElement.appendChild(option);
                 });
             } else {
+                // Keine Level 2 Branchen verfügbar - Level 2 ist nicht required
+                level2SelectElement.required = false;
                 level2SelectElement.innerHTML = '<option value="">Keine Branchen verfügbar</option>';
+                
+                // Entferne required-Markierung im Label
+                if (requiredSpan) {
+                    requiredSpan.style.display = 'none';
+                }
+                if (label && originalLabelText) {
+                    label.textContent = originalLabelText + ' (optional - keine Unterbranchen verfügbar)';
+                }
             }
         } catch (error) {
             console.error('Error loading industry level 2:', error);
@@ -370,7 +395,7 @@ export const Utils = {
         // Stelle sicher, dass Level 2 und 3 initial deaktiviert sind
         level2SelectElement.disabled = true;
         level2SelectElement.innerHTML = '<option value="">-- Zuerst Branchenbereich wählen --</option>';
-        level2SelectElement.required = true; // Level 2 ist required
+        // required wird dynamisch in loadIndustryLevel2 gesetzt, je nachdem ob Optionen verfügbar sind
         level3SelectElement.disabled = true;
         level3SelectElement.innerHTML = '<option value="">-- Zuerst Branche wählen --</option>';
         level3SelectElement.required = false; // Level 3 ist optional

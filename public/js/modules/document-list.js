@@ -270,31 +270,61 @@ export class DocumentListModule {
         }
         
         try {
+            // Finde das Dokument-Element im DOM (vor dem Löschen)
+            const documentElement = document.querySelector(`[data-document-uuid="${documentUuid}"]`);
+            const documentRow = documentElement?.closest('.document-item, tr, .document-row') || documentElement;
+            
             await window.API.deleteDocument(documentUuid);
             
-            // Liste neu laden - finde Container automatisch
-            const container = document.querySelector('#org-documents-list') || 
-                             document.querySelector('#person-documents-list') ||
-                             document.querySelector('.documents-list') ||
-                             document.querySelector(containerSelector || '#documents-container');
-            
-            if (container) {
-                const selector = container.id ? `#${container.id}` : containerSelector || '#documents-container';
-                await this.loadDocuments(entityType, entityUuid, selector, null);
+            // Entferne das Dokument sofort aus dem DOM
+            if (documentRow && documentRow.parentNode) {
+                documentRow.remove();
+                
+                // Prüfe, ob noch Dokumente vorhanden sind
+                const container = document.querySelector('#org-documents-list') || 
+                                 document.querySelector('#person-documents-list') ||
+                                 document.querySelector('.documents-list') ||
+                                 document.querySelector(containerSelector || '#documents-container');
+                
+                if (container) {
+                    const remainingDocs = container.querySelectorAll('.document-item, [data-document-uuid]');
+                    if (remainingDocs.length === 0) {
+                        // Keine Dokumente mehr - zeige leeren Zustand
+                        container.innerHTML = '<div class="empty-state"><p>Keine Dokumente vorhanden</p></div>';
+                    }
+                    
+                    // Aktualisiere Badge falls vorhanden
+                    const badgeSelector = entityType === 'person' ? '#person-documents-badge' : 
+                                         entityType === 'org' ? '#org-documents-badge' : null;
+                    if (badgeSelector) {
+                        const badge = document.querySelector(badgeSelector);
+                        if (badge) {
+                            const count = remainingDocs.length;
+                            badge.textContent = count > 0 ? count.toString() : '';
+                            badge.style.display = count > 0 ? '' : 'none';
+                        }
+                    }
+                }
             } else {
-                // Fallback: renderDocuments
-                await this.renderDocuments(entityType, entityUuid, 'documents-container');
+                // Fallback: Liste neu laden, wenn Element nicht gefunden wurde
+                const container = document.querySelector('#org-documents-list') || 
+                                 document.querySelector('#person-documents-list') ||
+                                 document.querySelector('.documents-list') ||
+                                 document.querySelector(containerSelector || '#documents-container');
+                
+                if (container) {
+                    const selector = container.id ? `#${container.id}` : containerSelector || '#documents-container';
+                    await this.loadDocuments(entityType, entityUuid, selector, null);
+                } else {
+                    await this.renderDocuments(entityType, entityUuid, 'documents-container');
+                }
             }
             
             // Erfolgs-Meldung
-            if (this.app && this.app.showNotification) {
-                this.app.showNotification('Dokument erfolgreich gelöscht', 'success');
-            } else {
-                alert('Dokument erfolgreich gelöscht');
-            }
+            Utils.showSuccess('Dokument erfolgreich gelöscht');
         } catch (error) {
             console.error('Fehler beim Löschen:', error);
-            alert('Fehler beim Löschen: ' + (error.message || 'Unbekannter Fehler'));
+            Utils.showError('Fehler beim Löschen: ' + (error.message || 'Unbekannter Fehler'));
         }
     }
     

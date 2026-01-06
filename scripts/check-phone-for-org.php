@@ -97,3 +97,4 @@ $testStmt->execute([$org['org_uuid']]);
 $result = $testStmt->fetch(PDO::FETCH_ASSOC);
 echo "Ergebnis: " . ($result['company_phone'] ?? 'NULL') . "\n";
 
+

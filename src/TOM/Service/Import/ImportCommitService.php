@@ -140,6 +140,17 @@ final class ImportCommitService
             ];
         }
         
+        // Prüfe, ob disposition noch approved ist (verhindert Race Condition:
+        // wenn während des Imports disposition auf 'skip' geändert wird, wird Row nicht importiert)
+        if ($row['disposition'] !== 'approved') {
+            return [
+                'staging_uuid' => $row['staging_uuid'],
+                'status' => 'skipped',
+                'reason' => 'DISPOSITION_NOT_APPROVED',
+                'current_disposition' => $row['disposition']
+            ];
+        }
+        
         // Parse JSON-Daten
         $mappedData = json_decode($row['mapped_data'] ?? '{}', true);
         $industryResolution = json_decode($row['industry_resolution'] ?? '{}', true);
@@ -291,12 +302,10 @@ final class ImportCommitService
             }
         }
         
-        // 6. Starte Workflow (optional)
+        // 6. Starte Workflow (optional) - Erstelle case_item für Inside Sales Queue
         $workflowCaseUuid = null;
         if ($startWorkflows) {
-            // TODO: Workflow-Service erweitern für QUALIFY_COMPANY
-            // Für jetzt: Nur loggen
-            // $workflowCaseUuid = $this->startQualifyCompanyWorkflow($orgUuid, $userId);
+            $workflowCaseUuid = $this->startQualifyCompanyWorkflow($orgUuid, $orgData['name'], $userId);
             $stats['started_workflows']++;
         }
         
@@ -469,6 +478,77 @@ final class ImportCommitService
             'status' => $status,
             'stats_json' => json_encode($stats, JSON_UNESCAPED_UNICODE)
         ]);
+    }
+    
+    /**
+     * Startet QUALIFY_COMPANY Workflow - Erstellt case_item für Inside Sales Queue
+     */
+    private function startQualifyCompanyWorkflow(string $orgUuid, string $orgName, string $userId): string
+    {
+        // Prüfe, ob bereits ein Case für diese Org existiert (verhindert Duplikate)
+        $checkStmt = $this->db->prepare("
+            SELECT case_uuid
+            FROM case_item
+            WHERE org_uuid = :org_uuid
+              AND case_type = 'LEAD'
+              AND engine = 'inside_sales'
+              AND stage = 'NEW'
+            LIMIT 1
+        ");
+        $checkStmt->execute(['org_uuid' => $orgUuid]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            // Case existiert bereits, gib bestehenden zurück
+            return $existing['case_uuid'];
+        }
+        
+        // Generiere UUID für MySQL
+        $uuidStmt = $this->db->query("SELECT UUID() as uuid");
+        $caseUuid = $uuidStmt->fetch()['uuid'];
+        
+        // Erstelle case_item für Inside Sales Queue
+        $stmt = $this->db->prepare("
+            INSERT INTO case_item (
+                case_uuid, case_type, engine, phase, stage, status,
+                org_uuid, title, description,
+                owner_role, priority_stars, 
+                created_at, opened_at
+            )
+            VALUES (
+                :case_uuid, 'LEAD', 'inside_sales', 'QUALIFY-A', 'NEW', 'neu',
+                :org_uuid, :title, :description,
+                'inside_sales', 0,
+                NOW(), NOW()
+            )
+        ");
+        
+        $title = "Qualifizierung: " . $orgName;
+        $description = "Automatisch erstellter Qualifizierungs-Vorgang für importierte Organisation";
+        
+        $stmt->execute([
+            'case_uuid' => $caseUuid,
+            'org_uuid' => $orgUuid,
+            'title' => $title,
+            'description' => $description
+        ]);
+        
+        // Activity-Log
+        $this->activityLogService->logActivity(
+            $userId,
+            'workflow',
+            'case_item',
+            $caseUuid,
+            [
+                'action' => 'workflow_started',
+                'workflow_type' => 'QUALIFY_COMPANY',
+                'org_uuid' => $orgUuid,
+                'org_name' => $orgName,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]
+        );
+        
+        return $caseUuid;
     }
     
     /**

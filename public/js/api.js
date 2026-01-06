@@ -279,6 +279,20 @@ class TOM3API {
         });
     }
 
+    async updatePersonAffiliation(personUuid, affiliationUuid, data) {
+        const updateData = { ...data, affiliation_uuid: affiliationUuid };
+        return this.request(`/persons/${personUuid}/affiliations`, {
+            method: 'PUT',
+            body: updateData
+        });
+    }
+
+    async deletePersonAffiliation(personUuid, affiliationUuid) {
+        return this.request(`/persons/${personUuid}/affiliations?affiliation_uuid=${affiliationUuid}`, {
+            method: 'DELETE'
+        });
+    }
+
     async getPersonAuditTrail(personUuid, limit = 100) {
         return this.request(`/persons/${personUuid}/audit-trail?limit=${limit}`);
     }
@@ -295,8 +309,8 @@ class TOM3API {
         });
     }
 
-    async deletePersonRelationship(relationshipUuid) {
-        return this.request(`/persons/relationships?relationship_uuid=${relationshipUuid}`, {
+    async deletePersonRelationship(personUuid, relationshipUuid) {
+        return this.request(`/persons/${personUuid}/relationships?relationship_uuid=${relationshipUuid}`, {
             method: 'DELETE'
         });
     }

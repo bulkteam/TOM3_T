@@ -77,3 +77,4 @@ if ($currentUserId) {
     echo "Anzahl: " . ($result['count'] ?? 0) . "\n";
 }
 
+

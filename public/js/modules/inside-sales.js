@@ -585,6 +585,10 @@ export class InsideSalesModule {
         // Outcome-Buttons
         document.querySelectorAll('.outcome-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                // Entferne active-Klasse von allen Outcome-Buttons
+                document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('active'));
+                // Markiere geklickten Button als active
+                btn.classList.add('active');
                 const outcome = btn.dataset.outcome;
                 this.openDisposition(outcome);
             });
@@ -825,7 +829,13 @@ export class InsideSalesModule {
                             <div class="work-item-name">${Utils.escapeHtml(item.company_name || '-')}</div>
                             <div class="work-item-location">${Utils.escapeHtml(item.company_city || '-')}</div>
                             <div class="work-item-stars">${'⭐'.repeat(item.priority_stars || 0)}</div>
-                            <div class="work-item-next">${item.next_action_at ? new Date(item.next_action_at).toLocaleDateString('de-DE') : '-'}</div>
+                            <div class="work-item-next">${item.next_action_at ? new Date(item.next_action_at).toLocaleString('de-DE', { 
+                                year: 'numeric', 
+                                month: '2-digit', 
+                                day: '2-digit', 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                            }) : '-'}</div>
                             <div class="work-item-last-touch">${item.last_touch_at ? new Date(item.last_touch_at).toLocaleDateString('de-DE') : 'Nie'}</div>
                             <div class="work-item-actions">
                                 <a href="#inside-sales/dialer?lead=${item.case_uuid}&tab=${this.currentTab}&sort=${this.currentSort.field}&order=${this.currentSort.direction}" class="btn btn-sm">Öffnen</a>
@@ -1209,7 +1219,80 @@ export class InsideSalesModule {
                 // Setze default Outcome auf "erreicht" wenn Call erfolgreich war
                 const reachedBtn = document.querySelector('.outcome-btn[data-outcome="erreicht"]');
                 if (reachedBtn) {
+                    // Entferne active von allen Buttons
+                    document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('active'));
                     reachedBtn.classList.add('active');
+                }
+            }
+            
+            // Wenn ein Outcome-Button geklickt wurde, aktualisiere Outcome-Text in der Notiz
+            if (outcome && outcome !== 'call_ended') {
+                const notesField = document.getElementById('disposition-notes');
+                if (notesField) {
+                    const outcomeTexts = {
+                        'erreicht': 'Erreicht',
+                        'nicht_erreicht': 'Nicht erreicht',
+                        'rueckruf': 'Rückruf vereinbart',
+                        'falsche_nummer': 'Falsche Nummer',
+                        'kein_bedarf': 'Kein Bedarf',
+                        'qualifiziert': 'Qualifiziert'
+                    };
+                    const newText = outcomeTexts[outcome] || outcome;
+                    const currentText = notesField.value;
+                    
+                    // Wenn Notiz leer ist, setze neuen Text
+                    if (!currentText.trim()) {
+                        notesField.value = newText;
+                    } else {
+                        // Prüfe, ob der Text exakt einem bekannten Outcome-Text entspricht
+                        const exactMatch = Object.values(outcomeTexts).find(text => currentText.trim() === text);
+                        if (exactMatch) {
+                            // Exakter Match: Ersetze komplett
+                            notesField.value = newText;
+                        } else {
+                            // Prüfe, ob der Text mit einem bekannten Outcome-Text beginnt
+                            let foundOutcomeText = null;
+                            let remainingText = '';
+                            
+                            for (const outcomeText of Object.values(outcomeTexts)) {
+                                // Prüfe auf Outcome-Text am Anfang (case-insensitive)
+                                // Mit optionalem Trennzeichen danach (-, –, —, oder Leerzeichen)
+                                const escapedText = outcomeText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                const regex = new RegExp(`^${escapedText}(\\s*[-–—]\\s*|\\s+)(.*)$`, 'i');
+                                const match = currentText.match(regex);
+                                
+                                if (match) {
+                                    foundOutcomeText = outcomeText;
+                                    // Extrahiere den Rest des Textes nach dem Outcome-Text und Trennzeichen
+                                    remainingText = match[2] ? match[2].trim() : '';
+                                    break;
+                                }
+                                
+                                // Fallback: Prüfe auch auf exakten Match am Anfang (ohne Trennzeichen)
+                                if (currentText.trim().toLowerCase().startsWith(outcomeText.toLowerCase())) {
+                                    const afterText = currentText.substring(outcomeText.length).trim();
+                                    // Wenn danach ein Trennzeichen oder Leerzeichen kommt, ist es wahrscheinlich ein Outcome-Text
+                                    if (afterText.startsWith('-') || afterText.startsWith('–') || afterText.startsWith('—') || afterText.startsWith(' ')) {
+                                        foundOutcomeText = outcomeText;
+                                        remainingText = afterText.replace(/^[-–—\s]+/, '').trim();
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (foundOutcomeText) {
+                                // Outcome-Text am Anfang gefunden: Ersetze nur diesen Teil
+                                if (remainingText) {
+                                    notesField.value = `${newText} - ${remainingText}`;
+                                } else {
+                                    notesField.value = newText;
+                                }
+                            } else {
+                                // Kein Outcome-Text gefunden: Füge neuen Outcome-Text am Anfang hinzu
+                                notesField.value = `${newText} - ${currentText.trim()}`;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1681,18 +1764,37 @@ export class InsideSalesModule {
             const container = document.getElementById('dialer-timeline-content');
             if (container) {
                 if (timeline.length > 0) {
-                    container.innerHTML = timeline.map(item => `
+                    container.innerHTML = timeline.map(item => {
+                        // Formatiere Wiedervorlage, falls vorhanden
+                        let wvlDisplay = '';
+                        if (item.next_action_at) {
+                            const wvlDate = new Date(item.next_action_at);
+                            wvlDisplay = `<div class="timeline-wvl" style="font-weight: 600; color: #0d6efd; margin-bottom: 8px;">
+                                📅 WVL: ${wvlDate.toLocaleString('de-DE', { 
+                                    weekday: 'short', 
+                                    year: 'numeric', 
+                                    month: '2-digit', 
+                                    day: '2-digit', 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                })}
+                            </div>`;
+                        }
+                        
+                        return `
                         <div class="timeline-item ${item.is_pinned ? 'pinned' : ''}">
                             <div class="timeline-header">
                                 <span class="timeline-type">${item.activity_type}</span>
                                 <span class="timeline-time">${new Date(item.occurred_at).toLocaleString('de-DE')}</span>
                             </div>
                             ${item.created_by === 'USER' ? `<div class="timeline-user">${item.user_name || 'User'}</div>` : ''}
+                            ${wvlDisplay}
                             ${item.system_message ? `<div class="timeline-system">${Utils.escapeHtml(item.system_message)}</div>` : ''}
                             ${item.notes ? `<div class="timeline-notes">${Utils.escapeHtml(item.notes)}</div>` : ''}
                             ${item.outcome ? `<div class="timeline-outcome">Outcome: ${item.outcome}</div>` : ''}
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                 } else {
                     container.innerHTML = '<div class="empty-state">Keine Timeline-Einträge</div>';
                 }

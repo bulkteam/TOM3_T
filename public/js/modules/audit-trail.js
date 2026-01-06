@@ -43,25 +43,36 @@ export class AuditTrailModule {
                     closeBtn.removeEventListener('click', this._auditTrailCloseHandler);
                 }
                 
+                // Speichere entityType und entityUuid in lokalen Variablen für den Closure
+                const savedEntityType = entityType;
+                const savedEntityUuid = entityUuid;
+                
                 this._auditTrailCloseHandler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
-                    if (entityType === 'org') {
+                    // Verwende die gespeicherten Werte aus dem Closure
+                    if (savedEntityType === 'org') {
                         const orgDetailModal = document.getElementById('modal-org-detail');
-                        if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                            if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                                this.app.orgDetail.showOrgDetail(entityUuid);
-                            }
+                        if (orgDetailModal && orgDetailModal.classList.contains('active')) {
+                            // Org-Modal ist bereits offen, nichts tun
+                            return false;
                         }
-                    } else if (entityType === 'person') {
+                        // Org-Modal ist nicht offen, öffne es
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(savedEntityUuid);
+                        }
+                    } else if (savedEntityType === 'person') {
                         const personDetailModal = document.getElementById('modal-person-detail');
-                        if (!personDetailModal || !personDetailModal.classList.contains('active')) {
-                            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
-                                this.app.personDetail.showPersonDetail(entityUuid);
-                            }
+                        if (personDetailModal && personDetailModal.classList.contains('active')) {
+                            // Person-Modal ist bereits offen, nichts tun
+                            return false;
+                        }
+                        // Person-Modal ist nicht offen, öffne es
+                        if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                            this.app.personDetail.showPersonDetail(savedEntityUuid);
                         }
                     }
                     return false;
@@ -71,6 +82,10 @@ export class AuditTrailModule {
             }
             
             // Überschreibe Overlay-Click-Handler, damit nur dieses Modal geschlossen wird
+            // Verwende die gleichen gespeicherten Werte wie beim Close-Button
+            const savedEntityTypeOverlay = entityType;
+            const savedEntityUuidOverlay = entityUuid;
+            
             modal.removeEventListener('click', modal._overlayClickHandler);
             modal._overlayClickHandler = (e) => {
                 if (e.target === modal) {
@@ -78,19 +93,26 @@ export class AuditTrailModule {
                     e.stopImmediatePropagation();
                     Utils.closeSpecificModal('modal-audit-trail');
                     // Prüfe, ob das Stammdaten-Modal noch geöffnet ist
-                    if (entityType === 'org') {
+                    // Verwende die gespeicherten Werte aus dem Closure
+                    if (savedEntityTypeOverlay === 'org') {
                         const orgDetailModal = document.getElementById('modal-org-detail');
-                        if (!orgDetailModal || !orgDetailModal.classList.contains('active')) {
-                            if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
-                                this.app.orgDetail.showOrgDetail(entityUuid);
-                            }
+                        if (orgDetailModal && orgDetailModal.classList.contains('active')) {
+                            // Org-Modal ist bereits offen, nichts tun
+                            return false;
                         }
-                    } else if (entityType === 'person') {
+                        // Org-Modal ist nicht offen, öffne es
+                        if (this.app.orgDetail && this.app.orgDetail.showOrgDetail) {
+                            this.app.orgDetail.showOrgDetail(savedEntityUuidOverlay);
+                        }
+                    } else if (savedEntityTypeOverlay === 'person') {
                         const personDetailModal = document.getElementById('modal-person-detail');
-                        if (!personDetailModal || !personDetailModal.classList.contains('active')) {
-                            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
-                                this.app.personDetail.showPersonDetail(entityUuid);
-                            }
+                        if (personDetailModal && personDetailModal.classList.contains('active')) {
+                            // Person-Modal ist bereits offen, nichts tun
+                            return false;
+                        }
+                        // Person-Modal ist nicht offen, öffne es
+                        if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                            this.app.personDetail.showPersonDetail(savedEntityUuidOverlay);
                         }
                     }
                     return false;
@@ -150,12 +172,15 @@ export class AuditTrailModule {
         
         if (entry.change_type === 'field_change' && entry.field_name) {
             const fieldLabel = this.getFieldLabel(entry.field_name);
+            // Übersetze Werte für bestimmte Felder
+            const oldValue = this.translateFieldValue(entry.field_name, entry.old_value);
+            const newValue = this.translateFieldValue(entry.field_name, entry.new_value);
             changeDetails = `
                 <div class="audit-trail-change">
                     <span class="audit-trail-field">${Utils.escapeHtml(fieldLabel)}:</span>
-                    <span class="audit-trail-old-value">${Utils.escapeHtml(entry.old_value || '(leer)')}</span>
+                    <span class="audit-trail-old-value">${Utils.escapeHtml(oldValue || '(leer)')}</span>
                     <span class="audit-trail-arrow">→</span>
-                    <span class="audit-trail-new-value">${Utils.escapeHtml(entry.new_value || '(leer)')}</span>
+                    <span class="audit-trail-new-value">${Utils.escapeHtml(newValue || '(leer)')}</span>
                 </div>
             `;
         } else if (entry.change_type === 'org_created') {
@@ -228,6 +253,56 @@ export class AuditTrailModule {
                 changeDetails = `<div class="audit-trail-change">Kommunikationskanal ${action}: ${Utils.escapeHtml(channelLabel)}</div>`;
             } catch (e) {
                 changeDetails = `<div class="audit-trail-change">Kommunikationskanal ${entry.change_type === 'channel_added' ? 'hinzugefügt' : 'entfernt'}</div>`;
+            }
+        } else if (entry.change_type === 'relation_added') {
+            // Beziehung hinzugefügt - verwende new_value wenn vorhanden, sonst formatiere metadata
+            if (entry.new_value) {
+                changeDetails = `<div class="audit-trail-change">Beziehung hinzugefügt: ${Utils.escapeHtml(entry.new_value)}</div>`;
+            } else {
+                try {
+                    const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                    const otherPersonName = metadata.other_person_name || 'Unbekannt';
+                    const relationType = metadata.relation_type || '';
+                    const relationTypeLabels = {
+                        'knows': 'Kennt',
+                        'friendly': 'Freundlich',
+                        'adversarial': 'Gegnerisch',
+                        'advisor_of': 'Berät',
+                        'mentor_of': 'Mentor von',
+                        'former_colleague': 'Ehemaliger Kollege',
+                        'influences': 'Beeinflusst',
+                        'gatekeeper_for': 'Türöffner für'
+                    };
+                    const relationTypeLabel = relationTypeLabels[relationType] || relationType;
+                    changeDetails = `<div class="audit-trail-change">Beziehung hinzugefügt: ${Utils.escapeHtml(otherPersonName)} (${Utils.escapeHtml(relationTypeLabel)})</div>`;
+                } catch (e) {
+                    changeDetails = `<div class="audit-trail-change">Beziehung hinzugefügt</div>`;
+                }
+            }
+        } else if (entry.change_type === 'relation_removed') {
+            // Beziehung entfernt - verwende old_value wenn vorhanden, sonst formatiere metadata
+            if (entry.old_value) {
+                changeDetails = `<div class="audit-trail-change">Beziehung entfernt: ${Utils.escapeHtml(entry.old_value)}</div>`;
+            } else {
+                try {
+                    const metadata = typeof entry.metadata === 'string' ? JSON.parse(entry.metadata) : entry.metadata;
+                    const otherPersonName = metadata.other_person_name || 'Unbekannt';
+                    const relationType = metadata.relation_type || '';
+                    const relationTypeLabels = {
+                        'knows': 'Kennt',
+                        'friendly': 'Freundlich',
+                        'adversarial': 'Gegnerisch',
+                        'advisor_of': 'Berät',
+                        'mentor_of': 'Mentor von',
+                        'former_colleague': 'Ehemaliger Kollege',
+                        'influences': 'Beeinflusst',
+                        'gatekeeper_for': 'Türöffner für'
+                    };
+                    const relationTypeLabel = relationTypeLabels[relationType] || relationType;
+                    changeDetails = `<div class="audit-trail-change">Beziehung entfernt: ${Utils.escapeHtml(otherPersonName)} (${Utils.escapeHtml(relationTypeLabel)})</div>`;
+                } catch (e) {
+                    changeDetails = `<div class="audit-trail-change">Beziehung entfernt</div>`;
+                }
             }
         } else if (entry.metadata) {
             // Für andere change_types: Versuche menschenlesbare Formatierung
@@ -382,6 +457,48 @@ export class AuditTrailModule {
         return labels[changeType] || changeType || 'Unbekannt';
     }
     
+    /**
+     * Übersetzt Feldwerte ins Deutsche
+     */
+    translateFieldValue(fieldName, value) {
+        if (!value || value === '(leer)') {
+            return value;
+        }
+        
+        // Übersetze kind-Werte
+        if (fieldName === 'kind') {
+            const translations = {
+                'employee': 'Mitarbeiter',
+                'contractor': 'Freelancer/Berater',
+                'advisor': 'Berater',
+                'other': 'Sonstiges'
+            };
+            return translations[value] || value;
+        }
+        
+        // Übersetze seniority-Werte
+        if (fieldName === 'seniority') {
+            const translations = {
+                'intern': 'Praktikant',
+                'junior': 'Junior',
+                'mid': 'Mittel',
+                'senior': 'Senior',
+                'lead': 'Lead',
+                'head': 'Head',
+                'vp': 'VP',
+                'cxo': 'C-Level'
+            };
+            return translations[value] || value;
+        }
+        
+        // Übersetze is_primary-Werte
+        if (fieldName === 'is_primary') {
+            return value === '1' || value === 1 || value === 'Ja' ? 'Ja' : 'Nein';
+        }
+        
+        return value;
+    }
+    
     getFieldLabel(fieldName) {
         const labels = {
             // Stammdaten
@@ -399,6 +516,16 @@ export class AuditTrailModule {
             'account_owner_user_id': 'Account-Verantwortung',
             'account_owner_since': 'Account-Verantwortung seit',
             'archived_at': 'Archiviert',
+            // Person Affiliation Felder
+            'kind': 'Art',
+            'title': 'Titel/Position',
+            'job_function': 'Funktion',
+            'seniority': 'Hierarchie',
+            'is_primary': 'Hauptarbeitgeber',
+            'since_date': 'Seit',
+            'until_date': 'Bis',
+            'org_uuid': 'Organisation',
+            'org_name': 'Organisation',
             // Adressfelder
             'address_address_type': 'Adresstyp',
             'address_street': 'Straße',

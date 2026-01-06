@@ -223,6 +223,15 @@ class DocumentService extends BaseEntityService
                 $documentForAudit['entity_uuid'] = $data['entity_uuid'];
             }
             $this->logCreateAuditTrail('document', $documentUuid, $userId, $documentForAudit, null);
+            
+            // Protokolliere auch im Audit-Trail der verknüpften Entität (ORG/PERSON)
+            if (isset($data['entity_type']) && isset($data['entity_uuid'])) {
+                $this->logEntityDocumentAction($data['entity_type'], $data['entity_uuid'], 'document_uploaded', [
+                    'document_uuid' => $documentUuid,
+                    'document_title' => $documentForAudit['title'] ?? null
+                ], $userId);
+            }
+            
             $this->publishEntityEvent('document', $documentUuid, 'DocumentCreated', $document);
         }
         
@@ -692,6 +701,15 @@ class DocumentService extends BaseEntityService
             return false;
         }
         
+        // Hole alle Attachments, um die verknüpften Entitäten zu finden
+        $stmt = $this->db->prepare("
+            SELECT entity_type, entity_uuid 
+            FROM document_attachments 
+            WHERE document_uuid = :document_uuid
+        ");
+        $stmt->execute(['document_uuid' => $documentUuid]);
+        $attachments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
         // Soft Delete
         $stmt = $this->db->prepare("
             UPDATE documents 
@@ -700,8 +718,28 @@ class DocumentService extends BaseEntityService
         ");
         $stmt->execute(['uuid' => $documentUuid]);
         
-        // Audit-Trail
-        $this->logAuditAction('document', $documentUuid, 'delete', null, null);
+        // Audit-Trail für Dokument
+        $userId = null;
+        try {
+            $userId = \TOM\Infrastructure\Auth\AuthHelper::getCurrentUserId(true);
+        } catch (\Exception $e) {
+            // Fallback erlaubt
+        }
+        $this->logAuditAction('document', $documentUuid, 'delete', null, $userId);
+        
+        // Protokolliere auch im Audit-Trail der verknüpften Entitäten (ORG/PERSON)
+        foreach ($attachments as $attachment) {
+            $this->logEntityDocumentAction(
+                $attachment['entity_type'],
+                $attachment['entity_uuid'],
+                'document_deleted',
+                [
+                    'document_uuid' => $documentUuid,
+                    'document_title' => $document['title'] ?? null
+                ],
+                $userId
+            );
+        }
         
         return $stmt->rowCount() > 0;
     }
@@ -1227,6 +1265,90 @@ class DocumentService extends BaseEntityService
         } catch (\Exception $e) {
             // Audit-Fehler sollten nicht den Haupt-Flow blockieren
             error_log("Document audit trail error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Protokolliert Dokument-Aktionen im Audit-Trail der verknüpften Entität (ORG/PERSON)
+     */
+    private function logEntityDocumentAction(string $entityType, string $entityUuid, string $action, ?array $metadata, ?string $userId): void
+    {
+        try {
+            // Nur für org und person
+            if (!in_array($entityType, ['org', 'person'])) {
+                return;
+            }
+            
+            // Hole userId falls nicht übergeben
+            if (!$userId) {
+                try {
+                    $userId = \TOM\Infrastructure\Auth\AuthHelper::getCurrentUserId(true);
+                } catch (\Exception $e) {
+                    // Fallback erlaubt
+                    $userId = null;
+                }
+            }
+            
+            if (!$userId) {
+                return; // Keine userId verfügbar
+            }
+            
+            // Direktes Einfügen in Audit-Trail (umgeht die Prüfung in logAuditTrail)
+            $tableName = $entityType === 'org' ? 'org_audit_trail' : 'person_audit_trail';
+            $uuidFieldName = $entityType === 'org' ? 'org_uuid' : 'person_uuid';
+            
+            // Prüfe ob activity_log_id Spalte existiert
+            $hasActivityLogId = false;
+            try {
+                $stmt = $this->db->prepare("
+                    SELECT COUNT(*) as count
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = :table_name
+                    AND COLUMN_NAME = 'activity_log_id'
+                ");
+                $stmt->execute(['table_name' => $tableName]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $hasActivityLogId = ($result['count'] ?? 0) > 0;
+            } catch (\Exception $e) {
+                // Ignorieren
+            }
+            
+            $metadataJson = $metadata ? json_encode($metadata) : null;
+            $documentTitle = $metadata['document_title'] ?? 'Unbekanntes Dokument';
+            $actionLabel = $action === 'document_uploaded' ? 'Dokument hochgeladen' : 'Dokument gelöscht';
+            
+            // Kombiniere Aktion und Dokumenttitel für bessere Lesbarkeit
+            $newValue = $actionLabel . ': ' . $documentTitle;
+            
+            if ($hasActivityLogId) {
+                $stmt = $this->db->prepare("
+                    INSERT INTO {$tableName} (
+                        activity_log_id, {$uuidFieldName}, user_id, action, field_name, old_value, new_value, change_type, metadata
+                    ) VALUES (
+                        NULL, :entity_uuid, :user_id, 'update', 'document', NULL, :new_value, :change_type, :metadata
+                    )
+                ");
+            } else {
+                $stmt = $this->db->prepare("
+                    INSERT INTO {$tableName} (
+                        {$uuidFieldName}, user_id, action, field_name, old_value, new_value, change_type, metadata
+                    ) VALUES (
+                        :entity_uuid, :user_id, 'update', 'document', NULL, :new_value, :change_type, :metadata
+                    )
+                ");
+            }
+            
+            $stmt->execute([
+                'entity_uuid' => $entityUuid,
+                'user_id' => $userId,
+                'new_value' => $newValue,
+                'change_type' => $action,
+                'metadata' => $metadataJson
+            ]);
+        } catch (\Exception $e) {
+            // Audit-Fehler sollten nicht den Haupt-Flow blockieren
+            error_log("Entity document audit trail error ({$entityType}/{$entityUuid}): " . $e->getMessage());
         }
     }
     

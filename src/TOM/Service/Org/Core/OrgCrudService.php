@@ -178,7 +178,68 @@ class OrgCrudService extends BaseEntityService
             $this->publishEntityEvent('org', $org['org_uuid'], 'OrgCreated', $org);
         }
         
+        // Starte Workflow für Inside Sales Queue, wenn Status = 'lead'
+        if ($org && ($data['status'] ?? 'lead') === 'lead') {
+            $this->startQualifyCompanyWorkflow($org['org_uuid'], $org['name'], $userId);
+        }
+        
         return $org;
+    }
+    
+    /**
+     * Startet QUALIFY_COMPANY Workflow - Erstellt case_item für Inside Sales Queue
+     */
+    private function startQualifyCompanyWorkflow(string $orgUuid, string $orgName, ?string $userId): string
+    {
+        // Prüfe, ob bereits ein Case für diese Org existiert (verhindert Duplikate)
+        $checkStmt = $this->db->prepare("
+            SELECT case_uuid
+            FROM case_item
+            WHERE org_uuid = :org_uuid
+              AND case_type = 'LEAD'
+              AND engine = 'inside_sales'
+              AND stage = 'NEW'
+            LIMIT 1
+        ");
+        $checkStmt->execute(['org_uuid' => $orgUuid]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            // Case existiert bereits, gib bestehenden zurück
+            return $existing['case_uuid'];
+        }
+        
+        // Generiere UUID für MySQL
+        $uuidStmt = $this->db->query("SELECT UUID() as uuid");
+        $caseUuid = $uuidStmt->fetch()['uuid'];
+        
+        // Erstelle case_item für Inside Sales Queue
+        $stmt = $this->db->prepare("
+            INSERT INTO case_item (
+                case_uuid, case_type, engine, phase, stage, status,
+                org_uuid, title, description,
+                owner_role, priority_stars, 
+                created_at, opened_at
+            )
+            VALUES (
+                :case_uuid, 'LEAD', 'inside_sales', 'QUALIFY-A', 'NEW', 'neu',
+                :org_uuid, :title, :description,
+                'inside_sales', 0,
+                NOW(), NOW()
+            )
+        ");
+        
+        $title = "Qualifizierung: " . $orgName;
+        $description = "Automatisch erstellter Qualifizierungs-Vorgang für manuell angelegte Organisation";
+        
+        $stmt->execute([
+            'case_uuid' => $caseUuid,
+            'org_uuid' => $orgUuid,
+            'title' => $title,
+            'description' => $description
+        ]);
+        
+        return $caseUuid;
     }
     
     /**

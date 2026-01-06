@@ -8,6 +8,7 @@ use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Events\EventPublisher;
 use TOM\Infrastructure\Utils\UuidHelper;
 use TOM\Infrastructure\Audit\AuditTrailService;
+use TOM\Infrastructure\Auth\AuthHelper;
 
 /**
  * PersonRelationshipService
@@ -65,6 +66,62 @@ class PersonRelationshipService
         
         $relationship = $this->getRelationship($uuid);
         if ($relationship) {
+            // Audit-Trail: Protokolliere Erstellung der Relationship für beide Personen
+            try {
+                $userId = AuthHelper::getCurrentUserId(true); // Erlaube Fallback für Dev-Mode
+                
+                // Erstelle menschenlesbare Beschreibung
+                $otherPersonName = $relationship['person_b_name'] ?? 'Unbekannt';
+                $relationTypeLabels = [
+                    'knows' => 'Kennt',
+                    'friendly' => 'Freundlich',
+                    'adversarial' => 'Gegnerisch',
+                    'advisor_of' => 'Berät',
+                    'mentor_of' => 'Mentor von',
+                    'former_colleague' => 'Ehemaliger Kollege',
+                    'influences' => 'Beeinflusst',
+                    'gatekeeper_for' => 'Türöffner für'
+                ];
+                $relationTypeLabel = $relationTypeLabels[$relationship['relation_type']] ?? $relationship['relation_type'];
+                $description = "Beziehung zu {$otherPersonName} ({$relationTypeLabel})";
+                
+                // Protokolliere für Person A - direktes Einfügen in Audit-Trail
+                $this->logRelationshipAuditEntry(
+                    $data['person_a_uuid'],
+                    $userId,
+                    'relation_added',
+                    $description,
+                    [
+                        'relationship_uuid' => $uuid,
+                        'other_person_uuid' => $data['person_b_uuid'],
+                        'other_person_name' => $otherPersonName,
+                        'relation_type' => $relationship['relation_type'],
+                        'direction' => $relationship['direction']
+                    ]
+                );
+                
+                // Protokolliere für Person B (falls unterschiedlich)
+                if ($data['person_b_uuid'] !== $data['person_a_uuid']) {
+                    $personAName = $relationship['person_a_name'] ?? 'Unbekannt';
+                    $descriptionB = "Beziehung zu {$personAName} ({$relationTypeLabel})";
+                    $this->logRelationshipAuditEntry(
+                        $data['person_b_uuid'],
+                        $userId,
+                        'relation_added',
+                        $descriptionB,
+                        [
+                            'relationship_uuid' => $uuid,
+                            'other_person_uuid' => $data['person_a_uuid'],
+                            'other_person_name' => $personAName,
+                            'relation_type' => $relationship['relation_type'],
+                            'direction' => $relationship['direction']
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                error_log("Person relationship audit trail error: " . $e->getMessage());
+            }
+            
             $this->eventPublisher->publish('person_relationship', $relationship['relationship_uuid'], 'PersonRelationshipAdded', $relationship);
         }
         
@@ -140,9 +197,139 @@ class PersonRelationshipService
         $stmt = $this->db->prepare("DELETE FROM person_relationship WHERE relationship_uuid = :uuid");
         $stmt->execute(['uuid' => $relationshipUuid]);
         
+        // Audit-Trail: Protokolliere Löschung der Relationship für beide Personen
+        try {
+            $userId = AuthHelper::getCurrentUserId(true); // Erlaube Fallback für Dev-Mode
+            
+            // Erstelle menschenlesbare Beschreibung
+            $otherPersonName = $relationship['person_b_name'] ?? 'Unbekannt';
+            $relationTypeLabels = [
+                'knows' => 'Kennt',
+                'friendly' => 'Freundlich',
+                'adversarial' => 'Gegnerisch',
+                'advisor_of' => 'Berät',
+                'mentor_of' => 'Mentor von',
+                'former_colleague' => 'Ehemaliger Kollege',
+                'influences' => 'Beeinflusst',
+                'gatekeeper_for' => 'Türöffner für'
+            ];
+            $relationTypeLabel = $relationTypeLabels[$relationship['relation_type']] ?? $relationship['relation_type'];
+            $description = "Beziehung zu {$otherPersonName} ({$relationTypeLabel})";
+            
+            // Protokolliere für Person A - direktes Einfügen in Audit-Trail
+            $this->logRelationshipAuditEntry(
+                $relationship['person_a_uuid'],
+                $userId,
+                'relation_removed',
+                $description,
+                [
+                    'relationship_uuid' => $relationshipUuid,
+                    'other_person_uuid' => $relationship['person_b_uuid'],
+                    'other_person_name' => $otherPersonName,
+                    'relation_type' => $relationship['relation_type'],
+                    'direction' => $relationship['direction']
+                ],
+                true // old_value statt new_value
+            );
+            
+            // Protokolliere für Person B (falls unterschiedlich)
+            if ($relationship['person_b_uuid'] !== $relationship['person_a_uuid']) {
+                $personAName = $relationship['person_a_name'] ?? 'Unbekannt';
+                $descriptionB = "Beziehung zu {$personAName} ({$relationTypeLabel})";
+                $this->logRelationshipAuditEntry(
+                    $relationship['person_b_uuid'],
+                    $userId,
+                    'relation_removed',
+                    $descriptionB,
+                    [
+                        'relationship_uuid' => $relationshipUuid,
+                        'other_person_uuid' => $relationship['person_a_uuid'],
+                        'other_person_name' => $personAName,
+                        'relation_type' => $relationship['relation_type'],
+                        'direction' => $relationship['direction']
+                    ],
+                    true // old_value statt new_value
+                );
+            }
+        } catch (\Exception $e) {
+            error_log("Person relationship audit trail error: " . $e->getMessage());
+        }
+        
         $this->eventPublisher->publish('person_relationship', $relationshipUuid, 'PersonRelationshipDeleted', $relationship);
         
         return true;
+    }
+    
+    /**
+     * Protokolliert eine Relationship-Änderung im Audit-Trail
+     */
+    private function logRelationshipAuditEntry(
+        string $personUuid,
+        string $userId,
+        string $changeType,
+        string $description,
+        array $metadata,
+        bool $useOldValue = false
+    ): void {
+        try {
+            $tableName = 'person_audit_trail';
+            
+            // Prüfe ob activity_log_id Spalte existiert
+            $hasActivityLogId = false;
+            try {
+                $stmt = $this->db->prepare("
+                    SELECT COUNT(*) as count
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = :table_name
+                    AND COLUMN_NAME = 'activity_log_id'
+                ");
+                $stmt->execute(['table_name' => $tableName]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $hasActivityLogId = ($result['count'] ?? 0) > 0;
+            } catch (\Exception $e) {
+                // Ignorieren
+            }
+            
+            $metadataJson = json_encode($metadata);
+            
+            if ($hasActivityLogId) {
+                $stmt = $this->db->prepare("
+                    INSERT INTO {$tableName} (
+                        activity_log_id, person_uuid, user_id, action, field_name, old_value, new_value, change_type, metadata
+                    ) VALUES (
+                        NULL, :person_uuid, :user_id, 'update', 'relationship', :old_value, :new_value, :change_type, :metadata
+                    )
+                ");
+            } else {
+                $stmt = $this->db->prepare("
+                    INSERT INTO {$tableName} (
+                        person_uuid, user_id, action, field_name, old_value, new_value, change_type, metadata
+                    ) VALUES (
+                        :person_uuid, :user_id, 'update', 'relationship', :old_value, :new_value, :change_type, :metadata
+                    )
+                ");
+            }
+            
+            $params = [
+                'person_uuid' => $personUuid,
+                'user_id' => $userId,
+                'change_type' => $changeType,
+                'metadata' => $metadataJson
+            ];
+            
+            if ($useOldValue) {
+                $params['old_value'] = $description;
+                $params['new_value'] = null;
+            } else {
+                $params['old_value'] = null;
+                $params['new_value'] = $description;
+            }
+            
+            $stmt->execute($params);
+        } catch (\Exception $e) {
+            error_log("Error logging relationship audit entry: " . $e->getMessage());
+        }
     }
 }
 

@@ -14,8 +14,8 @@ TOM3 verwendet eine Hybrid-Architektur: MySQL als System of Record (Quelle der W
 
 ### Geplante Phasen:
 - ⏳ Projekte (Project)
-- ⏳ Projekt-Partner (project_partner)
-- ⏳ Projekt-Stakeholder (project_stakeholder)
+- ⏳ Projekt-Parteien (project_party)
+- ⏳ Projekt-Personen (project_person)
 
 ## Architektur
 

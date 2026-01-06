@@ -74,6 +74,16 @@ class PersonService extends BaseEntityService
             
             // Event-Publishing (nach Commit)
             $this->db->commit();
+            
+            // Protokolliere Erstellung im Audit-Trail (nach Commit)
+            try {
+                $userId = $this->getCurrentUserId(true); // Erlaube Fallback für Dev-Mode
+                $this->logCreateAuditTrail('person', $uuid, $userId, $personData);
+            } catch (\Exception $e) {
+                // Audit-Fehler sollten nicht den Haupt-Flow blockieren
+                error_log("Person audit trail error: " . $e->getMessage());
+            }
+            
             $this->publishEntityEvent('person', $uuid, 'PersonCreated', $personData);
             
             return $personData;
@@ -142,6 +152,15 @@ class PersonService extends BaseEntityService
             
             // Event-Publishing (nach Commit)
             $this->db->commit();
+            
+            // Protokolliere Änderungen im Audit-Trail (nach Commit)
+            try {
+                $userId = $this->getCurrentUserId(true); // Erlaube Fallback für Dev-Mode
+                $this->logUpdateAuditTrail('person', $personUuid, $userId, $existing, $newData);
+            } catch (\Exception $e) {
+                // Audit-Fehler sollten nicht den Haupt-Flow blockieren
+                error_log("Person audit trail error: " . $e->getMessage());
+            }
             
             // Event-Publishing (nach Commit)
             $this->publishEntityEvent('person', $personUuid, 'PersonUpdated', $newData);
@@ -245,6 +264,16 @@ class PersonService extends BaseEntityService
         return $this->affiliationService->getPersonAffiliations($personUuid, $activeOnly);
     }
     
+    public function updateAffiliation(string $affiliationUuid, array $data): array
+    {
+        return $this->affiliationService->updateAffiliation($affiliationUuid, $data);
+    }
+    
+    public function deleteAffiliation(string $affiliationUuid): bool
+    {
+        return $this->affiliationService->deleteAffiliation($affiliationUuid);
+    }
+    
     // ============================================================================
     // RELATIONSHIP MANAGEMENT (delegiert an PersonRelationshipService)
     // ============================================================================
@@ -331,7 +360,7 @@ class PersonService extends BaseEntityService
     
     public function getAuditTrail(string $personUuid, int $limit = 100): array
     {
-        return $this->accessTrackingService->getEntityAuditTrail('person', $personUuid, $limit);
+        return $this->auditTrailService->getAuditTrail('person', $personUuid, $limit);
     }
     
     // ============================================================================

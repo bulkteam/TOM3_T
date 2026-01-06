@@ -119,12 +119,24 @@ switch ($subResource) {
             // POST /api/telephony/activities/{activity_id}/finalize - Finalisiere Call-Activity
             $data = json_decode(file_get_contents('php://input'), true);
             
-            $callDuration = $data['call_duration'] ?? null;
+            $callDuration = isset($data['call_duration']) ? (int)$data['call_duration'] : null;
             $outcome = $data['outcome'] ?? null;
             $notes = $data['notes'] ?? null;
+            $nextActionAt = isset($data['next_action_at']) && !empty($data['next_action_at']) 
+                ? new \DateTime($data['next_action_at']) 
+                : null;
+            $nextActionType = $data['next_action_type'] ?? null;
             
-            // TODO: Update Timeline-Eintrag mit finalen Daten
-            // Für jetzt: Erfolg zurückgeben
+            // Update Timeline-Eintrag mit finalen Daten
+            $timelineService->updateActivity(
+                (int)$subId,
+                $callDuration,
+                $outcome,
+                $notes,
+                $nextActionAt,
+                $nextActionType
+            );
+            
             echo json_encode([
                 'success' => true,
                 'activity_id' => (int)$subId,

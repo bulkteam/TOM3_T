@@ -1,5 +1,9 @@
 # TOM3 - Personen-Projekt-Integration
 
+> ⚠️ **VERALTET:** Dieses Dokument beschreibt die alte Struktur mit `project_partner` und `project_stakeholder`.  
+> Diese Tabellen wurden durch `project_party` und `project_person` ersetzt (siehe Migration 022, 023).  
+> **Bitte verwenden Sie:** `docs/implementation/PERSON-PROJECT-INTEGRATION-V2.md` für die aktuelle Struktur.
+
 ## Überblick
 
 Dieses Dokument beschreibt, wie Personen aus Partner-Firmen in Projekten verwendet werden können.

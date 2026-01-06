@@ -60,6 +60,11 @@ class WorkItemTimelineService
         // Update WorkItem: last_touch_at, touch_count
         $this->updateWorkItemTouch($workItemUuid);
         
+        // Wenn next_action_at gesetzt wurde, aktualisiere case_item
+        if ($nextActionAt) {
+            $this->updateWorkItemNextAction($workItemUuid, $nextActionAt, $nextActionType);
+        }
+        
         return $timelineId;
     }
     
@@ -239,6 +244,69 @@ class WorkItemTimelineService
     }
     
     /**
+     * Aktualisiert eine Timeline-Activity (z.B. beim Finalisieren eines Calls)
+     */
+    public function updateActivity(
+        int $timelineId,
+        ?int $callDuration = null,
+        ?string $outcome = null,
+        ?string $notes = null,
+        ?\DateTime $nextActionAt = null,
+        ?string $nextActionType = null
+    ): void {
+        $updates = [];
+        $params = ['timeline_id' => $timelineId];
+        
+        if ($callDuration !== null) {
+            $updates[] = "call_duration = :call_duration";
+            $params['call_duration'] = $callDuration;
+        }
+        
+        if ($outcome !== null) {
+            $updates[] = "outcome = :outcome";
+            $params['outcome'] = $outcome;
+        }
+        
+        if ($notes !== null) {
+            $updates[] = "notes = :notes";
+            $params['notes'] = $notes;
+        }
+        
+        if ($nextActionAt !== null) {
+            $updates[] = "next_action_at = :next_action_at";
+            $params['next_action_at'] = $nextActionAt->format('Y-m-d H:i:s');
+        }
+        
+        if ($nextActionType !== null) {
+            $updates[] = "next_action_type = :next_action_type";
+            $params['next_action_type'] = $nextActionType;
+        }
+        
+        if (empty($updates)) {
+            return;
+        }
+        
+        $stmt = $this->db->prepare("
+            UPDATE work_item_timeline
+            SET " . implode(', ', $updates) . "
+            WHERE timeline_id = :timeline_id
+        ");
+        $stmt->execute($params);
+        
+        // Wenn next_action_at gesetzt wurde, aktualisiere auch case_item
+        if ($nextActionAt !== null) {
+            // Hole work_item_uuid aus Timeline
+            $stmt = $this->db->prepare("SELECT work_item_uuid FROM work_item_timeline WHERE timeline_id = :timeline_id");
+            $stmt->execute(['timeline_id' => $timelineId]);
+            $activity = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($activity) {
+                $this->updateWorkItemNextAction($activity['work_item_uuid'], $nextActionAt, $nextActionType);
+            }
+        }
+    }
+    
+    /**
      * Update WorkItem Touch-Felder
      */
     private function updateWorkItemTouch(string $workItemUuid): void
@@ -251,6 +319,59 @@ class WorkItemTimelineService
             WHERE case_uuid = :work_item_uuid
         ");
         $stmt->execute(['work_item_uuid' => $workItemUuid]);
+    }
+    
+    /**
+     * Aktualisiert next_action_at und stage im case_item
+     * - Wenn next_action_at in der Zukunft: stage = 'SNOOZED'
+     * - Wenn next_action_at heute oder in der Vergangenheit: stage = 'IN_PROGRESS' (wenn noch 'NEW')
+     */
+    private function updateWorkItemNextAction(string $workItemUuid, \DateTime $nextActionAt, ?string $nextActionType = null): void
+    {
+        $now = new \DateTime();
+        $isFuture = $nextActionAt > $now;
+        
+        // Bestimme neuen Stage
+        $newStage = null;
+        if ($isFuture) {
+            // Wiedervorlage in der Zukunft → SNOOZED (unabhängig vom aktuellen Stage)
+            $newStage = 'SNOOZED';
+        } else {
+            // Wiedervorlage heute oder in der Vergangenheit → IN_PROGRESS (nur wenn noch NEW)
+            // Hole aktuellen Stage
+            $stmt = $this->db->prepare("SELECT stage FROM case_item WHERE case_uuid = :uuid");
+            $stmt->execute(['uuid' => $workItemUuid]);
+            $current = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($current && $current['stage'] === 'NEW') {
+                $newStage = 'IN_PROGRESS';
+            }
+            // Wenn bereits IN_PROGRESS oder anderer Stage, bleibt unverändert
+        }
+        
+        // Update case_item
+        $updates = [
+            "next_action_at = :next_action_at",
+            "next_action_type = :next_action_type",
+            "updated_at = NOW()"
+        ];
+        $params = [
+            'uuid' => $workItemUuid,
+            'next_action_at' => $nextActionAt->format('Y-m-d H:i:s'),
+            'next_action_type' => $nextActionType
+        ];
+        
+        if ($newStage) {
+            $updates[] = "stage = :stage";
+            $params['stage'] = $newStage;
+        }
+        
+        $stmt = $this->db->prepare("
+            UPDATE case_item
+            SET " . implode(', ', $updates) . "
+            WHERE case_uuid = :uuid
+        ");
+        $stmt->execute($params);
     }
 }
 

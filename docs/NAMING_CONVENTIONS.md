@@ -43,8 +43,8 @@ Die Tabellennamen in TOM3 folgen einem klaren Schema, das die Beziehung zwischen
 - `org_market_segment` - Verknüpft `org` ↔ `market_segment` (mehrere Segmente pro Organisation)
 - `org_customer_tier` - Verknüpft `org` ↔ `customer_tier` (zeitbezogen)
 - `person_affiliation` - Verknüpft `person` ↔ `org` (zeitbezogen)
-- `project_partner` - Verknüpft `project` ↔ `org`
-- `project_stakeholder` - Verknüpft `project` ↔ `person`
+- `project_party` - Verknüpft `project` ↔ `org` (mit `party_role` ENUM)
+- `project_person` - Verknüpft `project` ↔ `person` (mit expliziter `project_party_uuid` Zuordnung)
 - `project_case` - Verknüpft `project` ↔ `case_item`
 - `user_org_access` - Verknüpft `user` ↔ `org` (Zugriffs-Tracking)
 

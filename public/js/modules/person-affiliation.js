@@ -44,23 +44,58 @@ export class PersonAffiliationModule {
     }
     
     /**
+     * Übersetzt kind-Werte ins Deutsche
+     */
+    translateKind(kind) {
+        const translations = {
+            'employee': 'Mitarbeiter',
+            'contractor': 'Freelancer/Berater',
+            'advisor': 'Berater',
+            'other': 'Sonstiges'
+        };
+        return translations[kind] || kind;
+    }
+    
+    /**
+     * Übersetzt seniority-Werte ins Deutsche
+     */
+    translateSeniority(seniority) {
+        const translations = {
+            'intern': 'Praktikant',
+            'junior': 'Junior',
+            'mid': 'Mittel',
+            'senior': 'Senior',
+            'lead': 'Lead',
+            'head': 'Head',
+            'vp': 'VP',
+            'cxo': 'C-Level'
+        };
+        return translations[seniority] || seniority;
+    }
+    
+    /**
      * Rendert eine Affiliation
      */
     renderAffiliation(affiliation) {
         const startDate = affiliation.since_date ? Utils.formatDate(affiliation.since_date) : '-';
         const endDate = affiliation.until_date ? Utils.formatDate(affiliation.until_date) : 'Aktiv';
         const isActive = !affiliation.until_date;
+        const personUuid = affiliation.person_uuid;
         
         return `
-            <div class="affiliation-item ${isActive ? 'active' : 'inactive'}">
+            <div class="affiliation-item ${isActive ? 'active' : 'inactive'}" data-affiliation-uuid="${affiliation.affiliation_uuid}">
                 <div class="affiliation-header">
                     <h4>${Utils.escapeHtml(affiliation.org_name || 'Unbekannt')}</h4>
-                    ${affiliation.is_primary ? '<span class="badge badge-primary">Hauptarbeitgeber</span>' : ''}
+                    <div class="affiliation-header-actions">
+                        ${affiliation.is_primary ? '<span class="badge badge-primary">Hauptarbeitgeber</span>' : ''}
+                        <button class="btn btn-sm btn-secondary" onclick="window.app.personDetail.affiliationModule.showEditAffiliationDialog('${personUuid}', '${affiliation.affiliation_uuid}')" title="Bearbeiten">✏️</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.personDetail.affiliationModule.deleteAffiliation('${personUuid}', '${affiliation.affiliation_uuid}')" title="Löschen">🗑️</button>
+                    </div>
                 </div>
                 <div class="affiliation-details">
                     <div class="detail-row">
                         <span class="label">Art:</span>
-                        <span>${Utils.escapeHtml(affiliation.kind || '-')}</span>
+                        <span>${Utils.escapeHtml(this.translateKind(affiliation.kind) || '-')}</span>
                     </div>
                     ${affiliation.title ? `
                     <div class="detail-row">
@@ -77,7 +112,7 @@ export class PersonAffiliationModule {
                     ${affiliation.seniority ? `
                     <div class="detail-row">
                         <span class="label">Hierarchie:</span>
-                        <span>${Utils.escapeHtml(affiliation.seniority)}</span>
+                        <span>${Utils.escapeHtml(this.translateSeniority(affiliation.seniority))}</span>
                     </div>
                     ` : ''}
                     <div class="detail-row">
@@ -260,49 +295,6 @@ export class PersonAffiliationModule {
     }
     
     /**
-     * Setzt Event-Handler für das Affiliation-Formular
-     */
-    setupAffiliationForm(form, personUuid) {
-        // Setup form submit
-        const submitBtn = form.querySelector('#btn-submit-affiliation');
-        if (submitBtn && !submitBtn.dataset.listenerAttached) {
-            const handler = async (e) => {
-                e.preventDefault();
-                await this.submitAffiliationForm(personUuid);
-            };
-            
-            const oldHandler = this._affiliationSubmitHandlers.get('btn-submit-affiliation');
-            if (oldHandler) {
-                submitBtn.removeEventListener('click', oldHandler);
-            }
-            
-            this._affiliationSubmitHandlers.set('btn-submit-affiliation', handler);
-            submitBtn.addEventListener('click', handler);
-            submitBtn.dataset.listenerAttached = 'true';
-        }
-        
-        // Setup cancel button
-        const cancelBtn = form.querySelector('#btn-cancel-affiliation');
-        if (cancelBtn && !cancelBtn.dataset.listenerAttached) {
-            const handler = () => {
-                Utils.closeSpecificModal('modal-person-affiliation');
-            };
-            
-            const oldHandler = this._affiliationCancelHandlers.get('btn-cancel-affiliation');
-            if (oldHandler) {
-                cancelBtn.removeEventListener('click', oldHandler);
-            }
-            
-            this._affiliationCancelHandlers.set('btn-cancel-affiliation', handler);
-            cancelBtn.addEventListener('click', handler);
-            cancelBtn.dataset.listenerAttached = 'true';
-        }
-        
-        // Setup org search
-        this.setupAffiliationOrgSearch();
-    }
-    
-    /**
      * Setzt die Organisationen-Suche für Affiliations
      */
     setupAffiliationOrgSearch() {
@@ -416,6 +408,247 @@ export class PersonAffiliationModule {
         } catch (error) {
             console.error('Error creating affiliation:', error);
             Utils.showError('Fehler beim Hinzufügen der Affiliation: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Zeigt Dialog zum Bearbeiten einer Affiliation
+     */
+    async showEditAffiliationDialog(personUuid, affiliationUuid) {
+        try {
+            // Lade Affiliation-Daten
+            const affiliations = await window.API.getPersonAffiliations(personUuid, false);
+            const affiliation = affiliations.find(a => a.affiliation_uuid === affiliationUuid);
+            
+            if (!affiliation) {
+                Utils.showError('Affiliation nicht gefunden');
+                return;
+            }
+            
+            const modal = Utils.getOrCreateModal('modal-person-affiliation', 'Affiliation bearbeiten');
+            const form = Utils.getOrCreateForm('form-person-affiliation', () => this.createAffiliationForm(personUuid), (form) => {
+                form.dataset.personUuid = personUuid;
+                form.dataset.affiliationUuid = affiliationUuid;
+                this.setupAffiliationForm(form, personUuid, affiliationUuid);
+            });
+            
+            if (form) {
+                form.dataset.personUuid = personUuid;
+                form.dataset.affiliationUuid = affiliationUuid;
+                
+                // Fülle Formular mit bestehenden Daten
+                const hiddenInput = form.querySelector('#affiliation-person-uuid');
+                if (hiddenInput) hiddenInput.value = personUuid;
+                
+                // Organisation
+                const orgSearch = form.querySelector('#affiliation-org-search');
+                const orgUuid = form.querySelector('#affiliation-org-uuid');
+                if (orgSearch && orgUuid) {
+                    orgSearch.value = affiliation.org_name || '';
+                    orgUuid.value = affiliation.org_uuid || '';
+                }
+                
+                // Art
+                const kindSelect = form.querySelector('#affiliation-kind');
+                if (kindSelect) kindSelect.value = affiliation.kind || '';
+                
+                // Titel
+                const titleInput = form.querySelector('#affiliation-title');
+                if (titleInput) titleInput.value = affiliation.title || '';
+                
+                // Funktion
+                const jobFunctionInput = form.querySelector('#affiliation-job-function');
+                if (jobFunctionInput) jobFunctionInput.value = affiliation.job_function || '';
+                
+                // Hierarchie
+                const senioritySelect = form.querySelector('#affiliation-seniority');
+                if (senioritySelect) senioritySelect.value = affiliation.seniority || '';
+                
+                // Hauptarbeitgeber
+                const isPrimaryCheckbox = form.querySelector('#affiliation-is-primary');
+                if (isPrimaryCheckbox) isPrimaryCheckbox.checked = affiliation.is_primary == 1;
+                
+                // Datum
+                const sinceDateInput = form.querySelector('#affiliation-since-date');
+                if (sinceDateInput) sinceDateInput.value = affiliation.since_date || '';
+                
+                const untilDateInput = form.querySelector('#affiliation-until-date');
+                if (untilDateInput) untilDateInput.value = affiliation.until_date || '';
+                
+                this.setupAffiliationForm(form, personUuid, affiliationUuid);
+            }
+            
+            // Setup close button (gleiche Logik wie bei create)
+            const closeBtn = modal.querySelector('.modal-close');
+            if (closeBtn) {
+                const oldHandler = this._affiliationCloseHandlers.get('modal-person-affiliation');
+                if (oldHandler) {
+                    closeBtn.removeEventListener('click', oldHandler);
+                }
+                
+                const handler = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-person-affiliation');
+                    const personDetailModal = document.getElementById('modal-person-detail');
+                    if (!personDetailModal || !personDetailModal.classList.contains('active')) {
+                        if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                            this.app.personDetail.showPersonDetail(personUuid);
+                        }
+                    }
+                    return false;
+                };
+                
+                this._affiliationCloseHandlers.set('modal-person-affiliation', handler);
+                closeBtn.addEventListener('click', handler);
+            }
+            
+            // Setup overlay click handler (gleiche Logik wie bei create)
+            const oldOverlayHandler = this._affiliationOverlayHandlers.get('modal-person-affiliation');
+            if (oldOverlayHandler) {
+                modal.removeEventListener('click', oldOverlayHandler);
+            }
+            
+            const overlayHandler = (e) => {
+                if (e.target === modal) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    Utils.closeSpecificModal('modal-person-affiliation');
+                    const personDetailModal = document.getElementById('modal-person-detail');
+                    if (!personDetailModal || !personDetailModal.classList.contains('active')) {
+                        if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                            this.app.personDetail.showPersonDetail(personUuid);
+                        }
+                    }
+                    return false;
+                }
+            };
+            
+            this._affiliationOverlayHandlers.set('modal-person-affiliation', overlayHandler);
+            modal.addEventListener('click', overlayHandler);
+            
+            modal.classList.add('active');
+        } catch (error) {
+            console.error('Error loading affiliation:', error);
+            Utils.showError('Fehler beim Laden der Affiliation: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Setzt Event-Handler für das Affiliation-Formular (erweitert für Edit-Modus)
+     */
+    setupAffiliationForm(form, personUuid, affiliationUuid = null) {
+        // Setup form submit
+        const submitBtn = form.querySelector('#btn-submit-affiliation');
+        if (submitBtn && !submitBtn.dataset.listenerAttached) {
+            const handler = async (e) => {
+                e.preventDefault();
+                if (affiliationUuid) {
+                    await this.submitUpdateAffiliationForm(personUuid, affiliationUuid);
+                } else {
+                    await this.submitAffiliationForm(personUuid);
+                }
+            };
+            
+            const oldHandler = this._affiliationSubmitHandlers.get('btn-submit-affiliation');
+            if (oldHandler) {
+                submitBtn.removeEventListener('click', oldHandler);
+            }
+            
+            this._affiliationSubmitHandlers.set('btn-submit-affiliation', handler);
+            submitBtn.addEventListener('click', handler);
+            submitBtn.dataset.listenerAttached = 'true';
+        }
+        
+        // Setup cancel button
+        const cancelBtn = form.querySelector('#btn-cancel-affiliation');
+        if (cancelBtn && !cancelBtn.dataset.listenerAttached) {
+            const handler = () => {
+                Utils.closeSpecificModal('modal-person-affiliation');
+            };
+            
+            const oldHandler = this._affiliationCancelHandlers.get('btn-cancel-affiliation');
+            if (oldHandler) {
+                cancelBtn.removeEventListener('click', oldHandler);
+            }
+            
+            this._affiliationCancelHandlers.set('btn-cancel-affiliation', handler);
+            cancelBtn.addEventListener('click', handler);
+            cancelBtn.dataset.listenerAttached = 'true';
+        }
+        
+        // Setup org search
+        this.setupAffiliationOrgSearch();
+    }
+    
+    /**
+     * Speichert das Update-Affiliation-Formular
+     */
+    async submitUpdateAffiliationForm(personUuid, affiliationUuid) {
+        const form = document.getElementById('form-person-affiliation');
+        if (!form) {
+            Utils.showError('Formular nicht gefunden');
+            return;
+        }
+        
+        const formData = new FormData(form);
+        const data = {
+            org_uuid: formData.get('org_uuid'),
+            kind: formData.get('kind'),
+            title: formData.get('title') || null,
+            job_function: formData.get('job_function') || null,
+            seniority: formData.get('seniority') || null,
+            is_primary: formData.get('is_primary') === '1' ? 1 : 0,
+            since_date: formData.get('since_date') || null,
+            until_date: formData.get('until_date') || null
+        };
+        
+        if (!data.org_uuid || !data.kind) {
+            Utils.showError('Bitte füllen Sie alle Pflichtfelder aus');
+            return;
+        }
+        
+        try {
+            await window.API.updatePersonAffiliation(personUuid, affiliationUuid, data);
+            Utils.showSuccess('Affiliation erfolgreich aktualisiert');
+            Utils.closeSpecificModal('modal-person-affiliation');
+            
+            // Reload affiliations
+            await this.loadAffiliations(personUuid);
+            
+            // Reload person detail to update UI
+            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                await this.app.personDetail.showPersonDetail(personUuid);
+            }
+        } catch (error) {
+            console.error('Error updating affiliation:', error);
+            Utils.showError('Fehler beim Aktualisieren der Affiliation: ' + (error.message || 'Unbekannter Fehler'));
+        }
+    }
+    
+    /**
+     * Löscht eine Affiliation
+     */
+    async deleteAffiliation(personUuid, affiliationUuid) {
+        if (!confirm('Möchten Sie diese Affiliation wirklich löschen?')) {
+            return;
+        }
+        
+        try {
+            await window.API.deletePersonAffiliation(personUuid, affiliationUuid);
+            Utils.showSuccess('Affiliation erfolgreich gelöscht');
+            
+            // Reload affiliations
+            await this.loadAffiliations(personUuid);
+            
+            // Reload person detail to update UI
+            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
+                await this.app.personDetail.showPersonDetail(personUuid);
+            }
+        } catch (error) {
+            console.error('Error deleting affiliation:', error);
+            Utils.showError('Fehler beim Löschen der Affiliation: ' + (error.message || 'Unbekannter Fehler'));
         }
     }
 }

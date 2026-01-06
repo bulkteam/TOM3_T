@@ -20,10 +20,14 @@ export class PersonRelationshipModule {
      */
     async loadRelationships(personUuid) {
         const container = document.getElementById('person-relationships-list');
-        if (!container) return;
+        if (!container) {
+            console.warn('Container person-relationships-list nicht gefunden');
+            return;
+        }
         
         try {
-            const relationships = await window.API.getPersonRelationships(personUuid, true);
+            // Lade sowohl aktive als auch inaktive Relationships
+            const relationships = await window.API.getPersonRelationships(personUuid, false);
             
             // Stelle sicher, dass relationships ein Array ist
             if (!relationships || !Array.isArray(relationships)) {
@@ -40,17 +44,18 @@ export class PersonRelationshipModule {
             
             // Delete buttons
             container.querySelectorAll('.btn-delete-relationship').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
+                btn.addEventListener('click', (e) => {
+                    // Verhindere Blockierung - verschiebe async Operationen
                     const relationshipUuid = e.target.dataset.relationshipUuid;
-                    if (relationshipUuid && confirm('Beziehung wirklich löschen?')) {
-                        try {
-                            await window.API.deletePersonRelationship(relationshipUuid);
-                            Utils.showSuccess('Beziehung gelöscht');
-                            this.loadRelationships(personUuid);
-                        } catch (error) {
-                            Utils.showError('Fehler beim Löschen');
-                        }
+                    if (!relationshipUuid) return;
+                    
+                    // Bestätigung außerhalb des async Handlers
+                    if (!confirm('Beziehung wirklich löschen?')) {
+                        return;
                     }
+                    
+                    // Async Operation in separater Funktion
+                    this.handleDeleteRelationship(personUuid, relationshipUuid, e.target);
                 });
             });
         } catch (error) {
@@ -507,6 +512,42 @@ export class PersonRelationshipModule {
     }
     
     /**
+     * Behandelt das Löschen einer Relationship
+     */
+    async handleDeleteRelationship(personUuid, relationshipUuid, buttonElement) {
+        // Deaktiviere Button während des Löschens
+        const originalText = buttonElement.textContent;
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Löschen...';
+        
+        try {
+            await window.API.deletePersonRelationship(personUuid, relationshipUuid);
+            Utils.showSuccess('Beziehung gelöscht');
+            
+            // Entferne das Element direkt aus dem DOM statt alles neu zu laden
+            const relationshipItem = buttonElement.closest('.relationship-item');
+            if (relationshipItem) {
+                relationshipItem.remove();
+                
+                // Prüfe, ob noch Relationships vorhanden sind
+                const container = document.getElementById('person-relationships-list');
+                if (container && container.querySelectorAll('.relationship-item').length === 0) {
+                    container.innerHTML = '<div class="empty-state"><p>Keine Beziehungen gefunden</p></div>';
+                }
+            } else {
+                // Fallback: Neu laden, wenn Element nicht gefunden
+                await this.loadRelationships(personUuid);
+            }
+        } catch (error) {
+            console.error('Error deleting relationship:', error);
+            Utils.showError('Fehler beim Löschen: ' + (error.message || 'Unbekannter Fehler'));
+            // Reaktiviere Button bei Fehler
+            buttonElement.disabled = false;
+            buttonElement.textContent = originalText;
+        }
+    }
+    
+    /**
      * Speichert das Relationship-Formular
      */
     async submitRelationshipForm(personUuid) {
@@ -545,13 +586,22 @@ export class PersonRelationshipModule {
             Utils.showSuccess('Beziehung erfolgreich hinzugefügt');
             Utils.closeSpecificModal('modal-person-relationship');
             
-            // Reload relationships
-            await this.loadRelationships(personUuid);
+            // Stelle sicher, dass der Relations-Tab aktiv ist, damit der Container sichtbar ist
+            const relationenTab = document.querySelector('.person-detail-tab[data-tab="relationen"]');
+            const relationenTabContent = document.querySelector('.person-detail-tab-content[data-tab-content="relationen"]');
             
-            // Reload person detail to update UI
-            if (this.app.personDetail && this.app.personDetail.showPersonDetail) {
-                await this.app.personDetail.showPersonDetail(personUuid);
+            if (relationenTab && relationenTabContent) {
+                // Aktiviere den Tab, falls er nicht aktiv ist
+                document.querySelectorAll('.person-detail-tab').forEach(tab => tab.classList.remove('active'));
+                document.querySelectorAll('.person-detail-tab-content').forEach(content => content.classList.remove('active'));
+                relationenTab.classList.add('active');
+                relationenTabContent.classList.add('active');
             }
+            
+            // Reload relationships - mit kurzer Verzögerung, damit der Container sichtbar ist
+            setTimeout(async () => {
+                await this.loadRelationships(personUuid);
+            }, 100);
         } catch (error) {
             console.error('Error creating relationship:', error);
             Utils.showError('Fehler beim Hinzufügen der Beziehung: ' + (error.message || 'Unbekannter Fehler'));

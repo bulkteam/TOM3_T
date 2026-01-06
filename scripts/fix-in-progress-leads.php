@@ -70,3 +70,4 @@ if (count($leadsToReset) > 0) {
     echo "Keine Leads gefunden, die zurückgesetzt werden müssen.\n";
 }
 
+

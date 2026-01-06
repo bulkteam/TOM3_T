@@ -2226,11 +2226,11 @@ export class ImportModule {
                 
                 if ((hasPendingRows || hasApprovedRows) && isNotFullyImported) {
                     commitBtn.style.display = 'inline-block';
-                    if (hasPendingRows && !hasApprovedRows) {
+                    if (hasPendingRows) {
+                        // Wenn es pending Rows gibt, zeige "Alle freigeben & importieren"
                         commitBtn.textContent = 'Alle freigeben & importieren →';
-                    } else if (hasPendingRows && hasApprovedRows) {
-                        commitBtn.textContent = 'Freigegebene importieren →';
                     } else {
+                        // Nur approved Rows - zeige "Importieren"
                         commitBtn.textContent = 'Importieren →';
                     }
                 } else {
@@ -2294,15 +2294,15 @@ export class ImportModule {
         html += '</div>';
         
         html += '<div class="review-table-container">';
-        html += '<table class="review-table">';
+        html += '<table class="review-table" style="width: 100%; table-layout: auto;">';
         html += '<thead><tr>';
-        html += '<th>Zeile</th>';
-        html += '<th>Name</th>';
-        html += '<th>Website</th>';
-        html += '<th>Status</th>';
-        html += '<th>Duplikat</th>';
-        html += '<th>Freigabe</th>';
-        html += '<th>Aktion</th>';
+        html += '<th style="width: 60px;">Zeile</th>';
+        html += '<th style="width: 200px;">Name</th>';
+        html += '<th style="width: 180px;">Website</th>';
+        html += '<th style="width: 100px;">Status</th>';
+        html += '<th style="width: 100px;">Duplikat</th>';
+        html += '<th style="width: 220px; min-width: 220px;">Freigabe</th>';
+        html += '<th style="width: 100px;">Aktion</th>';
         html += '</tr></thead>';
         html += '<tbody>';
         
@@ -2349,14 +2349,14 @@ export class ImportModule {
                 dispositionActions = '<span style="color: #666; font-size: 11px;">Bereits importiert</span>';
             }
             
-            html += '<tr>';
-            html += `<td>${row.row_number}</td>`; // Zeige originale row_number
-            html += `<td>${orgData.name || '-'}</td>`;
-            html += `<td>${orgData.website || '-'}</td>`;
-            html += `<td><span class="status-badge status-${validationStatus}">${validationStatus}</span></td>`;
-            html += `<td><span class="duplicate-badge duplicate-${duplicateStatus}">${duplicateStatus}</span></td>`;
-            html += `<td>${dispositionBadge}<br><div style="margin-top: 4px;">${dispositionActions}</div></td>`;
-            html += `<td><button class="btn btn-sm" onclick="window.app.import.showRowDetail('${row.staging_uuid}')">Details</button></td>`;
+            html += '<tr style="min-height: 80px; height: auto;">';
+            html += `<td style="vertical-align: top; padding: 12px 8px;">${row.row_number}</td>`; // Zeige originale row_number
+            html += `<td style="vertical-align: top; padding: 12px 8px;">${orgData.name || '-'}</td>`;
+            html += `<td style="vertical-align: top; padding: 12px 8px;">${orgData.website || '-'}</td>`;
+            html += `<td style="vertical-align: top; padding: 12px 8px;"><span class="status-badge status-${validationStatus}">${validationStatus}</span></td>`;
+            html += `<td style="vertical-align: top; padding: 12px 8px;"><span class="duplicate-badge duplicate-${duplicateStatus}">${duplicateStatus}</span></td>`;
+            html += `<td style="min-width: 220px; white-space: normal; vertical-align: top; padding: 12px 8px;">${dispositionBadge}<br><div style="margin-top: 4px;">${dispositionActions}</div></td>`;
+            html += `<td style="vertical-align: top; padding: 12px 8px;"><button class="btn btn-sm" onclick="window.app.import.showRowDetail('${row.staging_uuid}')">Details</button></td>`;
             html += '</tr>';
         });
         
@@ -2441,9 +2441,12 @@ export class ImportModule {
                 return;
             }
             
-            // Aktualisiere die Disposition-Spalte
+            // Verwende effective_data (mapped_data + corrections merged), falls vorhanden
+            const effectiveData = row.effective_data || row.mapped_data || {};
             const mappedData = row.mapped_data || {};
-            const orgData = mappedData.org || {};
+            const orgData = effectiveData.org || mappedData.org || {};
+            const validationStatus = row.validation_status || 'pending';
+            const duplicateStatus = row.duplicate_status || 'unknown';
             const disposition = row.disposition || row.review_status || 'pending';
             const isImported = row.import_status === 'imported';
             
@@ -2479,10 +2482,26 @@ export class ImportModule {
                 dispositionActions = '<span style="color: #666; font-size: 11px;">Bereits importiert</span>';
             }
             
-            // Aktualisiere die Disposition-Spalte (6. Spalte)
+            // Aktualisiere alle relevanten Spalten
             const cells = targetRow.querySelectorAll('td');
-            if (cells.length >= 6) {
+            if (cells.length >= 7) {
+                // Spalte 1: Name (wird aktualisiert, wenn Korrekturen vorhanden)
+                cells[1].textContent = orgData.name || '-';
+                
+                // Spalte 2: Website (wird aktualisiert, wenn Korrekturen vorhanden)
+                cells[2].textContent = orgData.website || '-';
+                
+                // Spalte 3: Status (validationStatus) - bleibt unverändert
+                // cells[3] bleibt unverändert
+                
+                // Spalte 4: Duplikat (duplicateStatus) - bleibt unverändert
+                // cells[4] bleibt unverändert
+                
+                // Spalte 5: Disposition (wird immer aktualisiert)
                 cells[5].innerHTML = `${dispositionBadge}<br><div style="margin-top: 4px;">${dispositionActions}</div>`;
+                
+                // Spalte 6: Aktion (Details-Button) - bleibt unverändert
+                // cells[6] bleibt unverändert
             }
             
             // Aktualisiere auch den Cache
@@ -2880,7 +2899,7 @@ export class ImportModule {
                 modal.remove();
             }
             
-            // Aktualisiere die Row in der Tabelle
+            // Aktualisiere die betroffene Zeile in der Tabelle (oder lade ganze Seite neu, falls das nicht geht)
             await this.updateRowInTable(stagingUuid);
             
         } catch (error) {
@@ -3210,13 +3229,26 @@ export class ImportModule {
         
         try {
             // Bestimme Commit-Mode
+            // Wenn der Button "Alle freigeben & importieren" heißt, verwende PENDING_AUTO_APPROVE
+            const commitBtn = document.getElementById('commit-btn');
+            const buttonText = commitBtn ? commitBtn.textContent : '';
             let commitMode = 'APPROVED_ONLY';
-            if (hasPendingRows && !hasApprovedRows) {
+            
+            if (buttonText.includes('Alle freigeben')) {
+                // Button sagt "Alle freigeben & importieren" - approve alle pending Rows
+                commitMode = 'PENDING_AUTO_APPROVE';
+            } else if (hasPendingRows && !hasApprovedRows) {
                 // Nur pending Rows - verwende PENDING_AUTO_APPROVE
                 commitMode = 'PENDING_AUTO_APPROVE';
             } else if (hasPendingRows && hasApprovedRows) {
-                // Sowohl pending als auch approved - nur approved importieren
-                commitMode = 'APPROVED_ONLY';
+                // Sowohl pending als auch approved - prüfe Button-Text
+                // Wenn Button "Freigegebene importieren" heißt, nur approved
+                // Wenn Button "Alle freigeben" heißt, alle pending auch approven
+                if (buttonText.includes('Alle freigeben')) {
+                    commitMode = 'PENDING_AUTO_APPROVE';
+                } else {
+                    commitMode = 'APPROVED_ONLY';
+                }
             }
             
             Utils.showInfo('Import wird durchgeführt...');
