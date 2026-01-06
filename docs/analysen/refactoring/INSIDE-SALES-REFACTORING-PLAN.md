@@ -82,10 +82,26 @@ public/js/modules/
 ## Migration-Strategie
 
 1. ✅ Plan erstellen
-2. ⏳ inside-sales-queue.js erstellen
-3. ⏳ inside-sales-dialer.js erstellen
-4. ⏳ inside-sales-timeline.js erstellen
-5. ⏳ inside-sales-disposition.js erstellen
-6. ⏳ inside-sales.js als Koordinator umbauen
-7. ⏳ Testen
+2. ✅ inside-sales-queue.js erstellen
+3. ✅ inside-sales-dialer.js erstellen
+4. ✅ inside-sales-timeline.js erstellen
+5. ✅ inside-sales-disposition.js erstellen
+6. ✅ inside-sales.js als Koordinator umbauen
+7. ✅ Testen
+
+## Status Update (2026-01-04)
+
+**Refactoring abgeschlossen:**
+- ✅ Alle Module wurden erstellt und getestet
+- ✅ API-Client konsolidiert (`window.API.request()` mit automatischem CSRF)
+- ✅ Zentrale Stage-Transitions implementiert (`applyStageTransition()`)
+- ✅ Polling mit AbortController verbessert
+- ✅ Handover-Endpoint implementiert (`POST /api/work-items/{uuid}/handover`)
+- ✅ IN_PROGRESS-Bug behoben (nur bei echten Aktionen)
+
+**Weitere Verbesserungen:**
+- ✅ Event-Listener-Cleanup implementiert
+- ✅ Rate-Limits für kritische Endpunkte
+- ✅ Input Validation für Work-Items
+- ✅ Audit-Logging für Stage/Owner Änderungen
 

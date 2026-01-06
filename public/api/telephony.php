@@ -18,10 +18,12 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Service\WorkItem\Timeline\WorkItemTimelineService;
+use TOM\Infrastructure\Security\RateLimiter;
 
 try {
     $db = DatabaseConnection::getInstance();
     $timelineService = new WorkItemTimelineService($db);
+    $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
@@ -64,6 +66,16 @@ switch ($subResource) {
     case 'calls':
         if ($method === 'POST' && !$subId) {
             // POST /api/telephony/calls - Starte Anruf
+            // Rate-Limit: 20 Calls pro User pro Minute
+            if (!$rateLimiter->checkUserLimit('telephony-calls', $currentUserId, 20, 60)) {
+                http_response_code(429);
+                echo json_encode([
+                    'error' => 'Rate limit exceeded',
+                    'message' => 'Too many calls. Please try again later.'
+                ]);
+                exit;
+            }
+            
             $data = json_decode(file_get_contents('php://input'), true);
             
             $workItemUuid = $data['work_item_uuid'] ?? null;

@@ -26,12 +26,23 @@ class TOM3API {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        const method = options.method || 'GET';
         const config = {
             headers: {
                 ...options.headers
             },
             ...options
         };
+
+        // CSRF-Token für state-changing Requests automatisch hinzufügen
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            if (window.csrfTokenService) {
+                const token = await window.csrfTokenService.fetchToken();
+                if (token) {
+                    config.headers['X-CSRF-Token'] = token;
+                }
+            }
+        }
 
         // FormData nicht als JSON senden
         if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {

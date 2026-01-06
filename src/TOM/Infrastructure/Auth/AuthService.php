@@ -65,13 +65,17 @@ class AuthService
         // Cookie-Settings (lokal Secure=false, später bei HTTPS true)
         $secure = ($this->appEnv === 'prod' && isset($_SERVER['HTTPS']));
         
+        // SameSite: Strict für bessere CSRF-Schutz (in Staging/Prod)
+        // Lax für lokale Entwicklung (um Cross-Origin-Tests zu ermöglichen)
+        $sameSite = ($this->appEnv === 'prod' || $this->appEnv === 'staging') ? 'Strict' : 'Lax';
+        
         session_set_cookie_params([
             'lifetime' => 0, // Session-Cookie (bis Browser geschlossen)
             'path' => '/',
             'domain' => '',
             'secure' => $secure,
             'httponly' => true,
-            'samesite' => 'Lax',
+            'samesite' => $sameSite,
         ]);
         
         // Session-Timeout: 8 Stunden Inaktivität (kann konfiguriert werden)

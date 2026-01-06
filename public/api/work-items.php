@@ -16,11 +16,13 @@ if (!defined('TOM3_AUTOLOADED')) {
 use TOM\Service\WorkItemService;
 use TOM\Service\WorkItem\Timeline\WorkItemTimelineService;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Infrastructure\Security\RateLimiter;
 
 try {
     $db = DatabaseConnection::getInstance();
     $workItemService = new WorkItemService($db);
     $timelineService = new WorkItemTimelineService($db);
+    $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
@@ -95,9 +97,94 @@ switch ($method) {
         
     case 'PATCH':
         if ($workItemUuid) {
+            // Rate-Limit prüfen
+            if (!$rateLimiter->checkUserLimit('work-items-patch', $currentUserId, 30, 60)) {
+                http_response_code(429);
+                echo json_encode([
+                    'error' => 'Rate limit exceeded',
+                    'message' => 'Too many requests. Please try again later.'
+                ]);
+                exit;
+            }
+            
             // PATCH /api/work-items/{uuid}
             $data = json_decode(file_get_contents('php://input'), true);
+            
+            // Input Validation
+            $errors = [];
+            
+            // Stage-Validation
+            if (isset($data['stage'])) {
+                $validStages = ['NEW', 'IN_PROGRESS', 'SNOOZED', 'QUALIFIED', 'DATA_CHECK', 'DISQUALIFIED', 'DUPLICATE', 'CLOSED'];
+                if (!in_array($data['stage'], $validStages, true)) {
+                    $errors[] = "Invalid stage. Allowed values: " . implode(', ', $validStages);
+                }
+            }
+            
+            // Datumsformat-Validation für next_action_at
+            if (isset($data['next_action_at'])) {
+                if ($data['next_action_at'] !== null) {
+                    try {
+                        $date = new \DateTime($data['next_action_at']);
+                        // Konvertiere zurück zu ISO-Format für Konsistenz
+                        $data['next_action_at'] = $date->format('Y-m-d H:i:s');
+                    } catch (\Exception $e) {
+                        $errors[] = "Invalid date format for next_action_at. Expected ISO 8601 format (e.g. '2026-01-15T10:30:00')";
+                    }
+                }
+            }
+            
+            // priority_stars Validation
+            if (isset($data['priority_stars'])) {
+                $stars = (int)$data['priority_stars'];
+                if ($stars < 0 || $stars > 5) {
+                    $errors[] = "priority_stars must be between 0 and 5";
+                }
+                $data['priority_stars'] = $stars;
+            }
+            
+            if (!empty($errors)) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Validation failed',
+                    'errors' => $errors
+                ]);
+                exit;
+            }
+            
+            // Hole aktuelles WorkItem für Audit
+            $oldWorkItem = $workItemService->getWorkItem($workItemUuid);
+            if (!$oldWorkItem) {
+                http_response_code(404);
+                echo json_encode(['error' => 'Work item not found']);
+                exit;
+            }
+            
+            // Update WorkItem
             $workItem = $workItemService->updateWorkItem($workItemUuid, $data);
+            
+            // Audit: Stage-Änderung protokollieren
+            if (isset($data['stage']) && $oldWorkItem['stage'] !== $data['stage']) {
+                $timelineService->addSystemMessage(
+                    $workItemUuid,
+                    'STAGE_CHANGE',
+                    "Stage geändert: {$oldWorkItem['stage']} → {$data['stage']}",
+                    ['old_stage' => $oldWorkItem['stage'], 'new_stage' => $data['stage'], 'changed_by' => $currentUserId]
+                );
+            }
+            
+            // Audit: Owner-Änderung protokollieren
+            if (isset($data['owner_user_id']) && ($oldWorkItem['owner_user_id'] ?? null) !== ($data['owner_user_id'] ?? null)) {
+                $oldOwner = $oldWorkItem['owner_user_id'] ?? 'unassigned';
+                $newOwner = $data['owner_user_id'] ?? 'unassigned';
+                $timelineService->addSystemMessage(
+                    $workItemUuid,
+                    'OWNER_CHANGE',
+                    "Owner geändert: {$oldOwner} → {$newOwner}",
+                    ['old_owner' => $oldOwner, 'new_owner' => $newOwner, 'changed_by' => $currentUserId]
+                );
+            }
+            
             // Stelle sicher, dass priority_stars als Integer zurückgegeben wird
             if ($workItem) {
                 $workItem['priority_stars'] = isset($workItem['priority_stars']) ? (int)$workItem['priority_stars'] : 0;
@@ -131,21 +218,69 @@ switch ($method) {
             );
             
             echo json_encode(['timeline_id' => $timelineId]);
-        } elseif ($workItemUuid && $action === 'handoff') {
-            // POST /api/work-items/{uuid}/handoff
+        } elseif ($workItemUuid && ($action === 'handover' || $action === 'handoff')) {
+            // POST /api/work-items/{uuid}/handover (oder /handoff für Kompatibilität)
             $data = json_decode(file_get_contents('php://input'), true);
             
-            // TODO: Implementiere Handoff-Logik
-            // Für jetzt: nur Timeline-Eintrag
             $handoffType = $data['handoff_type'] ?? 'QUOTE_REQUEST';
-            $notes = $data['notes'] ?? '';
-            $metadata = [
-                'handoff_type' => $handoffType,
-                'need_summary' => $data['need_summary'] ?? '',
-                'contact_hint' => $data['contact_hint'] ?? '',
-                'next_step' => $data['next_step'] ?? ''
-            ];
             
+            // Generiere Notes-Text basierend auf Handoff-Type
+            $notes = '';
+            $metadata = ['handoff_type' => $handoffType];
+            
+            if ($handoffType === 'QUOTE_REQUEST') {
+                // QUOTE_REQUEST: Bedarf, Ansprechpartner, Nächster Schritt
+                $needSummary = $data['need_summary'] ?? '';
+                $contactHint = $data['contact_hint'] ?? '';
+                $nextStep = $data['next_step'] ?? '';
+                
+                $notes = "Übergabe an Sales Ops (Angebot angefragt)\n\n";
+                if ($needSummary) {
+                    $notes .= "Bedarf: $needSummary\n";
+                }
+                if ($contactHint) {
+                    $notes .= "Ansprechpartner: $contactHint\n";
+                }
+                if ($nextStep) {
+                    $notes .= "Nächster Schritt: $nextStep\n";
+                }
+                
+                $metadata['need_summary'] = $needSummary;
+                $metadata['contact_hint'] = $contactHint;
+                $metadata['next_step'] = $nextStep;
+            } elseif ($handoffType === 'DATA_CHECK') {
+                // DATA_CHECK: Problem, Anfrage, Ansprechpartner, Nächster Schritt, Links
+                $issue = $data['issue'] ?? '';
+                $request = $data['request'] ?? '';
+                $contactHint = $data['contact_hint'] ?? '';
+                $nextStep = $data['next_step'] ?? '';
+                $links = $data['links'] ?? [];
+                
+                $notes = "Übergabe an Sales Ops (Datenprüfung)\n\n";
+                if ($issue) {
+                    $notes .= "Problem: $issue\n";
+                }
+                if ($request) {
+                    $notes .= "Anfrage: $request\n";
+                }
+                if ($contactHint) {
+                    $notes .= "Ansprechpartner: $contactHint\n";
+                }
+                if ($nextStep) {
+                    $notes .= "Nächster Schritt: $nextStep\n";
+                }
+                if (!empty($links) && is_array($links)) {
+                    $notes .= "\nLinks:\n" . implode("\n", $links);
+                }
+                
+                $metadata['issue'] = $issue;
+                $metadata['request'] = $request;
+                $metadata['contact_hint'] = $contactHint;
+                $metadata['next_step'] = $nextStep;
+                $metadata['links'] = $links;
+            }
+            
+            // Füge Timeline-Eintrag hinzu (User + System)
             $timelineId = $timelineService->addHandoffActivityWithMetadata(
                 $workItemUuid,
                 $currentUserId,
@@ -153,12 +288,19 @@ switch ($method) {
                 $metadata
             );
             
-            // Update WorkItem stage
-            $workItemService->updateWorkItem($workItemUuid, [
-                'stage' => $handoffType === 'QUOTE_REQUEST' ? 'QUALIFIED' : 'DATA_CHECK'
-            ]);
+            // Update WorkItem: Stage und Owner-Role
+            $updateData = [
+                'stage' => $handoffType === 'QUOTE_REQUEST' ? 'QUALIFIED' : 'DATA_CHECK',
+                'owner_role' => 'ops' // VORGANG
+            ];
             
-            echo json_encode(['timeline_id' => $timelineId]);
+            $workItemService->updateWorkItem($workItemUuid, $updateData);
+            
+            echo json_encode([
+                'timeline_id' => $timelineId,
+                'stage' => $updateData['stage'],
+                'owner_role' => $updateData['owner_role']
+            ]);
         } else {
             http_response_code(400);
             echo json_encode(['error' => 'Invalid request']);

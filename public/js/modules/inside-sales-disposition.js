@@ -259,6 +259,7 @@ export class InsideSalesDispositionModule {
     
     /**
      * Speichert Disposition
+     * Setzt Stage auf IN_PROGRESS wenn noch NEW (echte Aktion)
      */
     async saveDisposition() {
         if (!this.insideSalesModule.currentWorkItem) {
@@ -278,6 +279,11 @@ export class InsideSalesDispositionModule {
             
             const activeOutcomeBtn = document.querySelector('.outcome-btn.active');
             const outcome = activeOutcomeBtn ? activeOutcomeBtn.dataset.outcome : null;
+            
+            // Setze IN_PROGRESS wenn noch NEW (Disposition speichern = echte Aktion)
+            if (this.insideSalesModule.currentWorkItem.stage === 'NEW') {
+                await this.insideSalesModule.dialerModule.applyStageTransition('IN_PROGRESS');
+            }
             
             const activityData = {
                 notes: notes,

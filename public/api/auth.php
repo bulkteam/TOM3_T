@@ -17,6 +17,8 @@ if (!defined('TOM3_AUTOLOADED')) {
 
 use TOM\Infrastructure\Auth\AuthService;
 use TOM\Infrastructure\Activity\ActivityLogService;
+use TOM\Infrastructure\Security\RateLimiter;
+use TOM\Infrastructure\Database\DatabaseConnection;
 require_once __DIR__ . '/api-security.php';
 
 // Headers werden bereits vom Router gesetzt
@@ -26,8 +28,10 @@ if (!headers_sent()) {
 }
 
 try {
+    $db = DatabaseConnection::getInstance();
     $activityLogService = new ActivityLogService();
     $auth = new AuthService(null, $activityLogService);
+    $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
     http_response_code(500);
     // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
@@ -147,6 +151,16 @@ try {
     case 'POST':
         if ($action === 'login' && $auth->isDevMode()) {
             // POST /api/auth/login - Login (nur Dev-Modus)
+            // Rate-Limit: 5 Versuche pro IP pro Minute
+            if (!$rateLimiter->checkIpLimit('auth-login', 5, 60)) {
+                http_response_code(429);
+                echo json_encode([
+                    'error' => 'Rate limit exceeded',
+                    'message' => 'Too many login attempts. Please try again later.'
+                ]);
+                exit;
+            }
+            
             try {
                 $data = json_decode(file_get_contents('php://input'), true);
                 $userId = (int)($data['user_id'] ?? 0);

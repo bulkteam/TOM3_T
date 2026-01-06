@@ -8,6 +8,39 @@ import { Utils } from './utils.js';
 export class InsideSalesDialerModule {
     constructor(insideSalesModule) {
         this.insideSalesModule = insideSalesModule;
+        // Event-Listener-Referenzen für Cleanup
+        this.eventListeners = {
+            keydown: null,
+            click: null
+        };
+        // AbortController für Polling
+        this.pollingAbortController = null;
+    }
+    
+    /**
+     * Zentrale Stage-Transition-Funktion
+     * Verhindert, dass Stage-Übergänge an mehreren Stellen passieren
+     */
+    async applyStageTransition(newStage, workItemUuid = null) {
+        const uuid = workItemUuid || this.insideSalesModule.currentWorkItem?.case_uuid;
+        if (!uuid) {
+            console.warn('applyStageTransition: Kein WorkItem UUID verfügbar');
+            return;
+        }
+        
+        try {
+            await window.API.request(`/work-items/${uuid}`, {
+                method: 'PATCH',
+                body: { stage: newStage }
+            });
+            
+            if (this.insideSalesModule.currentWorkItem && this.insideSalesModule.currentWorkItem.case_uuid === uuid) {
+                this.insideSalesModule.currentWorkItem.stage = newStage;
+            }
+        } catch (error) {
+            console.error('Error applying stage transition:', error);
+            throw error;
+        }
     }
     
     /**
@@ -286,6 +319,9 @@ export class InsideSalesDialerModule {
         
         // Close Dialer Button
         document.getElementById('btn-close-dialer')?.addEventListener('click', () => {
+            // Cleanup Event-Listener beim Schließen
+            this.cleanup();
+            
             const hash = window.location.hash;
             let tabToUse = this.insideSalesModule.currentTab || 'new';
             let sortField = this.insideSalesModule.currentSort?.field || 'stars';
@@ -312,7 +348,12 @@ export class InsideSalesDialerModule {
         });
         
         // Phone Links - Event Delegation
-        document.addEventListener('click', (e) => {
+        // Entferne alten Listener falls vorhanden
+        if (this.eventListeners.click) {
+            document.removeEventListener('click', this.eventListeners.click);
+        }
+        
+        this.eventListeners.click = (e) => {
             if (e.target.classList.contains('phone-link') || e.target.closest('.phone-link')) {
                 e.preventDefault();
                 const link = e.target.classList.contains('phone-link') ? e.target : e.target.closest('.phone-link');
@@ -321,7 +362,8 @@ export class InsideSalesDialerModule {
                     this.startCallWithNumber(phoneNumber);
                 }
             }
-        });
+        };
+        document.addEventListener('click', this.eventListeners.click);
         
         // End Call Button
         document.getElementById('btn-end-call')?.addEventListener('click', () => {
@@ -338,8 +380,12 @@ export class InsideSalesDialerModule {
             this.openAddPerson();
         });
         
-        // Hotkeys
-        document.addEventListener('keydown', (e) => {
+        // Hotkeys - Entferne alten Listener falls vorhanden
+        if (this.eventListeners.keydown) {
+            document.removeEventListener('keydown', this.eventListeners.keydown);
+        }
+        
+        this.eventListeners.keydown = (e) => {
             if (this.insideSalesModule.isDispositionOpen) return;
             
             if (e.key >= '1' && e.key <= '5') {
@@ -363,7 +409,8 @@ export class InsideSalesDialerModule {
                 e.preventDefault();
                 this.insideSalesModule.dispositionModule.openDisposition('note');
             }
-        });
+        };
+        document.addEventListener('keydown', this.eventListeners.keydown);
     }
     
     /**
@@ -371,6 +418,9 @@ export class InsideSalesDialerModule {
      */
     async loadSpecificLead(workItemUuid) {
         try {
+            // Stoppe Polling beim Leadwechsel
+            this.stopCallPolling();
+            
             let retries = 10;
             while (retries > 0 && !document.getElementById('lead-company-name')) {
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -402,6 +452,9 @@ export class InsideSalesDialerModule {
      */
     async loadNextLead(tab = null, markAsInProgress = false) {
         try {
+            // Stoppe Polling beim Leadwechsel
+            this.stopCallPolling();
+            
             const targetTab = tab || this.insideSalesModule.currentTab || 'new';
             const sortField = this.insideSalesModule.currentSort?.field || 'stars';
             const sortOrder = this.insideSalesModule.currentSort?.direction || 'desc';
@@ -560,31 +613,19 @@ export class InsideSalesDialerModule {
     
     /**
      * Setzt Sterne
+     * Hinweis: Sterne = Priorisierung, setzt NICHT automatisch Stage auf IN_PROGRESS
      */
     async setStars(stars) {
         if (!this.insideSalesModule.currentWorkItem) return;
         
         try {
-            const token = await window.csrfTokenService?.fetchToken();
-            
-            const updateData = { priority_stars: stars };
-            if (this.insideSalesModule.currentWorkItem.stage === 'NEW') {
-                updateData.stage = 'IN_PROGRESS';
-            }
-            
-            await fetch(this.insideSalesModule.getApiUrl(`/work-items/${this.insideSalesModule.currentWorkItem.case_uuid}`), {
+            // Nur priority_stars setzen, KEIN automatisches IN_PROGRESS
+            await window.API.request(`/work-items/${this.insideSalesModule.currentWorkItem.case_uuid}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': token || ''
-                },
-                body: JSON.stringify(updateData)
+                body: { priority_stars: stars }
             });
             
             this.insideSalesModule.currentWorkItem.priority_stars = stars;
-            if (updateData.stage) {
-                this.insideSalesModule.currentWorkItem.stage = updateData.stage;
-            }
             
             await this.renderLeadCard(this.insideSalesModule.currentWorkItem);
             
@@ -627,6 +668,7 @@ export class InsideSalesDialerModule {
     
     /**
      * Startet Call mit Telefonnummer
+     * Setzt Stage auf IN_PROGRESS wenn noch NEW (echte Aktion)
      */
     async startCallWithNumber(phoneNumber) {
         if (!this.insideSalesModule.currentWorkItem) {
@@ -647,26 +689,18 @@ export class InsideSalesDialerModule {
         }
         
         try {
-            const token = await window.csrfTokenService?.fetchToken();
-            
-            const response = await fetch(this.insideSalesModule.getApiUrl('/telephony/calls'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': token || ''
-                },
-                body: JSON.stringify({
-                    work_item_uuid: this.insideSalesModule.currentWorkItem.case_uuid,
-                    phone_number: cleanPhoneNumber
-                })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Fehler beim Starten des Calls');
+            // Setze IN_PROGRESS wenn noch NEW (Call starten = echte Aktion)
+            if (this.insideSalesModule.currentWorkItem.stage === 'NEW') {
+                await this.applyStageTransition('IN_PROGRESS');
             }
             
-            const result = await response.json();
+            const result = await window.API.request('/telephony/calls', {
+                method: 'POST',
+                body: {
+                    work_item_uuid: this.insideSalesModule.currentWorkItem.case_uuid,
+                    phone_number: cleanPhoneNumber
+                }
+            });
             this.insideSalesModule.currentCall = {
                 call_ref: result.call_ref,
                 phone_number: cleanPhoneNumber,
@@ -685,22 +719,30 @@ export class InsideSalesDialerModule {
     
     /**
      * Startet Call Polling
+     * Verwendet AbortController für sauberes Abbrechen
      */
     startCallPolling() {
         if (!this.insideSalesModule.currentCall) return;
         
+        // Stoppe vorheriges Polling falls vorhanden
+        this.stopCallPolling();
+        
+        // Erstelle neuen AbortController
+        this.pollingAbortController = new AbortController();
+        
         let pollInterval = 1000;
         let callStartTime = null;
         let connectedTime = null;
+        let pollTimeoutId = null;
         
         const poll = async () => {
             try {
-                const response = await fetch(this.insideSalesModule.getApiUrl(`/telephony/calls/${this.insideSalesModule.currentCall.call_ref}`));
-                if (!response.ok) {
-                    throw new Error('Polling failed');
+                // Prüfe ob Polling abgebrochen wurde
+                if (this.pollingAbortController?.signal.aborted) {
+                    return;
                 }
                 
-                const call = await response.json();
+                const call = await window.API.request(`/telephony/calls/${this.insideSalesModule.currentCall.call_ref}`);
                 
                 const statusText = this.getCallStatusText(call.state);
                 document.getElementById('call-status-text').textContent = statusText;
@@ -733,26 +775,43 @@ export class InsideSalesDialerModule {
                         Utils.showError('Call fehlgeschlagen');
                     }
                 } else {
-                    if (pollInterval === 1000 && Date.now() - callStartTime.getTime() > 5000) {
+                    // Backoff: Erhöhe Poll-Interval nach Zeit
+                    if (pollInterval === 1000 && callStartTime && Date.now() - callStartTime.getTime() > 5000) {
                         pollInterval = 2000;
-                    } else if (pollInterval === 2000 && Date.now() - callStartTime.getTime() > 30000) {
+                    } else if (pollInterval === 2000 && callStartTime && Date.now() - callStartTime.getTime() > 30000) {
                         pollInterval = 5000;
                     }
                 }
                 
             } catch (error) {
+                // Ignoriere Fehler wenn Polling abgebrochen wurde
+                if (this.pollingAbortController?.signal.aborted) {
+                    return;
+                }
                 console.error('Error polling call status:', error);
+            }
+            
+            // Nächsten Poll planen (nur wenn nicht abgebrochen)
+            if (!this.pollingAbortController?.signal.aborted) {
+                pollTimeoutId = setTimeout(poll, pollInterval);
             }
         };
         
+        // Starte ersten Poll
         poll();
-        this.insideSalesModule.callPollingInterval = setInterval(poll, pollInterval);
     }
     
     /**
-     * Stoppt Call Polling
+     * Stoppt Call Polling sauber
      */
     stopCallPolling() {
+        // AbortController signalisieren
+        if (this.pollingAbortController) {
+            this.pollingAbortController.abort();
+            this.pollingAbortController = null;
+        }
+        
+        // Alte Interval-basierte Implementierung (für Kompatibilität)
         if (this.insideSalesModule.callPollingInterval) {
             clearInterval(this.insideSalesModule.callPollingInterval);
             this.insideSalesModule.callPollingInterval = null;
@@ -948,6 +1007,20 @@ export class InsideSalesDialerModule {
             if (container) {
                 container.innerHTML = '<div class="lead-persons-empty">Fehler beim Laden</div>';
             }
+        }
+    }
+    
+    /**
+     * Cleanup: Entfernt Event-Listener beim Unmount
+     */
+    cleanup() {
+        if (this.eventListeners.keydown) {
+            document.removeEventListener('keydown', this.eventListeners.keydown);
+            this.eventListeners.keydown = null;
+        }
+        if (this.eventListeners.click) {
+            document.removeEventListener('click', this.eventListeners.click);
+            this.eventListeners.click = null;
         }
     }
 }

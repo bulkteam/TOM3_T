@@ -183,12 +183,85 @@ $person = $personService->createPerson($data);
 
 **Status:** ✅ Bereits umgesetzt - Monitoring erfordert Admin-Rolle.
 
+## ✅ Weitere Verbesserungen (Januar 2026)
+
+### Session/Cookie-Härtung
+
+**Status:** ✅ Implementiert
+
+**Änderungen:**
+- SameSite=Strict für Staging/Prod (besserer CSRF-Schutz)
+- SameSite=Lax für lokale Entwicklung (Cross-Origin-Tests möglich)
+- HttpOnly bereits vorhanden
+- Secure-Flag basierend auf APP_ENV und HTTPS
+
+**Implementierung:**
+```php
+// src/TOM/Infrastructure/Auth/AuthService.php
+$sameSite = ($this->appEnv === 'prod' || $this->appEnv === 'staging') ? 'Strict' : 'Lax';
+session_set_cookie_params([
+    'httponly' => true,
+    'secure' => $secure,
+    'samesite' => $sameSite,
+]);
+```
+
+**Session-Regeneration:** Bereits implementiert in `login()` (`session_regenerate_id(true)`)
+
+### Rate-Limiting
+
+**Status:** ✅ Implementiert
+
+**Rate-Limits:**
+- Login: 5 Versuche pro IP pro Minute
+- Telephony/Calls: 20 Calls pro User pro Minute
+- Work-Items PATCH: 30 Requests pro User pro Minute
+
+**Implementierung:**
+- `src/TOM/Infrastructure/Security/RateLimiter.php` (In-Memory für Staging)
+- Für Production: Redis oder Memcached empfohlen
+
+**Verwendung:**
+```php
+$rateLimiter = new RateLimiter($db);
+if (!$rateLimiter->checkIpLimit('auth-login', 5, 60)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Rate limit exceeded']);
+    exit;
+}
+```
+
+### Audit-Logging für Stage/Owner Änderungen
+
+**Status:** ✅ Implementiert
+
+**Protokolliert:**
+- Stage-Änderungen: "Stage geändert: X → Y"
+- Owner-Änderungen: "Owner geändert: X → Y"
+- Metadaten: `old_stage`, `new_stage`, `changed_by`
+
+**Implementierung:**
+- System-Activity in `work_item_timeline` Tabelle
+- Activity-Type: `STAGE_CHANGE`, `OWNER_CHANGE`
+
+### Input Validation für Work-Items
+
+**Status:** ✅ Implementiert
+
+**Validierung:**
+- Stage-Enum: Nur gültige Stages erlaubt
+- Datumsformat: ISO 8601 für `next_action_at`
+- priority_stars: Range 0-5
+
+**Gültige Stages:**
+`NEW`, `IN_PROGRESS`, `SNOOZED`, `QUALIFIED`, `DATA_CHECK`, `DISQUALIFIED`, `DUPLICATE`, `CLOSED`
+
 ## 🔒 Spätere Verbesserungen (P2)
 
 - Automatisierte Tests (Smoke/Integration)
 - Security-Header (CSP, HSTS, etc.)
-- Rate Limiting / Bruteforce-Schutz
 - Umfangreiche Permission-Matrix
+- Rate-Limiting für Production (Redis/Memcached)
 
 ## Migration Guide
 
@@ -254,13 +327,17 @@ Falls ein Endpunkt öffentlich sein soll:
 - [x] API-Design vereinheitlicht (Router-Variablen, keine Fallbacks)
 - [x] Document-Download/View gehärtet (RFC5987, CSP, Berechtigungsprüfung)
 - [x] Undefined Offset Bug behoben
-- [ ] Input-Validation überall eingebaut (Pattern vorhanden)
+- [x] Session/Cookie-Härtung (SameSite=Strict für Staging/Prod)
+- [x] Rate-Limiting implementiert (Login, Telephony, Work-Items)
+- [x] Audit-Logging für Stage/Owner Änderungen
+- [x] Input Validation für Work-Items (Stage-Enum, Datumsformat, priority_stars)
+- [ ] Input-Validation überall eingebaut (Pattern vorhanden, teilweise umgesetzt)
 - [ ] Secrets rotiert
 - [ ] Tests geschrieben
 - [ ] Vollständige Permission-Prüfung für Dokumente (wenn Permission-System vorhanden)
 
 ---
 
-*Letzte Aktualisierung: 2026-01-10*
+*Letzte Aktualisierung: 2026-01-04*
 
 
