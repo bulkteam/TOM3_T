@@ -41,17 +41,11 @@ if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
     validateCsrfToken($method);
 }
 
-// Parse path
-$requestUri = $_SERVER['REQUEST_URI'];
-$path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/tom3/public#i', '', $path);
-$path = preg_replace('#^/api/?|^api/?#', '', $path);
-$path = trim($path, '/');
-$pathParts = explode('/', $path);
-
-// work-items ist parts[0], uuid ist parts[1], action ist parts[2]
-$workItemUuid = isset($pathParts[1]) && !empty($pathParts[1]) ? $pathParts[1] : null;
-$action = isset($pathParts[2]) && !empty($pathParts[2]) ? $pathParts[2] : null;
+// Router-Variablen nutzen (vom Router gesetzt)
+// $id = work item UUID (z.B. für /api/work-items/{uuid}/timeline)
+// $action = action (z.B. 'timeline' für /api/work-items/{uuid}/timeline)
+$workItemUuid = $id ?? null;
+$action = $action ?? null;
 
 switch ($method) {
     case 'GET':

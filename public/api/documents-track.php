@@ -29,9 +29,13 @@ if ($method !== 'POST') {
     exit;
 }
 
+// Security: Auth erzwingen (kein 'default_user' Fallback)
+require_once __DIR__ . '/api-security.php';
+$currentUser = requireAuth();
+$userId = (string)$currentUser['user_id'];
+
 $data = json_decode(file_get_contents('php://input'), true);
 $documentUuid = $data['document_uuid'] ?? null;
-$userId = AuthHelper::getCurrentUserId() ?? $data['user_id'] ?? 'default_user';
 $accessType = $data['access_type'] ?? 'recent';
 
 if (!$documentUuid) {
@@ -44,8 +48,8 @@ try {
     $documentService->trackAccess($userId, $documentUuid, $accessType);
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    require_once __DIR__ . '/api-security.php';
+    sendErrorResponse($e);
 }
 
 

@@ -3,6 +3,12 @@
  * TOM3 - Tasks API
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -24,9 +30,12 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
-$pathParts = explode('/', trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/'));
-$taskUuid = $pathParts[1] ?? null;
-$action = $pathParts[2] ?? null;
+
+// Router-Variablen nutzen (vom Router gesetzt)
+// $id = task UUID (z.B. für /api/tasks/{uuid}/complete)
+// $action = 'complete' (z.B. für /api/tasks/{uuid}/complete)
+$taskUuid = $id ?? null;
+$action = $action ?? null;
 
 switch ($method) {
     case 'GET':
@@ -37,7 +46,7 @@ switch ($method) {
         break;
         
     case 'POST':
-        if ($action === 'complete') {
+        if ($taskUuid && $action === 'complete') {
             // POST /api/tasks/{uuid}/complete
             $result = $taskService->completeTask($taskUuid);
             echo json_encode($result);

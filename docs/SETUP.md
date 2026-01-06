@@ -60,8 +60,14 @@ Kurzfassung:
 
 **Lokale Entwicklung:**
 
-Erstelle eine `.env` Datei im Projektroot (oder setze ENV-Variablen):
+**WICHTIG:** Keine Passwörter mehr im Code! Alle Secrets müssen über Umgebungsvariablen gesetzt werden.
 
+1. Kopiere `.env.example` nach `.env`:
+```bash
+cp .env.example .env
+```
+
+2. Bearbeite `.env` mit deinen lokalen Werten:
 ```bash
 # .env Datei
 APP_ENV=local
@@ -80,7 +86,11 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=dein_neo4j_passwort
 ```
 
-**Hinweis:** `config/database.php` verwendet automatisch ENV-Variablen. In Production müssen alle Secrets gesetzt sein (fail-closed).
+**Hinweis:** 
+- `config/database.php` verwendet automatisch ENV-Variablen
+- **Keine Default-Passwörter mehr im Code** (auch nicht für Dev)
+- In Production müssen alle Secrets gesetzt sein (fail-closed)
+- Siehe [SECURITY-IMPROVEMENTS.md](analysen/security/SECURITY-IMPROVEMENTS.md) für Details
 
 **Für XAMPP MySQL (Legacy):**
 

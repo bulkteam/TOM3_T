@@ -49,7 +49,7 @@ function setCorsHeaders(): void
         // Dev: CORS offen (für lokale Entwicklung)
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
     } else {
         // Prod: CORS nur für erlaubte Domains
         $allowedOrigins = $_ENV['CORS_ALLOWED_ORIGINS'] ?? getenv('CORS_ALLOWED_ORIGINS') ?: '';
@@ -62,7 +62,7 @@ function setCorsHeaders(): void
             }
         }
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
     }
     
     // OPTIONS Preflight

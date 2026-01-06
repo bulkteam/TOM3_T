@@ -3,6 +3,12 @@
  * TOM3 - Monitoring API
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
 // Dies muss VOR dem Autoloading geschehen, da die Klasse beim Laden bereits den Fehler wirft
 $oldErrorReporting = error_reporting();
@@ -30,40 +36,21 @@ use TOM\Infrastructure\Neo4j\Neo4jService;
 try {
     $db = DatabaseConnection::getInstance();
 } catch (Exception $e) {
-    // Wenn von index.php aufgerufen, wird der Fehler dort behandelt
-    if (!isset($id)) {
-        http_response_code(500);
-        echo json_encode([
-            'error' => 'Database connection failed',
-            'message' => $e->getMessage()
-        ]);
-        exit;
-    }
-    // Sonst Exception weiterwerfen, damit index.php sie behandelt
+    // Exception weiterwerfen, damit index.php sie behandelt (mit sicherem Error-Handling)
     throw $e;
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Wenn von index.php aufgerufen, verwende $id (wird von index.php übergeben)
-// Ansonsten parse den Pfad selbst
-if (isset($id)) {
-    // Von index.php: $id ist der Endpoint (z.B. 'status', 'outbox', etc.)
-    $endpoint = $id;
-} else {
-    // Direkter Aufruf: Parse den Pfad selbst
-    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
-    
-    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
-    $path = preg_replace('#^/tom3/public#i', '', $path);
-    // Entferne /api/monitoring prefix
-    $path = preg_replace('#^/api/monitoring/?|^api/monitoring/?#', '', $path);
-    $path = trim($path, '/');
-    
-    $pathParts = explode('/', $path);
-    $endpoint = $pathParts[0] ?? '';
+// Security: Nur über Router aufrufbar (Guard prüft bereits TOM3_API_ROUTER)
+// $id wird vom Router übergeben (z.B. 'status', 'outbox', etc.)
+if (!isset($id)) {
+    // Sollte nie passieren, da Guard bereits prüft - aber sicherheitshalber
+    http_response_code(404);
+    exit;
 }
+
+$endpoint = $id;
 
 switch ($endpoint) {
     case 'status':

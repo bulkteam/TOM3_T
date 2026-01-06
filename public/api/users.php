@@ -5,6 +5,12 @@
  * API für User-Verwaltung und Rollen-Abfragen
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -26,32 +32,11 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Wenn von index.php aufgerufen, verwende die bereits geparsten Variablen
-// Ansonsten parse den Pfad selbst
-if (isset($id) || isset($action)) {
-    // Von index.php: $id ist der erste Teil nach 'users' (z.B. '1' für /api/users/1)
-    $userId = $id ?? null;
-    $action = $action ?? null;
-} else {
-    // Direkter Aufruf: Parse den Pfad selbst
-    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
-    
-    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
-    $path = preg_replace('#^/tom3/public#i', '', $path);
-    // Entferne /api prefix
-    $path = preg_replace('#^/api/?|^api/?#', '', $path);
-    $path = trim($path, '/');
-    
-    $pathParts = explode('/', $path);
-    // Filtere 'users' heraus, da wir bereits wissen dass wir in users.php sind
-    $pathParts = array_filter($pathParts, function($p) { return $p !== 'users' && $p !== ''; });
-    $pathParts = array_values($pathParts);
-    
-    // users ist parts[0], action ist parts[1], id ist parts[2]
-    $action = $pathParts[1] ?? null;
-    $userId = $pathParts[0] ?? null; // Erster Teil nach 'users' ist die User-ID
-}
+// Router-Variablen nutzen (vom Router gesetzt)
+// $id = user ID (z.B. für /api/users/{user_id}/roles)
+// $action = action (z.B. 'roles' für /api/users/{user_id}/roles)
+$userId = $id ?? null;
+$action = $action ?? null;
 
 switch ($method) {
     case 'GET':
@@ -115,8 +100,8 @@ switch ($method) {
                 $userService->deactivateUser($userId, $currentUserId);
                 echo json_encode(['success' => true, 'message' => 'User wurde deaktiviert']);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode(['error' => $e->getMessage()]);
+                require_once __DIR__ . '/api-security.php';
+                sendErrorResponse($e);
             }
         } elseif ($action === 'activate' && $userId) {
             // PUT /api/users/{user_id}/activate - User aktivieren
@@ -124,8 +109,8 @@ switch ($method) {
                 $userService->activateUser($userId);
                 echo json_encode(['success' => true, 'message' => 'User wurde aktiviert']);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode(['error' => $e->getMessage()]);
+                require_once __DIR__ . '/api-security.php';
+                sendErrorResponse($e);
             }
         } elseif ($userId) {
             // PUT /api/users/{user_id} - User aktualisieren
@@ -134,8 +119,8 @@ switch ($method) {
                 $user = $userService->updateUser($userId, $data);
                 echo json_encode($user);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode(['error' => $e->getMessage()]);
+                require_once __DIR__ . '/api-security.php';
+                sendErrorResponse($e);
             }
         } else {
             http_response_code(400);

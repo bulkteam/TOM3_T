@@ -19,6 +19,9 @@ ini_set('log_errors', '1');
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/api-security.php';
 
+// Definiere Router-Flag (wird von allen API-Handlern geprüft)
+define('TOM3_API_ROUTER', true);
+
 // Prüfe APP_ENV (setzt Default auf 'local' wenn nicht gesetzt)
 requireAppEnv();
 

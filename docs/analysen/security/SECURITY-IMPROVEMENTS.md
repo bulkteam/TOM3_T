@@ -28,17 +28,24 @@ export MYSQL_PASSWORD=dein_passwort
 
 ### 2. CORS nur in Development
 
-**Problem:** CORS war komplett offen (`*`) für alle Umgebungen.
+**Problem:** CORS war komplett offen (`*`) für alle Umgebungen. CSRF-Token Header fehlte in `Access-Control-Allow-Headers`.
 
 **Lösung:**
 - CORS nur in `local`/`dev` aktiv (für lokale Entwicklung)
 - Production: Nur erlaubte Origins (über `CORS_ALLOWED_ORIGINS` ENV)
+- `X-CSRF-Token` Header zu `Access-Control-Allow-Headers` hinzugefügt
+- `Access-Control-Allow-Credentials: true` in Production (für Cookies)
 - Zentrale Funktion in `api-security.php`
 
 **Konfiguration:**
 ```bash
 # Production
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+```
+
+**Header:**
+```
+Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token
 ```
 
 ### 3. Zentraler Auth-Guard
@@ -63,17 +70,94 @@ requireAdmin(); // oder requireRole('manager')
 **Problem:** API-Endpunkte konnten direkt aufgerufen werden und Router umgehen.
 
 **Lösung:**
-- `.htaccess` angepasst: Alle `/api/*` Aufrufe gehen über Router
-- Auch existierende `.php` Dateien werden über Router geleitet
+- `.htaccess` angepasst: Alle `/api/*.php` Dateien werden blockiert (403 Forbidden)
+- Alle `/api/*` Requests gehen über Router (`api/index.php`)
+- Router setzt `TOM3_API_ROUTER` Define
+- Alle API-Skripte prüfen `TOM3_API_ROUTER` Guard (404 wenn direkt aufgerufen)
+- Gefährliche "Direktaufruf"-Zweige entfernt (z.B. in `monitoring.php`)
+
+**Implementierung:**
+```apache
+# .htaccess
+RewriteRule ^api/.*\.php$ - [F,L]  # Blockiere direkte PHP-Dateien
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]  # Route über Router
+```
+
+```php
+// In jedem API-Skript:
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+```
 
 ### 5. Error-Handling: Dev vs Production
 
-**Problem:** Stack-Traces und Details wurden in Production ausgegeben.
+**Problem:** Stack-Traces, PDO-Fehler und Details wurden in Production ausgegeben.
 
 **Lösung:**
-- Dev: Vollständige Fehlerdetails (Message, File, Line, Trace)
+- Dev: Vollständige Fehlerdetails (Message, File, Line, Trace, pdo_error)
 - Production: Generische Fehlermeldung + Korrelations-ID
 - Details werden nur intern geloggt
+- `pdo_error` (DB-Struktur/Constraints) nur im Dev-Mode
+- Alle direkten `$e->getMessage()` Ausgaben durch `sendErrorResponse()` ersetzt
+
+**Verwendung:**
+```php
+// ❌ Falsch (leakt interne Details):
+catch (Exception $e) {
+    echo json_encode(['error' => $e->getMessage()]);
+}
+
+// ✅ Richtig:
+catch (Exception $e) {
+    require_once __DIR__ . '/api-security.php';
+    sendErrorResponse($e);
+}
+```
+
+### 6. API-Design vereinheitlicht
+
+**Problem:** Inkonsistentes API-Design - Router vs. "Standalone"-Scripts.
+
+**Lösung:**
+- Router als Single Entry Point (Front Controller)
+- Alle Handler nutzen Router-Variablen (`$id`, `$action`) statt selbst zu parsen
+- Einheitliches Response/Error-Handling
+- Security-Fallbacks (`'default_user'`) entfernt
+- Einheitliche Auth über Router/`requireAuth()`
+
+**Refactored Dateien:**
+- `tasks.php`, `cases.php`, `queues.php`, `work-items.php`, `users.php`
+- Alle nutzen jetzt Router-Variablen statt eigenes Parsing
+
+### 7. Document-Download/View gehärtet
+
+**Problem:** Header-Injection Risiko, Content-Sniffing, fehlende Berechtigungsprüfung.
+
+**Lösung:**
+- RFC5987 `filename*` für Unicode-Unterstützung
+- `sanitizeFilenameForHeader()`: Striktes Filtern (Whitelist)
+- `X-Content-Type-Options: nosniff` hinzugefügt
+- Content-Security-Policy für PDFs (Sandbox)
+- Basis-Berechtigungsprüfung: Dokumente ohne Attachments nur für Admins
+- TODO: Vollständige Permission-Prüfung (wenn Permission-System vorhanden)
+
+**Implementierung:**
+```php
+// RFC5987 Format:
+header('Content-Disposition: attachment; filename="..." ; filename*=UTF-8\'\'...');
+header('X-Content-Type-Options: nosniff');
+header('Content-Security-Policy: sandbox allow-same-origin allow-scripts'); // für PDFs
+```
+
+### 8. Undefined Offset Bug behoben
+
+**Problem:** `cases.php` hatte undefined offset Zugriff (`$pathParts[4]` ohne `isset()`).
+
+**Lösung:**
+- `isset($pathParts[3], $pathParts[4])` Prüfung hinzugefügt
+- Verhindert PHP-Notices/Warnings → 500 Errors
 
 ## 📋 Nächste Schritte (P1 - Sehr sinnvoll)
 
@@ -162,18 +246,21 @@ Falls ein Endpunkt öffentlich sein soll:
 
 ## Sicherheits-Checkliste
 
-- [x] Secrets aus Repository entfernt
-- [x] CORS nur in dev aktiv
+- [x] Secrets aus Repository entfernt (keine Default-Passwörter mehr)
+- [x] CORS nur in dev aktiv + X-CSRF-Token Header
 - [x] Zentraler Auth-Guard
-- [x] Bypass-Schutz
-- [x] Error-Handling (dev vs prod)
+- [x] Bypass-Schutz (.htaccess + TOM3_API_ROUTER Guards)
+- [x] Error-Handling (dev vs prod, pdo_error nur im Dev)
+- [x] API-Design vereinheitlicht (Router-Variablen, keine Fallbacks)
+- [x] Document-Download/View gehärtet (RFC5987, CSP, Berechtigungsprüfung)
+- [x] Undefined Offset Bug behoben
 - [ ] Input-Validation überall eingebaut (Pattern vorhanden)
 - [ ] Secrets rotiert
 - [ ] Tests geschrieben
-- [ ] Security-Header konfiguriert
+- [ ] Vollständige Permission-Prüfung für Dokumente (wenn Permission-System vorhanden)
 
 ---
 
-*Letzte Aktualisierung: 2026-01-01*
+*Letzte Aktualisierung: 2026-01-10*
 
 

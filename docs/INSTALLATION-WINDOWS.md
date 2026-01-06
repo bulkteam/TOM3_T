@@ -183,9 +183,14 @@ Du solltest das Neo4j Browser-Interface sehen.
 
 ### Schritt 1: Datenbank-Konfiguration
 
-**WICHTIG:** Secrets müssen über Umgebungsvariablen gesetzt werden. Siehe [SECURITY-IMPROVEMENTS.md](SECURITY-IMPROVEMENTS.md) für Details.
+**WICHTIG:** Secrets müssen über Umgebungsvariablen gesetzt werden. **Keine Passwörter mehr im Code!** Siehe [SECURITY-IMPROVEMENTS.md](analysen/security/SECURITY-IMPROVEMENTS.md) für Details.
 
-**Erstelle eine `.env` Datei** im Projektroot:
+1. **Kopiere `.env.example` nach `.env`:**
+```bash
+cp .env.example .env
+```
+
+2. **Bearbeite `.env`** mit deinen lokalen Werten:
 
 ```bash
 # .env
@@ -212,7 +217,10 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=dein_neo4j_passwort
 ```
 
-**Hinweis:** `config/database.php` liest automatisch aus ENV-Variablen. In Production müssen alle Secrets gesetzt sein.
+**Hinweis:** 
+- `config/database.php` liest automatisch aus ENV-Variablen
+- **Keine Default-Passwörter mehr im Code** (auch nicht für Dev)
+- In Production müssen alle Secrets gesetzt sein (fail-closed)
 
 ### Schritt 2: Datenbank-Schema erstellen
 

@@ -41,18 +41,23 @@ if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
     validateCsrfToken($method);
 }
 
-// Parse path - index.php hat bereits /api entfernt
-// Der Pfad ist jetzt z.B. "cases" oder "cases/{uuid}" oder "cases/{uuid}/notes"
-$requestUri = $_SERVER['REQUEST_URI'];
-$path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/tom3/public#i', '', $path);
-$path = preg_replace('#^/api/?|^api/?#', '', $path);
-$path = trim($path, '/');
-$pathParts = explode('/', $path);
+// Router-Variablen nutzen (vom Router gesetzt)
+// $id = case UUID (z.B. für /api/cases/{uuid})
+// $action = action (z.B. 'notes', 'blockers', 'requirements')
+$caseUuid = $id ?? null;
+$action = $action ?? null;
 
-// cases ist parts[0], uuid ist parts[1], action ist parts[2]
-$caseUuid = isset($pathParts[1]) && !empty($pathParts[1]) ? $pathParts[1] : null;
-$action = isset($pathParts[2]) && !empty($pathParts[2]) ? $pathParts[2] : null;
+// Für komplexere Pfade wie /api/cases/{uuid}/requirements/{req_uuid}/fulfill
+// müssen wir noch zusätzliche Pfad-Teile parsen (Router unterstützt nur 2 Ebenen)
+$pathParts = null;
+if ($action === 'requirements') {
+    $requestUri = $_SERVER['REQUEST_URI'];
+    $path = parse_url($requestUri, PHP_URL_PATH);
+    $path = preg_replace('#^/tom3/public#i', '', $path);
+    $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    $path = trim($path, '/');
+    $pathParts = explode('/', $path);
+}
 
 switch ($method) {
     case 'GET':
@@ -86,7 +91,7 @@ switch ($method) {
             $note = $data['note'] ?? '';
             $result = $caseService->addNote($caseUuid, $note);
             echo json_encode($result);
-        } elseif ($action === 'requirements' && isset($pathParts[3]) && $pathParts[4] === 'fulfill') {
+        } elseif ($action === 'requirements' && isset($pathParts[3], $pathParts[4]) && $pathParts[4] === 'fulfill') {
             // POST /api/cases/{uuid}/requirements/{req_uuid}/fulfill
             $requirementUuid = $pathParts[3];
             $data = json_decode(file_get_contents('php://input'), true);

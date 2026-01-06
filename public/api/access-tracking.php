@@ -60,8 +60,8 @@ if ($action === 'recent') {
         $recent = $accessTrackingService->getRecentEntities($entityType, $userId, $limit);
         echo json_encode($recent ?: []);
     } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        require_once __DIR__ . '/api-security.php';
+        sendErrorResponse($e);
     }
 } elseif ($action === 'track') {
     // POST /api/access-tracking/{entityType}/track
@@ -80,7 +80,10 @@ if ($action === 'recent') {
     ];
     $uuidField = $uuidFieldMap[$entityType] ?? $entityType . '_uuid';
     $entityUuid = $data[$uuidField] ?? null;
-    $userId = AuthHelper::getCurrentUserId() ?? $data['user_id'] ?? 'default_user';
+    // Security: Auth erzwingen (kein 'default_user' Fallback)
+    require_once __DIR__ . '/api-security.php';
+    $currentUser = requireAuth();
+    $userId = (string)$currentUser['user_id'];
     $accessType = $data['access_type'] ?? 'recent';
     
     if (!$entityUuid) {
@@ -93,8 +96,8 @@ if ($action === 'recent') {
         $accessTrackingService->trackAccess($entityType, $userId, $entityUuid, $accessType);
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        require_once __DIR__ . '/api-security.php';
+        sendErrorResponse($e);
     }
 } else {
     http_response_code(404);

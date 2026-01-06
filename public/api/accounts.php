@@ -3,6 +3,12 @@
  * TOM3 - Accounts API (Account Owner Dashboard)
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -32,7 +38,10 @@ if ($method !== 'GET') {
 }
 
 // GET /api/accounts?user_id=...
-$userId = $_GET['user_id'] ?? 'default_user';
+// Security: Auth erzwingen (kein 'default_user' Fallback)
+require_once __DIR__ . '/api-security.php';
+$currentUser = requireAuth();
+$userId = $_GET['user_id'] ?? (string)$currentUser['user_id'];
 
 try {
     $accounts = $orgService->getAccountsByOwner($userId, true);
@@ -47,8 +56,8 @@ try {
     
     echo json_encode($accounts ?: []);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    require_once __DIR__ . '/api-security.php';
+    sendErrorResponse($e);
 }
 
 

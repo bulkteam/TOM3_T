@@ -39,17 +39,11 @@ if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
     validateCsrfToken($method);
 }
 
-// Parse path
-$requestUri = $_SERVER['REQUEST_URI'];
-$path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/tom3/public#i', '', $path);
-$path = preg_replace('#^/api/?|^api/?#', '', $path);
-$path = trim($path, '/');
-$pathParts = explode('/', $path);
-
-// queues ist parts[0], engine ist parts[1], action ist parts[2]
-$engine = isset($pathParts[1]) && !empty($pathParts[1]) ? $pathParts[1] : null;
-$action = isset($pathParts[2]) && !empty($pathParts[2]) ? $pathParts[2] : null;
+// Router-Variablen nutzen (vom Router gesetzt)
+// $id = engine (z.B. 'inside-sales' für /api/queues/inside-sales/next)
+// $action = action (z.B. 'next' für /api/queues/inside-sales/next)
+$engine = $id ?? null;
+$action = $action ?? null;
 
 if ($engine === 'inside-sales' && $action === 'next') {
     // POST /api/queues/inside-sales/next?tab=...

@@ -19,6 +19,47 @@ if (!defined('TOM3_AUTOLOADED')) {
 use TOM\Service\DocumentService;
 use TOM\Infrastructure\Auth\AuthHelper;
 
+/**
+ * Sanitizes filename for Content-Disposition header (prevents header injection)
+ * 
+ * @param string $filename Original filename
+ * @return array ['filename' => string, 'filenameStar' => string] Safe filenames for HTTP headers
+ */
+function sanitizeFilenameForHeader(string $filename): array
+{
+    // Entferne gefährliche Zeichen (CR, LF, Tabs, etc.)
+    $filename = preg_replace('/[\r\n\t\x00-\x1F\x7F]/', '', $filename);
+    
+    // Entferne oder ersetze problematische Zeichen
+    // Erlaube nur: Buchstaben, Zahlen, Leerzeichen, Punkt, Bindestrich, Unterstrich, Klammern
+    $filename = preg_replace('/[^a-zA-Z0-9\s\.\-_()]/', '_', $filename);
+    
+    // Entferne führende/abschließende Punkte und Leerzeichen
+    $filename = trim($filename, '. ');
+    
+    // Begrenze Länge (RFC 5987 empfiehlt max 255 Zeichen)
+    if (strlen($filename) > 200) {
+        $filename = substr($filename, 0, 200);
+    }
+    
+    // Fallback wenn leer
+    if (empty($filename)) {
+        $filename = 'document';
+    }
+    
+    // RFC 5987 filename* für Unicode-Unterstützung (besser als einfaches filename="...")
+    // URL-encode für filename* (RFC 5987 Format)
+    $filenameStar = rawurlencode($filename);
+    
+    // Escaping für Quotes (Content-Disposition filename="..." als Fallback)
+    $filenameQuoted = addslashes($filename);
+    
+    return [
+        'filename' => $filenameQuoted,
+        'filenameStar' => $filenameStar
+    ];
+}
+
 try {
     $method = $_SERVER['REQUEST_METHOD'];
     
@@ -262,13 +303,31 @@ function handleGetEntityDocuments(DocumentService $service, ?string $entityType,
 function handleDownload(DocumentService $service, string $documentUuid): void
 {
     try {
-        $document = $service->getDocument($documentUuid);
+        // Berechtigungsprüfung: Prüfe ob User Zugriff auf das Dokument hat
+        // (über Attachments zu Entitäten, auf die der User Zugriff hat)
+        require_once __DIR__ . '/api-security.php';
+        $currentUser = AuthHelper::getCurrentUser();
         
+        // Prüfe ob Dokument existiert
+        $document = $service->getDocument($documentUuid);
         if (!$document) {
             http_response_code(404);
             echo 'Document not found';
             return;
         }
+        
+        // Berechtigungsprüfung: Dokument muss an mindestens eine Entität angehängt sein
+        // (später: zusätzlich prüfen ob User Zugriff auf diese Entität hat)
+        $attachments = $service->getDocumentAttachments($documentUuid);
+        if (empty($attachments)) {
+            // Dokument ohne Attachments: Nur Admins dürfen zugreifen
+            if (!$currentUser || !in_array('admin', $currentUser['roles'] ?? [])) {
+                http_response_code(403);
+                echo 'Access denied';
+                return;
+            }
+        }
+        // TODO: Später erweitern: Prüfe ob User Zugriff auf mindestens eine der Entitäten hat
         
         // Nur wenn scan_status = clean
         if ($document['scan_status'] !== 'clean') {
@@ -294,10 +353,15 @@ function handleDownload(DocumentService $service, string $documentUuid): void
             $filename .= '.' . $extension;
         }
         
+        // Sicherer Filename für Content-Disposition (verhindert Header-Injection)
+        $safeFilenames = sanitizeFilenameForHeader($filename);
+        
         header('Content-Type: ' . ($document['mime_detected'] ?? 'application/octet-stream'));
-        header('Content-Disposition: attachment; filename="' . addslashes($filename) . '"');
+        // RFC 5987 filename* für Unicode-Unterstützung, filename="..." als Fallback
+        header('Content-Disposition: attachment; filename="' . $safeFilenames['filename'] . '"; filename*=UTF-8\'\'' . $safeFilenames['filenameStar']);
         header('Content-Length: ' . filesize($filePath));
         header('Cache-Control: private, max-age=3600');
+        header('X-Content-Type-Options: nosniff');
         
         // Datei ausgeben
         readfile($filePath);
@@ -305,7 +369,9 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         
     } catch (Exception $e) {
         http_response_code(500);
-        echo 'Download failed: ' . $e->getMessage();
+        // Sicher: Keine internen Fehlerdetails an Client
+        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
+        echo 'Download failed' . ($isDev ? ': ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') : '');
     }
 }
 
@@ -315,13 +381,30 @@ function handleDownload(DocumentService $service, string $documentUuid): void
 function handleView(DocumentService $service, string $documentUuid): void
 {
     try {
-        $document = $service->getDocument($documentUuid);
+        // Berechtigungsprüfung: Prüfe ob User Zugriff auf das Dokument hat
+        require_once __DIR__ . '/api-security.php';
+        $currentUser = AuthHelper::getCurrentUser();
         
+        // Prüfe ob Dokument existiert
+        $document = $service->getDocument($documentUuid);
         if (!$document) {
             http_response_code(404);
             echo 'Document not found';
             return;
         }
+        
+        // Berechtigungsprüfung: Dokument muss an mindestens eine Entität angehängt sein
+        // (später: zusätzlich prüfen ob User Zugriff auf diese Entität hat)
+        $attachments = $service->getDocumentAttachments($documentUuid);
+        if (empty($attachments)) {
+            // Dokument ohne Attachments: Nur Admins dürfen zugreifen
+            if (!$currentUser || !in_array('admin', $currentUser['roles'] ?? [])) {
+                http_response_code(403);
+                echo 'Access denied';
+                return;
+            }
+        }
+        // TODO: Später erweitern: Prüfe ob User Zugriff auf mindestens eine der Entitäten hat
         
         // Nur wenn scan_status = clean
         if ($document['scan_status'] !== 'clean') {
@@ -349,13 +432,19 @@ function handleView(DocumentService $service, string $documentUuid): void
         }
         
         // View-Header (inline statt attachment)
+        $safeFilenames = sanitizeFilenameForHeader($document['title'] ?? 'document');
         header('Content-Type: ' . $mimeType);
-        header('Content-Disposition: inline; filename="' . addslashes($document['title'] ?? 'document') . '"');
+        // RFC 5987 filename* für Unicode-Unterstützung, filename="..." als Fallback
+        header('Content-Disposition: inline; filename="' . $safeFilenames['filename'] . '"; filename*=UTF-8\'\'' . $safeFilenames['filenameStar']);
         header('Content-Length: ' . filesize($filePath));
         header('Cache-Control: private, max-age=3600');
-        
-        // X-Frame-Options für Sicherheit (optional)
+        header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
+        
+        // Content-Security-Policy für PDFs (verhindert XSS durch bösartige PDFs)
+        if ($mimeType === 'application/pdf') {
+            header('Content-Security-Policy: sandbox allow-same-origin allow-scripts');
+        }
         
         // Datei ausgeben
         readfile($filePath);
@@ -363,7 +452,9 @@ function handleView(DocumentService $service, string $documentUuid): void
         
     } catch (Exception $e) {
         http_response_code(500);
-        echo 'View failed: ' . $e->getMessage();
+        // Sicher: Keine internen Fehlerdetails an Client
+        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
+        echo 'View failed' . ($isDev ? ': ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') : '');
     }
 }
 

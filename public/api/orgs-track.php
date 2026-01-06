@@ -30,7 +30,10 @@ if ($method !== 'POST') {
 
 $data = json_decode(file_get_contents('php://input'), true);
 $orgUuid = $data['org_uuid'] ?? null;
-$userId = $data['user_id'] ?? 'default_user';
+// Security: Auth erzwingen (kein 'default_user' Fallback)
+require_once __DIR__ . '/api-security.php';
+$currentUser = requireAuth();
+$userId = (string)$currentUser['user_id'];
 $accessType = $data['access_type'] ?? 'recent';
 
 if (!$orgUuid) {
@@ -43,8 +46,8 @@ try {
     $orgService->trackAccess($userId, $orgUuid, $accessType);
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    require_once __DIR__ . '/api-security.php';
+    sendErrorResponse($e);
 }
 
 

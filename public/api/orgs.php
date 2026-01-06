@@ -63,8 +63,7 @@ if ($id === 'next-customer-number') {
         $nextNumber = $orgService->getNextCustomerNumber();
         echo json_encode(['next_customer_number' => $nextNumber]);
     } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        handleApiException($e, 'Get next customer number');
     }
     exit;
 }
@@ -132,8 +131,7 @@ switch ($method) {
                     $orgService->trackAccess($userId, $orgUuid, $accessType);
                     echo json_encode(['success' => true]);
                 } catch (Exception $e) {
-                    http_response_code(500);
-                    echo json_encode(['error' => $e->getMessage()]);
+                    handleApiException($e, 'Track access');
                 }
             } elseif ($action === 'health') {
                 // GET /api/orgs/{uuid}/health - Account-Gesundheit
@@ -257,10 +255,7 @@ switch ($method) {
                 
                 echo json_encode($result);
             } catch (Exception $e) {
-                http_response_code(500);
-                error_log('Error adding VAT registration: ' . $e->getMessage());
-                error_log('Stack trace: ' . $e->getTraceAsString());
-                echo json_encode(['error' => $e->getMessage()]);
+                handleApiException($e, 'Add VAT registration');
             }
         } elseif ($orgUuid && $action === 'archive') {
             // POST /api/orgs/{uuid}/archive
@@ -269,8 +264,7 @@ switch ($method) {
                 $result = $orgService->archiveOrg($orgUuid, $currentUserId);
                 echo json_encode($result);
             } catch (Exception $e) {
-                http_response_code(400);
-                echo json_encode(['error' => $e->getMessage()]);
+                handleApiException($e, 'Archive org');
             }
         } elseif ($orgUuid && $action === 'unarchive') {
             // POST /api/orgs/{uuid}/unarchive
@@ -279,8 +273,7 @@ switch ($method) {
                 $result = $orgService->unarchiveOrg($orgUuid, $currentUserId);
                 echo json_encode($result);
             } catch (Exception $e) {
-                http_response_code(400);
-                echo json_encode(['error' => $e->getMessage()]);
+                handleApiException($e, 'Unarchive org');
             }
         } else {
             // POST /api/orgs
@@ -297,8 +290,7 @@ switch ($method) {
                 // Warnungen werden im Ergebnis mit _warnings Feld zurückgegeben
                 echo json_encode($result);
             } catch (\InvalidArgumentException $e) {
-                http_response_code(409); // Conflict
-                echo json_encode(['error' => $e->getMessage()]);
+                handleApiException($e, 'Create org');
             } catch (\Exception $e) {
                 handleApiException($e, 'Create org');
             }

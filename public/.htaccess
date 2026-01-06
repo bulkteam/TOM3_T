@@ -4,8 +4,11 @@ RewriteEngine On
 RewriteBase /TOM3/public/
 
 # API Routes
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
+# KRITISCH: Alle /api/* Requests müssen über Router gehen (auch wenn Dateien existieren)
+# Verhindert Bypass des Routers und Auth-Guards
+# Blockiere direkten Zugriff auf PHP-Dateien unter /api/
+RewriteRule ^api/.*\.php$ - [F,L]
+# Route alle anderen /api/* Requests über Router
 RewriteRule ^api/(.*)$ api/index.php [QSA,L]
 
 # Frontend Routes (SPA)

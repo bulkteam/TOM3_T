@@ -5,6 +5,12 @@
  * Eliminiert Code-Duplikation zwischen orgs.php und persons.php
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -168,8 +174,8 @@ function handleApiException(\Throwable $e, string $context = 'API request'): voi
         $error['type'] = get_class($e);
     }
     
-    // PDO-Exceptions haben zusätzliche Info
-    if ($e instanceof \PDOException) {
+    // PDO-Exceptions haben zusätzliche Info (nur im Dev-Mode)
+    if ($e instanceof \PDOException && $isDev) {
         $error['pdo_error'] = $e->errorInfo ?? null;
     }
     

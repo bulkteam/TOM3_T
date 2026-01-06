@@ -3,6 +3,12 @@
  * TOM3 - Persons API
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    http_response_code(404);
+    exit;
+}
+
 use TOM\Service\PersonService;
 use TOM\Infrastructure\Database\DatabaseConnection;
 
@@ -231,8 +237,7 @@ switch ($method) {
             $result = $personService->updatePerson($personUuid, $data);
             echo json_encode($result);
         } catch (\RuntimeException $e) {
-            http_response_code(404);
-            echo json_encode(['error' => $e->getMessage()]);
+            handleApiException($e, 'Update person');
         } catch (\Exception $e) {
             http_response_code(500);
             echo json_encode(['error' => 'Internal server error']);

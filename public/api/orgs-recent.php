@@ -43,7 +43,7 @@ try {
     $recent = $orgService->getRecentOrgs($userId, $limit);
     echo json_encode($recent ?: []);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    require_once __DIR__ . '/api-security.php';
+    sendErrorResponse($e);
 }
 

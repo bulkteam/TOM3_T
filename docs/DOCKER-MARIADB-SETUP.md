@@ -294,7 +294,7 @@ MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3307
 MYSQL_DBNAME=tom
 MYSQL_USER=tomcat
-MYSQL_PASSWORD=tim@2025!  # Passwort aus Docker .env
+MYSQL_PASSWORD=dein_passwort_hier  # Passwort aus Docker .env (nicht mehr hardcoded!)
 ```
 
 **Hinweis:** `config/database.php` liest automatisch aus ENV-Variablen. Siehe [SECURITY-IMPROVEMENTS.md](SECURITY-IMPROVEMENTS.md) für Details.
