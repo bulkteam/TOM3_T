@@ -513,9 +513,8 @@ class TOM3API {
     }
     
     async trackOrgAccess(orgUuid, userId, accessType = 'recent') {
-        return this.request(`/orgs/${orgUuid}/track-access?user_id=${userId}&access_type=${accessType}`, {
-            method: 'POST'
-        });
+        // Verwende die zentrale trackEntityAccess Methode für Konsistenz
+        return this.trackEntityAccess('org', orgUuid, userId, accessType);
     }
     
     async getRecentOrgs(userId = 'default_user', limit = 10) {
@@ -580,17 +579,6 @@ class TOM3API {
         const endpoint = includeInactive ? `/users/${userId}?include_inactive=true` : `/users/${userId}`;
         return this.request(endpoint);
     }
-    
-    async trackOrgAccess(orgUuid, userId = 'default_user', accessType = 'recent') {
-        return this.request('/orgs/track', {
-            method: 'POST',
-            body: {
-                org_uuid: orgUuid,
-                user_id: userId,
-                access_type: accessType
-            }
-        });
-    }
 
     async createOrg(data) {
         return this.request('/orgs', {
@@ -605,7 +593,22 @@ class TOM3API {
 
     // Auth
     async getCurrentUser() {
-        return this.request('/auth/current');
+        const response = await this.request('/auth/current');
+        // Normalisiere Response: API gibt user.user_id zurück, aber wir brauchen user_id auf oberster Ebene
+        if (response && response.user) {
+            // Wenn user_id nicht auf oberster Ebene, füge es hinzu
+            if (!response.user_id && response.user.user_id) {
+                response.user_id = response.user.user_id;
+            }
+            // Stelle sicher, dass user_id als String vorhanden ist
+            if (response.user.user_id) {
+                response.user_id = String(response.user.user_id);
+            } else if (response.user.id) {
+                response.user_id = String(response.user.id);
+                response.user.user_id = String(response.user.id);
+            }
+        }
+        return response;
     }
 
     async login(userId) {
@@ -697,6 +700,10 @@ class TOM3API {
         return this.request('/monitoring/scheduled-tasks');
     }
     
+    async getScanMetrics() {
+        return this.request('/monitoring/scan-metrics');
+    }
+    
     async getRecentPersons(userId = 'default_user', limit = 10) {
         return this.request(`/persons/recent?user_id=${userId}&limit=${limit}`);
     }
@@ -720,7 +727,7 @@ class TOM3API {
     }
     
     async trackEntityAccess(entityType, entityUuid, userId = 'default_user', accessType = 'recent') {
-        const uuidField = entityType === 'org' ? 'org_uuid' : 'person_uuid';
+        const uuidField = entityType === 'org' ? 'org_uuid' : (entityType === 'person' ? 'person_uuid' : 'document_uuid');
         return this.request(`/access-tracking/${entityType}/track`, {
             method: 'POST',
             body: {

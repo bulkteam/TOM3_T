@@ -65,7 +65,7 @@ class ImportDedupeService
         
         $stmt = $this->db->prepare($query);
         $stmt->execute($params);
-        $candidates = $stmt->fetchAll();
+        $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         
         // Berechne Match-Score für jeden Kandidaten
         foreach ($candidates as $candidate) {
@@ -91,6 +91,7 @@ class ImportDedupeService
      */
     private function calculateMatchScore(array $rowData, array $candidate): float
     {
+        /** @var array<string, float> $scores */
         $scores = [];
         
         // Name-Match
@@ -108,12 +109,13 @@ class ImportDedupeService
         }
         
         // Gewichteter Durchschnitt
+        /** @var array<string, float> $weights */
         $weights = ['name' => 0.5, 'domain' => 0.5];
         $totalScore = 0.0;
         $totalWeight = 0.0;
         
         foreach ($scores as $key => $score) {
-            $weight = $weights[$key] ?? 0.0;
+            $weight = isset($weights[$key]) ? $weights[$key] : 0.0;
             $totalScore += $score * $weight;
             $totalWeight += $weight;
         }

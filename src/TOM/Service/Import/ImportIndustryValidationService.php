@@ -138,14 +138,18 @@ class ImportIndustryValidationService
                 $result['sub'] = $this->levelValidator->checkIndustriesLevel2WithoutParent($level2Values);
             } else {
                 // Normale Suche: Level 2 unter den gefundenen Level 1 Branchen
-                $result['sub'] = $this->levelValidator->checkIndustriesLevel2($level2Values, $result['main'] ?? []);
+                // $result['main'] existiert immer (initialisiert), kann aber leer sein
+                $mainResult = !empty($result['main']) ? $result['main'] : [];
+                $result['sub'] = $this->levelValidator->checkIndustriesLevel2($level2Values, $mainResult);
             }
         }
         
         // Prüfe Level 3 (Unterbranchen) - optional, nur wenn Level 2 vorhanden ist
         if (!empty($level3Values)) {
             // Prüfe Level 3 unter den gefundenen Level 2 Branchen
-            $result['level3'] = $this->levelValidator->checkIndustriesLevel3($level3Values, $result['sub'] ?? []);
+            // $result['sub'] existiert immer (initialisiert), kann aber leer sein
+            $subResult = !empty($result['sub']) ? $result['sub'] : [];
+            $result['level3'] = $this->levelValidator->checkIndustriesLevel3($level3Values, $subResult);
         }
         
         // Prüfe Kombinationen: Wenn Level 1 gefunden ODER Level 2 gefunden (dann Level 1 ableiten)

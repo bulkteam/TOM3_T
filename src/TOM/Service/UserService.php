@@ -368,7 +368,7 @@ class UserService
         // Prüfe ob Email bereits existiert
         $stmt = $this->db->prepare("SELECT user_id FROM users WHERE email = :email");
         $stmt->execute(['email' => $data['email']]);
-        if ($stmt->fetch()) {
+        if ($stmt->fetch(PDO::FETCH_ASSOC)) {
             throw new \InvalidArgumentException('Ein User mit dieser Email existiert bereits');
         }
         

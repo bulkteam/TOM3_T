@@ -142,18 +142,60 @@ class BlobScanWorker
             $this->log("Starte Scan für: {$filePath}");
             $scanResult = $this->clamAvService->scan($filePath);
             
-            // 5) Update Blob-Status
-            $this->updateBlobScanStatus($blobUuid, $scanResult);
+            // 5) Update Blob-Status (mit Retry-Logik)
+            $updateSuccess = false;
+            $maxRetries = 3;
+            $retryCount = 0;
             
-            // 6) Wenn infected: Blockiere alle zugehörigen Documents
-            if ($scanResult['status'] === 'infected') {
-                $this->blockDocumentsForBlob($blobUuid, $scanResult);
+            while (!$updateSuccess && $retryCount < $maxRetries) {
+                try {
+                    // Prüfe, ob Blob noch existiert (könnte zwischenzeitlich gelöscht worden sein)
+                    $blobCheck = $this->getBlob($blobUuid);
+                    if (!$blobCheck) {
+                        $this->log("WARNUNG: Blob {$blobUuid} existiert nicht mehr - überspringe Update");
+                        break;
+                    }
+                    
+                    $this->updateBlobScanStatus($blobUuid, $scanResult);
+                    $updateSuccess = true;
+                } catch (\RuntimeException $e) {
+                    $retryCount++;
+                    if ($retryCount < $maxRetries) {
+                        $this->log("WARNUNG: Update fehlgeschlagen (Versuch {$retryCount}/{$maxRetries}): " . $e->getMessage());
+                        // Kurze Pause vor Retry
+                        usleep(500000); // 0.5 Sekunden
+                    } else {
+                        // Letzter Versuch fehlgeschlagen - markiere als Error
+                        $this->log("FEHLER: Update nach {$maxRetries} Versuchen fehlgeschlagen: " . $e->getMessage());
+                        try {
+                            $this->markBlobAsError($blobUuid, "Update fehlgeschlagen: " . $e->getMessage());
+                        } catch (\Exception $updateError) {
+                            $this->log("KRITISCH: Konnte Blob nicht als Error markieren: " . $updateError->getMessage());
+                        }
+                        throw $e; // Wirf Exception weiter, damit sie im catch-Block behandelt wird
+                    }
+                }
             }
             
-            // 7) Job als verarbeitet markieren
-            $this->markJobProcessed($eventUuid);
+            // 6) Wenn infected: Blockiere alle zugehörigen Documents
+            if ($updateSuccess && $scanResult['status'] === 'infected') {
+                try {
+                    $this->blockDocumentsForBlob($blobUuid, $scanResult);
+                } catch (\Exception $e) {
+                    $this->log("WARNUNG: Konnte Documents nicht blockieren: " . $e->getMessage());
+                    // Nicht kritisch - Scan war erfolgreich
+                }
+            }
             
-            $this->log("Scan abgeschlossen: Status = {$scanResult['status']}");
+            // 7) Job als verarbeitet markieren (nur wenn Update erfolgreich war)
+            if ($updateSuccess) {
+                $this->markJobProcessed($eventUuid);
+                $this->log("Scan abgeschlossen: Status = {$scanResult['status']}");
+            } else {
+                $this->log("FEHLER: Job wird NICHT als verarbeitet markiert, da Update fehlgeschlagen ist");
+                // Job bleibt unprocessed für Retry
+                throw new \RuntimeException("Blob-Status konnte nicht aktualisiert werden");
+            }
             
         } catch (\Exception $e) {
             // Bei Fehler: Markiere Blob als Error und logge ausführlich
@@ -198,6 +240,18 @@ class BlobScanWorker
      */
     private function updateBlobScanStatus(string $blobUuid, array $scanResult): void
     {
+        // Prüfe, ob Blob noch existiert (zusätzliche Sicherheit)
+        $blobCheck = $this->getBlob($blobUuid);
+        if (!$blobCheck) {
+            throw new \RuntimeException("Blob {$blobUuid} existiert nicht mehr");
+        }
+        
+        // Validiere scan_status Wert
+        $validStatuses = ['clean', 'infected', 'unsupported', 'error'];
+        if (!in_array($scanResult['status'], $validStatuses)) {
+            throw new \InvalidArgumentException("Ungültiger scan_status: {$scanResult['status']}");
+        }
+        
         $stmt = $this->db->prepare("
             UPDATE blobs
             SET scan_status = :status,
@@ -215,12 +269,28 @@ class BlobScanWorker
         
         if (!$result) {
             $errorInfo = $stmt->errorInfo();
-            throw new \RuntimeException("UPDATE fehlgeschlagen für Blob {$blobUuid}: " . json_encode($errorInfo));
+            $errorMsg = "UPDATE fehlgeschlagen für Blob {$blobUuid}: " . json_encode($errorInfo);
+            $this->log("FEHLER: {$errorMsg}");
+            throw new \RuntimeException($errorMsg);
         }
         
         $rowsAffected = $stmt->rowCount();
         if ($rowsAffected === 0) {
-            throw new \RuntimeException("UPDATE hat keine Zeilen aktualisiert für Blob {$blobUuid} - Blob existiert möglicherweise nicht");
+            // Prüfe nochmal, ob Blob existiert
+            $blobCheck2 = $this->getBlob($blobUuid);
+            if (!$blobCheck2) {
+                throw new \RuntimeException("Blob {$blobUuid} wurde zwischenzeitlich gelöscht");
+            }
+            
+            // Blob existiert, aber UPDATE hat keine Zeilen aktualisiert
+            // Mögliche Ursachen: Blob wurde bereits mit demselben Status aktualisiert
+            // Prüfe aktuellen Status
+            if ($blobCheck2['scan_status'] === $scanResult['status']) {
+                $this->log("INFO: Blob {$blobUuid} hat bereits Status {$scanResult['status']} - Update nicht nötig");
+                return; // Nicht kritisch - Status ist bereits korrekt
+            }
+            
+            throw new \RuntimeException("UPDATE hat keine Zeilen aktualisiert für Blob {$blobUuid} (aktueller Status: {$blobCheck2['scan_status']}, erwarteter Status: {$scanResult['status']})");
         }
         
         $this->log("Blob-Status aktualisiert: {$blobUuid} → {$scanResult['status']} ({$rowsAffected} Zeile(n))");
@@ -256,6 +326,13 @@ class BlobScanWorker
      */
     private function markBlobAsError(string $blobUuid, string $errorMessage): void
     {
+        // Prüfe, ob Blob noch existiert
+        $blobCheck = $this->getBlob($blobUuid);
+        if (!$blobCheck) {
+            $this->log("WARNUNG: Blob {$blobUuid} existiert nicht mehr - kann nicht als Error markiert werden");
+            return;
+        }
+        
         $stmt = $this->db->prepare("
             UPDATE blobs
             SET scan_status = 'error',
@@ -276,12 +353,29 @@ class BlobScanWorker
         
         if (!$result) {
             $errorInfo = $stmt->errorInfo();
-            $this->log("WARNUNG: Fehler beim Markieren des Blobs als Error: " . json_encode($errorInfo));
-        } else {
-            $rowsAffected = $stmt->rowCount();
-            if ($rowsAffected === 0) {
-                $this->log("WARNUNG: UPDATE hat keine Zeilen aktualisiert beim Markieren als Error für Blob {$blobUuid}");
+            $this->log("FEHLER: Konnte Blob nicht als Error markieren: " . json_encode($errorInfo));
+            throw new \RuntimeException("Fehler beim Markieren des Blobs als Error: " . json_encode($errorInfo));
+        }
+        
+        $rowsAffected = $stmt->rowCount();
+        if ($rowsAffected === 0) {
+            // Prüfe nochmal, ob Blob existiert
+            $blobCheck2 = $this->getBlob($blobUuid);
+            if (!$blobCheck2) {
+                $this->log("WARNUNG: Blob {$blobUuid} wurde zwischenzeitlich gelöscht");
+                return;
             }
+            
+            // Blob existiert, aber UPDATE hat keine Zeilen aktualisiert
+            // Mögliche Ursache: Blob wurde bereits als Error markiert
+            if ($blobCheck2['scan_status'] === 'error') {
+                $this->log("INFO: Blob {$blobUuid} ist bereits als Error markiert");
+                return; // Nicht kritisch
+            }
+            
+            $this->log("WARNUNG: UPDATE hat keine Zeilen aktualisiert beim Markieren als Error für Blob {$blobUuid} (aktueller Status: {$blobCheck2['scan_status']})");
+        } else {
+            $this->log("Blob als Error markiert: {$blobUuid} ({$rowsAffected} Zeile(n))");
         }
     }
     

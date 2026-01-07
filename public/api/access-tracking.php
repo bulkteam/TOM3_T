@@ -47,7 +47,8 @@ if ($action === 'recent') {
         exit;
     }
     
-    $userId = AuthHelper::getCurrentUserId();
+    // Verwende user_id aus Query-Parameter oder Session
+    $userId = $_GET['user_id'] ?? AuthHelper::getCurrentUserId();
     if (!$userId) {
         http_response_code(401);
         echo json_encode(['error' => 'Unauthorized']);

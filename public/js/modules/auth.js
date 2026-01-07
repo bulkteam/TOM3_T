@@ -15,6 +15,10 @@ export class AuthModule {
             const user = await window.API.getCurrentUser();
             if (user) {
                 this.displayUserInfo(user);
+                // Speichere User in der App für spätere Verwendung
+                if (window.app) {
+                    window.app.currentUser = user;
+                }
                 return user;
             } else {
                 this.redirectToLogin();

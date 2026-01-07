@@ -1,19 +1,18 @@
 # TOM3 - Apache Rewrite Rules
+# Sichere & robuste Version - weniger fragil, klarere Regeln
 
 RewriteEngine On
 RewriteBase /TOM3/public/
 
-# API Routes
-# KRITISCH: Alle /api/* Requests müssen über Router gehen (auch wenn Dateien existieren)
-# Verhindert Bypass des Routers und Auth-Guards
-# Blockiere direkten Zugriff auf PHP-Dateien unter /api/
-RewriteRule ^api/.*\.php$ - [F,L]
-# Route alle anderen /api/* Requests über Router
+# Block direct access to /api/*.php except index.php (inkl. path-info)
+RewriteRule ^api/(?!index\.php$).+\.php(?:/.*)?$ - [F,L,NC]
+
+# Route ALL /api/* to router
 RewriteRule ^api/(.*)$ api/index.php [QSA,L]
 
-# Frontend Routes (SPA)
+# SPA fallback
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ index.html [QSA,L]
+RewriteRule ^ index.html [QSA,L]
 
 

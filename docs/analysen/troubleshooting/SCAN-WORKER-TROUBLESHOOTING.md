@@ -57,21 +57,38 @@ php scripts/check-scan-status.php
 
 3. **Events wurden verarbeitet, aber Status nicht aktualisiert**
    - Prüfe: `php scripts/check-scan-status.php`
-   - Lösung: `php scripts/fix-pending-scans.php` (manueller Scan)
+   - Lösung: Automatischer Fix durch `TOM3-FixPendingScans` Task (läuft alle 15 Minuten)
+   - Manueller Fix: `php scripts/jobs/fix-pending-scans.php --verbose`
 
 4. **Dateien nicht gefunden**
    - Prüfe: Storage-Verzeichnis existiert
    - Lösung: Prüfe `storage/` Verzeichnis und Berechtigungen
 
-### Manueller Scan
+### Automatischer Fix
 
-Falls Dokumente auf "pending" bleiben:
+Der `TOM3-FixPendingScans` Task läuft automatisch alle 15 Minuten und behebt pending Blobs, deren Jobs bereits verarbeitet wurden.
 
-```bash
-php scripts/fix-pending-scans.php
+**Status prüfen:**
+```powershell
+Get-ScheduledTask -TaskName "TOM3-FixPendingScans" | Get-ScheduledTaskInfo
 ```
 
-Dies scannt alle pending Blobs manuell und aktualisiert den Status.
+**Manuell ausführen:**
+```powershell
+Start-ScheduledTask -TaskName "TOM3-FixPendingScans"
+```
+
+### Manueller Scan
+
+Falls Dokumente auf "pending" bleiben und der automatische Fix nicht greift:
+
+```bash
+php scripts/jobs/fix-pending-scans.php --verbose
+```
+
+Dies scannt alle pending Blobs mit verarbeiteten Jobs manuell und aktualisiert den Status.
+
+**Hinweis:** Der automatische Fix-Task sollte normalerweise ausreichen. Manueller Fix nur bei Bedarf.
 
 ## Problem: Auto-Refresh funktioniert nicht
 
@@ -147,6 +164,7 @@ php scripts/jobs/scan-blob-worker.php --max-jobs=20 --verbose
 ## Checkliste
 
 - [ ] Scan-Worker Task eingerichtet
+- [ ] Fix-Pending-Scans Task eingerichtet (empfohlen)
 - [ ] ClamAV Container läuft (`docker ps`)
 - [ ] ClamAV verfügbar (`php scripts/check-scan-status.php`)
 - [ ] Ausstehende Jobs vorhanden (`processed_at IS NULL`)
@@ -154,6 +172,7 @@ php scripts/jobs/scan-blob-worker.php --max-jobs=20 --verbose
 - [ ] Worker-Logs werden geschrieben (`logs/scan-blob-worker.log`)
 - [ ] Browser-Konsole zeigt keine JavaScript-Fehler
 - [ ] Auto-Refresh-Logs sichtbar in Browser-Konsole
+- [ ] Monitoring-Dashboard zeigt keine Warnungen für pending Blobs
 
 ## Nützliche Befehle
 
@@ -162,9 +181,14 @@ php scripts/jobs/scan-blob-worker.php --max-jobs=20 --verbose
 php scripts/check-scan-status.php
 ```
 
+**Automatischer Fix (Task):**
+```powershell
+Start-ScheduledTask -TaskName "TOM3-FixPendingScans"
+```
+
 **Manueller Scan:**
 ```bash
-php scripts/fix-pending-scans.php
+php scripts/jobs/fix-pending-scans.php --verbose
 ```
 
 **Worker manuell ausführen:**

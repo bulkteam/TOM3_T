@@ -106,3 +106,4 @@ private function listApprovedRows(string $batchUuid): array
 1. ✅ Zusätzliche Prüfung in `commitRow()` hinzufügen (einfach, sicher)
 2. ⚠️ Row-Locking optional (könnte zu Problemen führen)
 
+

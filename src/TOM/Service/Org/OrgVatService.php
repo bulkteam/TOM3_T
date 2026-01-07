@@ -168,7 +168,7 @@ class OrgVatService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute(['org_uuid' => $orgUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**
@@ -185,7 +185,7 @@ class OrgVatService
             LIMIT 1
         ");
         $stmt->execute(['address_uuid' => $addressUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**

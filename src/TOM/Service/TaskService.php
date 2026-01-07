@@ -36,7 +36,7 @@ class TaskService
         
         $stmt = $this->db->prepare("SELECT * FROM task WHERE task_uuid = :uuid");
         $stmt->execute(['uuid' => $uuid]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function listTasks(?string $caseUuid = null): array
@@ -47,7 +47,7 @@ class TaskService
         } else {
             $stmt = $this->db->query("SELECT * FROM task ORDER BY created_at DESC");
         }
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function completeTask(string $taskUuid): array
@@ -60,7 +60,7 @@ class TaskService
         
         $stmt = $this->db->prepare("SELECT * FROM task WHERE task_uuid = :uuid");
         $stmt->execute(['uuid' => $taskUuid]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
 }
 

@@ -105,7 +105,7 @@ class PersonAffiliationService
             WHERE pa.affiliation_uuid = :uuid
         ");
         $stmt->execute(['uuid' => $affiliationUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**

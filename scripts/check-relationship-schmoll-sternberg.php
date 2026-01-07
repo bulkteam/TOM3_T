@@ -147,3 +147,4 @@ foreach ($allSternbergRels as $rel) {
     echo "  - {$rel['other_person_name']} ({$rel['relation_type']}, {$rel['direction']})\n";
 }
 
+

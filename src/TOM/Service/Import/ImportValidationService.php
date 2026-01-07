@@ -109,7 +109,7 @@ class ImportValidationService
         ");
         
         $stmt->execute(['version' => $version]);
-        $result = $stmt->fetch();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$result) {
             // Fallback auf v1.0
@@ -184,7 +184,17 @@ class ImportValidationService
         
         // PLZ-Lookup
         require_once __DIR__ . '/../../../config/plz_mapping.php';
-        $plzInfo = mapPlzToBundeslandAndCity($postalCode);
+        /**
+         * @param string $plz
+         * @return array{bundesland?: string, city?: string}|false
+         */
+        if (!function_exists('mapPlzToBundeslandAndCity')) {
+            // Fallback, falls Funktion nicht geladen wurde
+            $plzInfo = false;
+        } else {
+            /** @var array{bundesland?: string, city?: string}|false $plzInfo */
+            $plzInfo = mapPlzToBundeslandAndCity($postalCode);
+        }
         
         if ($plzInfo && isset($plzInfo['city'])) {
             $expectedCity = mb_strtolower($plzInfo['city']);

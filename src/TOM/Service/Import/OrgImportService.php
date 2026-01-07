@@ -419,7 +419,7 @@ class OrgImportService
         ");
         
         $stmt->execute(['file_hash' => $fileHash]);
-        $result = $stmt->fetch();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         return $result ? $result['batch_uuid'] : null;
     }
@@ -434,7 +434,7 @@ class OrgImportService
         ");
         
         $stmt->execute(['uuid' => $batchUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**

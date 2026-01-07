@@ -48,13 +48,13 @@ class ProjectService
     {
         $stmt = $this->db->prepare("SELECT * FROM project WHERE project_uuid = :uuid");
         $stmt->execute(['uuid' => $projectUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     public function listProjects(): array
     {
         $stmt = $this->db->query("SELECT * FROM project ORDER BY created_at DESC");
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function linkCase(string $projectUuid, string $caseUuid): array

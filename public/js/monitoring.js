@@ -59,7 +59,8 @@ class MonitoringDashboard {
                 this.loadDuplicateCheckResults(),
                 this.loadActivityLog(),
                 this.loadClamAvStatus(),
-                this.loadScheduledTasks()
+                this.loadScheduledTasks(),
+                this.loadScanMetrics()
             ]);
         } catch (error) {
             console.error('Error loading monitoring data:', error);
@@ -684,6 +685,9 @@ class MonitoringDashboard {
                 if (infectedCard) infectedCard.style.display = 'none';
                 if (infectedList) infectedList.style.display = 'none';
             }
+            
+            // Lade Scan-Metriken (pending Blobs Fix-Statistiken)
+            this.loadScanMetrics();
         } catch (error) {
             console.error('Error loading ClamAV status:', error);
             const versionEl = document.getElementById('clamav-version');
@@ -757,7 +761,17 @@ class MonitoringDashboard {
                 return (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3);
             });
             
-            let html = '<div class="scheduled-tasks-grid">';
+            // Tabellarische Darstellung
+            let html = '<table class="scheduled-tasks-table">';
+            html += '<thead><tr>';
+            html += '<th>Name</th>';
+            html += '<th>Status</th>';
+            html += '<th>Beschreibung</th>';
+            html += '<th>Letzte Ausführung</th>';
+            html += '<th>Nächste Ausführung</th>';
+            html += '<th>Fehlercode</th>';
+            html += '</tr></thead>';
+            html += '<tbody>';
             
             sortedTasks.forEach(task => {
                 const statusIcon = {
@@ -774,8 +788,6 @@ class MonitoringDashboard {
                 let lastRunText = 'Nie';
                 if (task.last_run_time && task.last_run_time !== 'null' && task.last_run_time !== '') {
                     try {
-                        // PowerShell gibt Format "yyyy-MM-dd HH:mm:ss" zurück
-                        // Konvertiere zu Date-Objekt
                         const dateStr = task.last_run_time.replace(' ', 'T');
                         const lastRun = new Date(dateStr);
                         
@@ -803,7 +815,6 @@ class MonitoringDashboard {
                 let nextRunText = 'Unbekannt';
                 if (task.next_run_time && task.next_run_time !== 'null' && task.next_run_time !== '') {
                     try {
-                        // PowerShell gibt Format "yyyy-MM-dd HH:mm:ss" zurück
                         const dateStr = task.next_run_time.replace(' ', 'T');
                         const nextRun = new Date(dateStr);
                         
@@ -823,43 +834,21 @@ class MonitoringDashboard {
                     }
                 }
                 
-                html += `
-                    <div class="scheduled-task-card ${statusClass}">
-                        <div class="task-header">
-                            <div class="task-name">
-                                ${statusIcon} ${this.escapeHtml(task.name)}
-                                ${requiredBadge}
-                            </div>
-                            <div class="task-status-badge ${statusClass}">${this.escapeHtml(task.message)}</div>
-                        </div>
-                        <div class="task-description">${this.escapeHtml(task.description)}</div>
-                        <div class="task-details">
-                            <div class="task-detail-item">
-                                <span class="task-detail-label">Status:</span>
-                                <span class="task-detail-value">${this.escapeHtml(task.state || 'Unknown')}</span>
-                            </div>
-                            <div class="task-detail-item">
-                                <span class="task-detail-label">Letzte Ausführung:</span>
-                                <span class="task-detail-value">${lastRunText}</span>
-                            </div>
-                            ${task.next_run_time ? `
-                                <div class="task-detail-item">
-                                    <span class="task-detail-label">Nächste Ausführung:</span>
-                                    <span class="task-detail-value">${nextRunText}</span>
-                                </div>
-                            ` : ''}
-                            ${task.last_task_result !== null && task.last_task_result !== undefined && task.last_task_result !== 0 && task.last_task_result !== 267009 ? `
-                                <div class="task-detail-item task-error">
-                                    <span class="task-detail-label">Fehlercode:</span>
-                                    <span class="task-detail-value">${task.last_task_result}</span>
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
+                const errorCode = (task.last_task_result !== null && task.last_task_result !== undefined && 
+                                  task.last_task_result !== 0 && task.last_task_result !== 267009) 
+                                  ? task.last_task_result : '-';
+                
+                html += `<tr class="${statusClass}">`;
+                html += `<td><div class="task-name-cell">${statusIcon} ${this.escapeHtml(task.name)} ${requiredBadge}</div></td>`;
+                html += `<td><span class="task-status-badge ${statusClass}">${this.escapeHtml(task.message)}</span></td>`;
+                html += `<td>${this.escapeHtml(task.description)}</td>`;
+                html += `<td>${lastRunText}</td>`;
+                html += `<td>${nextRunText}</td>`;
+                html += `<td>${errorCode !== '-' ? `<span class="task-error-code">${errorCode}</span>` : '-'}</td>`;
+                html += '</tr>';
             });
             
-            html += '</div>';
+            html += '</tbody></table>';
             
             // Zeige Zusammenfassung
             if (data.total_tasks > 0 || data.debug) {
@@ -891,6 +880,75 @@ class MonitoringDashboard {
         } catch (error) {
             console.error('Error loading scheduled tasks:', error);
             container.innerHTML = '<div class="empty-state">Fehler beim Laden</div>';
+        }
+    }
+
+    async loadScanMetrics() {
+        try {
+            const metrics = await window.API.getScanMetrics();
+            
+            const container = document.getElementById('scan-metrics-section');
+            if (!container) return;
+            
+            if (metrics.error) {
+                container.innerHTML = `<div class="empty-state">${this.escapeHtml(metrics.error)}</div>`;
+                return;
+            }
+            
+            const currentPending = metrics.current_pending_blobs || 0;
+            const totalOccurrences = metrics.total_occurrences || 0;
+            const totalFixed = metrics.total_fixed || 0;
+            const lastOccurrence = metrics.last_occurrence || null;
+            
+            let html = '<div class="metrics-grid">';
+            html += `
+                <div class="metric-card">
+                    <div class="metric-icon">⏳</div>
+                    <div class="metric-content">
+                        <div class="metric-value" style="${currentPending > 0 ? 'color: #f59e0b; font-weight: bold;' : ''}">${currentPending}</div>
+                        <div class="metric-label">Aktuelle pending Blobs</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">📊</div>
+                    <div class="metric-content">
+                        <div class="metric-value">${totalOccurrences}</div>
+                        <div class="metric-label">Gesamt Vorkommen</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">✅</div>
+                    <div class="metric-content">
+                        <div class="metric-value" style="color: #10b981;">${totalFixed}</div>
+                        <div class="metric-label">Behoben</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">📅</div>
+                    <div class="metric-content">
+                        <div class="metric-value" style="font-size: 0.875rem;">${lastOccurrence ? new Date(lastOccurrence).toLocaleString('de-DE') : 'Nie'}</div>
+                        <div class="metric-label">Letztes Vorkommen</div>
+                    </div>
+                </div>
+            `;
+            html += '</div>';
+            
+            // Zeige Warnung wenn aktuell pending Blobs vorhanden sind
+            if (currentPending > 0) {
+                html += `
+                    <div class="scan-metrics-warning" style="margin-top: 1rem; padding: 1rem; background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; border-radius: 6px;">
+                        <strong>⚠️ Warnung:</strong> ${currentPending} Blob(s) mit pending Status gefunden. Der Fix-Pending-Scans Worker sollte diese automatisch beheben.
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading scan metrics:', error);
+            const container = document.getElementById('scan-metrics-section');
+            if (container) {
+                container.innerHTML = '<div class="empty-state">Fehler beim Laden</div>';
+            }
         }
     }
 

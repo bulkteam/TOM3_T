@@ -106,7 +106,7 @@ class OrgRelationService
             WHERE r.relation_uuid = :uuid
         ");
         $stmt->execute(['uuid' => $relationUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**
@@ -146,7 +146,7 @@ class OrgRelationService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**

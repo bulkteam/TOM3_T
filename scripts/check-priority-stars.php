@@ -62,3 +62,4 @@ echo "  NEW Leads mit 0 oder NULL: {$zeroOrNull['count']}\n";
 echo "  NEW Leads mit > 0: {$greaterThanZero['count']}\n";
 
 
+

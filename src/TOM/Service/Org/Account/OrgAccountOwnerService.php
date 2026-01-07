@@ -47,7 +47,7 @@ class OrgAccountOwnerService
             ORDER BY name
         ");
         $stmt->execute(['user_id' => $userId]);
-        $orgs = $stmt->fetchAll();
+        $orgs = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         
         if ($includeHealth && $this->healthGetter) {
             foreach ($orgs as &$org) {
@@ -121,6 +121,7 @@ class OrgAccountOwnerService
         return $owners;
     }
 }
+
 
 
 

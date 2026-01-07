@@ -30,7 +30,10 @@
     },
     "scripts": {
         "test": "phpunit",
-        "analyse": "phpstan analyse"
+        "analyse": "phpstan analyse",
+        "analyse:src": "phpstan analyse src --no-progress",
+        "analyse:api": "phpstan analyse public/api --no-progress",
+        "analyse:parallel": "phpstan analyse --parallel"
     },
     "config": {
         "optimize-autoloader": true,

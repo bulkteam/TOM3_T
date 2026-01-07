@@ -40,6 +40,32 @@ Das Monitoring-Dashboard bietet eine umfassende Übersicht über den Systemstatu
 - Balkendiagramm der Event-Typen-Verteilung
 - Letzte 24 Stunden
 
+### ClamAV Security Status
+- **ClamAV Status**: Verfügbarkeit des ClamAV-Scanners
+- **Pending Scans**: Anzahl ausstehender Scan-Jobs
+- **Infected Files**: Liste infizierter Dateien (falls vorhanden)
+- **Scan Metrics**: 
+  - Pending Blobs (Fix): Anzahl Blobs mit pending Status, die behoben werden müssen
+  - Behoben (Gesamt): Gesamtanzahl behobener Blobs
+  - Vorkommen (Gesamt): Gesamtanzahl der Vorkommen des Problems
+  - Letztes Vorkommen: Zeitpunkt des letzten Vorkommens
+
+### Scheduled Tasks
+- **Tabellarische Übersicht** aller überwachten Windows Task Scheduler Jobs
+- **Status-Anzeige**: OK, Warning, Error, Unknown
+- **Pflicht-Badges**: Schwarze Badges mit weißer Schrift für erforderliche Tasks
+- **Letzte/Nächste Ausführung**: Zeitstempel der letzten und nächsten geplanten Ausführung
+- **Fehlercode**: Exit-Code der letzten Ausführung
+- **Überwachte Tasks**:
+  - `TOM3-Neo4j-Sync-Worker` (Pflicht)
+  - `TOM3-ClamAV-Scan-Worker` (Pflicht, wenn ClamAV aktiv)
+  - `TOM3-ExtractTextWorker` (Pflicht)
+  - `TOM3-FixPendingScans` (Empfohlen)
+  - `TOM3-DuplicateCheck` (Empfohlen)
+  - `TOM3-ActivityLog-Maintenance` (Empfohlen)
+  - `MySQL-Auto-Recovery` (Optional)
+  - `MySQL-Daily-Backup` (Empfohlen)
+
 ## Technologie
 
 - **Chart.js**: Für Diagramme und Visualisierungen
@@ -134,6 +160,47 @@ Gibt die Event-Typen-Verteilung zurück:
 }
 ```
 
+### GET /api/monitoring/clamav
+Gibt ClamAV-Status und Metriken zurück:
+```json
+{
+  "status": "ok",
+  "message": "ClamAV verfügbar",
+  "pending_scans": 0,
+  "infected_files": []
+}
+```
+
+### GET /api/monitoring/scheduled-tasks
+Gibt den Status aller überwachten Scheduled Tasks zurück:
+```json
+{
+  "tasks": [
+    {
+      "name": "TOM3-Neo4j-Sync-Worker",
+      "status": "ok",
+      "message": "Läuft",
+      "required": true,
+      "description": "Neo4j Sync Worker",
+      "last_run_time": "2024-01-01 12:00:00",
+      "next_run_time": "2024-01-01 12:05:00",
+      "last_task_result": 0
+    }
+  ]
+}
+```
+
+### GET /api/monitoring/scan-metrics
+Gibt Metriken zu pending Blobs und Fixes zurück:
+```json
+{
+  "pending_blobs_to_fix": 0,
+  "total_fixed": 5,
+  "total_occurrences": 10,
+  "last_occurrence": "2024-01-01 10:30:00"
+}
+```
+
 ## Verwendung
 
 ### Zugriff
@@ -141,6 +208,17 @@ Gibt die Event-Typen-Verteilung zurück:
 
 ### Auto-Refresh
 Das Dashboard aktualisiert sich automatisch alle 30 Sekunden. Dies kann über den Toggle deaktiviert werden.
+
+### Scheduled Tasks Ansicht
+Die Scheduled Tasks werden in einer **tabellarischen Ansicht** dargestellt (statt Kacheln), um Platz zu sparen. Die Tabelle zeigt:
+- Name des Tasks mit Status-Icon
+- Status-Badge (OK, Warning, Error, Unknown)
+- Beschreibung
+- Letzte Ausführung
+- Nächste Ausführung
+- Fehlercode (Exit-Code)
+
+**Pflicht-Badges:** Schwarze Badges mit weißer Schrift kennzeichnen erforderliche Tasks.
 
 ### Manuelle Aktualisierung
 Klicke auf den "Aktualisieren"-Button für eine sofortige Aktualisierung.

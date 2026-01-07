@@ -102,7 +102,7 @@ class AccessTrackingService
             'access_type' => $accessType
         ]);
         
-        if ($stmt->fetch()) {
+        if ($stmt->fetch(PDO::FETCH_ASSOC)) {
             // Update timestamp
             $stmt = $this->db->prepare("
                 UPDATE {$tableName} 
@@ -161,7 +161,8 @@ class AccessTrackingService
         $stmt->bindValue(':user_id', $userId);
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
-        return $stmt->fetchAll();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $result ?: [];
     }
 }
 

@@ -146,7 +146,7 @@ class PersonRelationshipService
             WHERE pr.relationship_uuid = :uuid
         ");
         $stmt->execute(['uuid' => $relationshipUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**

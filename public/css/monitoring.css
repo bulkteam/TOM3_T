@@ -475,43 +475,70 @@
     color: var(--monitoring-status-error);
 }
 
-#page-monitoring .scheduled-tasks-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1.25rem;
-    max-width: 100%;
-    overflow-x: hidden;
-    box-sizing: border-box;
-}
-
-#page-monitoring .scheduled-task-card {
+/* Tabellarische Darstellung für Scheduled Tasks */
+#page-monitoring .scheduled-tasks-table {
+    width: 100%;
+    border-collapse: collapse;
     background: var(--monitoring-bg-card);
+    border-radius: 8px;
+    overflow: hidden;
     border: 1px solid var(--monitoring-border);
-    border-radius: 10px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    transition: all 0.2s;
 }
 
-#page-monitoring .scheduled-task-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    transform: translateY(-2px);
+#page-monitoring .scheduled-tasks-table thead {
+    background: var(--monitoring-bg-section);
 }
 
-#page-monitoring .scheduled-task-card.task-status-error {
+#page-monitoring .scheduled-tasks-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--monitoring-text-light);
+    border-bottom: 2px solid var(--monitoring-border);
+}
+
+#page-monitoring .scheduled-tasks-table tbody tr {
+    border-bottom: 1px solid var(--monitoring-border);
+    transition: background-color 0.2s;
+}
+
+#page-monitoring .scheduled-tasks-table tbody tr:hover {
+    background: var(--monitoring-bg-section);
+}
+
+#page-monitoring .scheduled-tasks-table tbody tr.task-status-error {
     border-left: 4px solid var(--monitoring-status-error);
 }
 
-#page-monitoring .scheduled-task-card.task-status-warning {
+#page-monitoring .scheduled-tasks-table tbody tr.task-status-warning {
     border-left: 4px solid var(--monitoring-status-warning);
 }
 
-#page-monitoring .scheduled-task-card.task-status-ok {
+#page-monitoring .scheduled-tasks-table tbody tr.task-status-ok {
     border-left: 4px solid var(--monitoring-status-ok);
 }
 
-#page-monitoring .scheduled-task-card.task-status-unknown {
+#page-monitoring .scheduled-tasks-table tbody tr.task-status-unknown {
     border-left: 4px solid var(--monitoring-status-unknown);
+}
+
+#page-monitoring .scheduled-tasks-table td {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: var(--monitoring-text);
+}
+
+#page-monitoring .task-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+#page-monitoring .task-error-code {
+    color: var(--monitoring-status-error);
+    font-weight: 600;
 }
 
 #page-monitoring .task-header {
@@ -536,7 +563,7 @@
     font-size: 0.625rem;
     font-weight: 600;
     padding: 0.125rem 0.5rem;
-    background: var(--monitoring-status-error);
+    background: #1a1a1a;
     color: white;
     border-radius: 12px;
     text-transform: uppercase;

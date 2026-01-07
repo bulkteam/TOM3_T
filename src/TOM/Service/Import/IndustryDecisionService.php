@@ -81,7 +81,7 @@ final class IndustryDecisionService
             $decision['level3_action'] = $request['level3_action'];
         }
         if (isset($request['level3_new_name'])) {
-            $decision['level3_new_name'] = trim($request['level3_new_name'] ?? '');
+            $decision['level3_new_name'] = trim((string)$request['level3_new_name']);
         }
         if (isset($request['confirm_level1'])) {
             $decision['level1_confirmed'] = (bool)$request['confirm_level1'];
@@ -334,7 +334,7 @@ final class IndustryDecisionService
                 SELECT staging_uuid FROM org_import_staging WHERE staging_uuid = :uuid
             ");
             $checkStmt->execute(['uuid' => $stagingUuid]);
-            if (!$checkStmt->fetch()) {
+            if (!$checkStmt->fetch(PDO::FETCH_ASSOC)) {
                 throw new \RuntimeException("Staging row not found: $stagingUuid");
             }
             

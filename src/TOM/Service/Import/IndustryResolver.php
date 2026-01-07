@@ -231,10 +231,7 @@ final class IndustryResolver
         $intersection = array_intersect($tokensA, $tokensB);
         $union = array_unique(array_merge($tokensA, $tokensB));
         
-        if (empty($union)) {
-            return 0.0;
-        }
-        
+        // $union kann nicht leer sein, da $tokensA und $tokensB bereits auf empty() geprüft wurden
         // Jaccard-Similarity
         return count($intersection) / count($union);
     }

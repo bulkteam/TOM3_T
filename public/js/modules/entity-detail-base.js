@@ -85,11 +85,21 @@ export class EntityDetailBaseModule {
             // Track Zugriff
             if (trackAccess) {
                 try {
-                    const user = await window.API.getCurrentUser();
+                    // Warte kurz, falls User noch geladen wird
+                    let user = await window.API.getCurrentUser();
+                    if (!user || !user.user_id) {
+                        // Versuche es nochmal nach kurzer Verzögerung
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        user = await window.API.getCurrentUser();
+                    }
+                    
                     if (user && user.user_id) {
                         await trackAccess(entityUuid, user.user_id);
-                        // Aktualisiere "Zuletzt angesehen" Liste
-                        this.refreshRecentList();
+                        // Aktualisiere "Zuletzt angesehen" Liste nach kurzer Verzögerung
+                        // um sicherzustellen, dass das Tracking in der DB abgeschlossen ist
+                        setTimeout(() => {
+                            this.refreshRecentList();
+                        }, 200);
                     }
                 } catch (error) {
                     console.warn(`Could not track ${this.config.entityType} access:`, error);

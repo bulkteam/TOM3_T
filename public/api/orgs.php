@@ -117,17 +117,22 @@ switch ($method) {
                 $auditTrail = $orgService->getAuditTrail($orgUuid, $limit);
                 echo json_encode($auditTrail);
             } elseif ($action === 'track-access') {
-                // GET /api/orgs/{uuid}/track-access (GET, daher kein requireAuth)
-                // Hole User aus Query oder Session (optional für GET)
+                // POST /api/orgs/{uuid}/track-access
+                if ($method !== 'POST') {
+                    http_response_code(405);
+                    echo json_encode(['error' => 'Method not allowed. Use POST.']);
+                    exit;
+                }
+                
+                // Security: Auth erzwingen (kein 'default_user' Fallback)
+                $currentUser = requireAuth();
+                $userId = (string)$currentUser['user_id'];
+                
+                // Unterstütze sowohl Body als auch Query-Parameter
+                $data = json_decode(file_get_contents('php://input'), true) ?: [];
+                $accessType = $data['access_type'] ?? $_GET['access_type'] ?? 'recent';
+                
                 try {
-                    $user = AuthHelper::getCurrentUser();
-                    $userId = $_GET['user_id'] ?? ($user ? (string)$user['user_id'] : null);
-                    if (!$userId) {
-                        http_response_code(401);
-                        echo json_encode(['error' => 'User ID required']);
-                        exit;
-                    }
-                    $accessType = $_GET['access_type'] ?? 'recent';
                     $orgService->trackAccess($userId, $orgUuid, $accessType);
                     echo json_encode(['success' => true]);
                 } catch (Exception $e) {

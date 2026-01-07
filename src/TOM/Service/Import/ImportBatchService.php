@@ -25,7 +25,27 @@ final class ImportBatchService
      * 
      * @param string|null $userId Filter nach User-ID (optional)
      * @param int|null $limit Maximale Anzahl
-     * @return array
+     * @return array<int, array{
+     *     batch_uuid: string,
+     *     filename: string,
+     *     status: string,
+     *     source_type: string,
+     *     uploaded_by_user_id: string|null,
+     *     uploaded_by_name: string|null,
+     *     uploaded_by_email: string|null,
+     *     created_at: string,
+     *     staged_at: string|null,
+     *     imported_at: string|null,
+     *     stats: array{
+     *         total_rows: int,
+     *         approved_rows: int,
+     *         pending_rows: int,
+     *         skipped_rows: int,
+     *         imported_rows: int,
+     *         failed_rows: int
+     *     },
+     *     server_stats: array<string, mixed>
+     * }>
      */
     public function listBatches(?string $userId = null, ?int $limit = 50): array
     {
@@ -78,8 +98,10 @@ final class ImportBatchService
         }
         $stmt->execute();
         
+        /** @var array<int, array<string, mixed>> $batches */
         $batches = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        while (($row = $stmt->fetch(PDO::FETCH_ASSOC)) !== false) {
+            /** @var array<string, mixed> $row */
             $stats = $row['stats_json'] ? json_decode($row['stats_json'], true) : [];
             
             // Berechne korrekten Status basierend auf tatsächlichen importierten Rows
@@ -130,6 +152,31 @@ final class ImportBatchService
     
     /**
      * Holt Batch mit detaillierten Statistiken
+     * 
+     * @param string $batchUuid UUID des Batches
+     * @return array{
+     *     batch_uuid: string,
+     *     filename: string,
+     *     status: string,
+     *     source_type: string,
+     *     uploaded_by_user_id: string|null,
+     *     created_at: string,
+     *     staged_at: string|null,
+     *     imported_at: string|null,
+     *     mapping_config: array<string, mixed>|null,
+     *     stats: array{
+     *         total_rows: int,
+     *         approved_rows: int,
+     *         pending_rows: int,
+     *         skipped_rows: int,
+     *         imported_rows: int,
+     *         failed_rows: int,
+     *         valid_rows: int,
+     *         warning_rows: int,
+     *         error_rows: int
+     *     },
+     *     server_stats: array<string, mixed>
+     * }|null
      */
     public function getBatchWithStats(string $batchUuid): ?array
     {
@@ -152,9 +199,10 @@ final class ImportBatchService
         ");
         
         $stmt->execute(['batch_uuid' => $batchUuid]);
+        /** @var array<string, mixed>|false $row */
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if (!$row) {
+        if ($row === false) {
             return null;
         }
         
@@ -228,9 +276,10 @@ final class ImportBatchService
             WHERE batch_uuid = ?
         ");
         $stmt->execute([$batchUuid]);
+        /** @var array<string, mixed>|false $batch */
         $batch = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if (!$batch) {
+        if ($batch === false) {
             throw new \RuntimeException("Batch nicht gefunden: $batchUuid");
         }
         
@@ -244,7 +293,11 @@ final class ImportBatchService
             WHERE import_batch_uuid = ?
         ");
         $stmt->execute([$batchUuid]);
+        /** @var array<string, mixed>|false $row */
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            $row = [];
+        }
         $totalCount = (int)($row['total_count'] ?? 0);
         $importedCount = (int)($row['imported_count'] ?? 0);
         
@@ -267,6 +320,7 @@ final class ImportBatchService
             AND da.entity_uuid = ?
         ");
         $stmt->execute([$batchUuid]);
+        /** @var array<int, array<string, string>> $attachments */
         $attachments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // 5. Beginne Transaktion
@@ -274,6 +328,7 @@ final class ImportBatchService
         
         try {
             // 6. Lösche Attachments (soft delete)
+            /** @var array<string, string> $attachment */
             foreach ($attachments as $attachment) {
                 $stmt = $this->db->prepare("DELETE FROM document_attachments WHERE attachment_uuid = ?");
                 $stmt->execute([$attachment['attachment_uuid']]);
@@ -285,7 +340,9 @@ final class ImportBatchService
                     WHERE document_uuid = ?
                 ");
                 $stmt2->execute([$attachment['document_uuid']]);
-                $usageCount = $stmt2->fetch(PDO::FETCH_ASSOC)['count'] ?? 0;
+                /** @var array<string, mixed>|false $usageRow */
+                $usageRow = $stmt2->fetch(PDO::FETCH_ASSOC);
+                $usageCount = $usageRow !== false ? (int)($usageRow['count'] ?? 0) : 0;
                 
                 // Wenn Document nicht mehr verwendet wird, soft delete
                 if ($usageCount === 0) {

@@ -22,10 +22,26 @@ export class RecentListModule {
      */
     async loadRecentList(entityType, containerId, renderItem, onClickHandler, limit = 10) {
         const container = document.getElementById(containerId);
-        if (!container) return;
+        if (!container) {
+            return;
+        }
         
         try {
-            const user = await window.API.getCurrentUser();
+            // Warte kurz, falls User noch geladen wird
+            let user = await window.API.getCurrentUser();
+            if (!user || !user.user_id) {
+                // Versuche es nochmal nach kurzer Verzögerung (User könnte noch geladen werden)
+                await new Promise(resolve => setTimeout(resolve, 500));
+                user = await window.API.getCurrentUser();
+            }
+            
+            if (!user || !user.user_id) {
+                // Versuche es mit dem aktuellen User aus der App (falls vorhanden)
+                if (window.app && window.app.currentUser) {
+                    user = window.app.currentUser;
+                }
+            }
+            
             if (!user || !user.user_id) {
                 container.innerHTML = '';
                 return;
@@ -63,7 +79,7 @@ export class RecentListModule {
             });
         } catch (error) {
             // Bei Fehlern einfach leeren Container anzeigen (keine Fehlermeldung)
-            console.warn(`Could not load recent ${entityType}s:`, error.message);
+            console.warn(`Could not load recent ${entityType}s:`, error);
             container.innerHTML = '';
         }
     }

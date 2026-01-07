@@ -216,7 +216,7 @@ class OrgSearchService
         }
         $stmt->execute();
         
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**
@@ -252,9 +252,10 @@ class OrgSearchService
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
         
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }
+
 
 
 

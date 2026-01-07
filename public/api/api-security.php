@@ -47,9 +47,12 @@ function setCorsHeaders(): void
     
     if ($isDev) {
         // Dev: CORS offen (für lokale Entwicklung)
+        // WICHTIG: Bei Cookies sollte Access-Control-Allow-Origin nicht * sein
+        // Aber für lokale Entwicklung ist das ok
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
+        // In Dev: Credentials nicht setzen wenn Origin * ist (Browser erlaubt das nicht)
     } else {
         // Prod: CORS nur für erlaubte Domains
         $allowedOrigins = $_ENV['CORS_ALLOWED_ORIGINS'] ?? getenv('CORS_ALLOWED_ORIGINS') ?: '';

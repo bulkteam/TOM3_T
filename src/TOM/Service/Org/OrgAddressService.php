@@ -117,7 +117,7 @@ class OrgAddressService
     {
         $stmt = $this->db->prepare("SELECT * FROM org_address WHERE address_uuid = :uuid");
         $stmt->execute(['uuid' => $addressUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**
@@ -137,7 +137,7 @@ class OrgAddressService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**

@@ -32,6 +32,7 @@ if (file_exists($loadEnvPath)) {
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Document\ClamAvService;
 use TOM\Infrastructure\Neo4j\Neo4jService;
+use TOM\Service\Document\BlobService;
 
 try {
     $db = DatabaseConnection::getInstance();
@@ -112,6 +113,11 @@ switch ($endpoint) {
     case 'scheduled-tasks':
         // GET /api/monitoring/scheduled-tasks
         echo json_encode(checkScheduledTasks());
+        break;
+        
+    case 'scan-metrics':
+        // GET /api/monitoring/scan-metrics
+        echo json_encode(getScanMetrics($db));
         break;
         
     default:
@@ -607,6 +613,44 @@ function checkScanWorker(PDO $db): array
                         'last_processed' => $lastProcessed
                     ];
                 } else {
+                    // Prüfe auf pending Blobs mit verarbeiteten Jobs (Problem: Scan erfolgreich, aber Status nicht aktualisiert)
+                    $pendingBlobs = checkPendingBlobsWithProcessedJobs($db);
+                    
+                    if ($pendingBlobs['count'] > 0) {
+                        // Problem gefunden - versuche automatische Behebung
+                        $fixed = fixPendingBlobs($db, $pendingBlobs['count']);
+                        
+                        // Speichere Metrik
+                        recordMonitoringMetric($db, 'scan_pending_fix', 'pending_blobs_with_processed_jobs', $pendingBlobs['count'], [
+                            'fixed_count' => $fixed,
+                            'blob_uuids' => $pendingBlobs['blob_uuids']
+                        ]);
+                        
+                        if ($fixed > 0) {
+                            return [
+                                'status' => 'warning',
+                                'message' => "{$pendingBlobs['count']} Blob(s) mit pending Status gefunden, {$fixed} behoben",
+                                'recent_processed' => $recentProcessed,
+                                'pending_jobs' => $pendingJobs,
+                                'stuck_jobs' => 0,
+                                'last_processed' => $lastProcessed,
+                                'pending_blobs' => $pendingBlobs['count'],
+                                'fixed_blobs' => $fixed
+                            ];
+                        } else {
+                            return [
+                                'status' => 'warning',
+                                'message' => "{$pendingBlobs['count']} Blob(s) mit pending Status gefunden, Behebung fehlgeschlagen",
+                                'recent_processed' => $recentProcessed,
+                                'pending_jobs' => $pendingJobs,
+                                'stuck_jobs' => 0,
+                                'last_processed' => $lastProcessed,
+                                'pending_blobs' => $pendingBlobs['count'],
+                                'fixed_blobs' => 0
+                            ];
+                        }
+                    }
+                    
                     // Alles OK
                     return [
                         'status' => 'ok',
@@ -625,6 +669,208 @@ function checkScanWorker(PDO $db): array
             'message' => 'Fehler: ' . $e->getMessage(),
             'stuck_jobs' => 0
         ];
+    }
+}
+
+/**
+ * Prüft auf Blobs mit pending Status, die bereits verarbeitete Jobs haben
+ */
+function checkPendingBlobsWithProcessedJobs(PDO $db): array
+{
+    $stmt = $db->prepare("
+        SELECT DISTINCT b.blob_uuid
+        FROM blobs b
+        INNER JOIN outbox_event o ON o.aggregate_uuid = b.blob_uuid
+        WHERE b.scan_status = 'pending'
+          AND o.aggregate_type = 'blob'
+          AND o.event_type = 'BlobScanRequested'
+          AND o.processed_at IS NOT NULL
+          AND o.processed_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+        ORDER BY b.created_at DESC
+        LIMIT 20
+    ");
+    $stmt->execute();
+    $blobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    return [
+        'count' => count($blobs),
+        'blob_uuids' => array_column($blobs, 'blob_uuid')
+    ];
+}
+
+/**
+ * Behebt pending Blobs automatisch
+ */
+function fixPendingBlobs(PDO $db, int $maxFixes = 10): int
+{
+    try {
+        $blobService = new BlobService($db);
+        $clamAv = new ClamAvService();
+        
+        // Prüfe, ob ClamAV verfügbar ist
+        if (!$clamAv->isAvailable()) {
+            return 0;
+        }
+        
+        $pendingBlobs = checkPendingBlobsWithProcessedJobs($db);
+        if ($pendingBlobs['count'] === 0) {
+            return 0;
+        }
+        
+        $fixed = 0;
+        $fixedCount = min($pendingBlobs['count'], $maxFixes);
+        
+        foreach (array_slice($pendingBlobs['blob_uuids'], 0, $fixedCount) as $blobUuid) {
+            try {
+                // Prüfe, ob Blob noch existiert und Status noch pending ist
+                $blob = $blobService->getBlob($blobUuid);
+                if (!$blob || $blob['scan_status'] !== 'pending') {
+                    continue;
+                }
+                
+                // Prüfe, ob Datei existiert
+                $filePath = $blobService->getBlobFilePath($blobUuid);
+                if (!$filePath || !file_exists($filePath)) {
+                    // Markiere als Error
+                    $stmt = $db->prepare("
+                        UPDATE blobs
+                        SET scan_status = 'error',
+                            scan_engine = 'clamav',
+                            scan_at = NOW(),
+                            scan_result = :result
+                        WHERE blob_uuid = :blob_uuid
+                    ");
+                    $stmt->execute([
+                        'blob_uuid' => $blobUuid,
+                        'result' => json_encode(['error' => 'Datei nicht gefunden', 'fixed_by' => 'monitoring'])
+                    ]);
+                    $fixed++;
+                    continue;
+                }
+                
+                // Führe Scan durch
+                $scanResult = $clamAv->scan($filePath);
+                
+                // Update Blob-Status
+                $stmt = $db->prepare("
+                    UPDATE blobs
+                    SET scan_status = :status,
+                        scan_engine = 'clamav',
+                        scan_at = NOW(),
+                        scan_result = :result
+                    WHERE blob_uuid = :blob_uuid
+                ");
+                $stmt->execute([
+                    'blob_uuid' => $blobUuid,
+                    'status' => $scanResult['status'],
+                    'result' => json_encode($scanResult)
+                ]);
+                
+                if ($stmt->rowCount() > 0) {
+                    $fixed++;
+                }
+                
+            } catch (\Exception $e) {
+                // Fehler beim Fix - markiere als Error
+                try {
+                    $stmt = $db->prepare("
+                        UPDATE blobs
+                        SET scan_status = 'error',
+                            scan_engine = 'clamav',
+                            scan_at = NOW(),
+                            scan_result = :result
+                        WHERE blob_uuid = :blob_uuid
+                    ");
+                    $stmt->execute([
+                        'blob_uuid' => $blobUuid,
+                        'result' => json_encode(['error' => $e->getMessage(), 'fixed_by' => 'monitoring'])
+                    ]);
+                    $fixed++;
+                } catch (\Exception $updateError) {
+                    // Ignoriere Update-Fehler
+                }
+            }
+        }
+        
+        return $fixed;
+        
+    } catch (\Exception $e) {
+        error_log("Fehler beim Fix von pending Blobs: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Speichert Monitoring-Metrik
+ */
+function recordMonitoringMetric(PDO $db, string $metricType, string $metricName, int $metricValue, array $metricData = []): void
+{
+    try {
+        // Prüfe, ob Metrik bereits existiert
+        $stmt = $db->prepare("
+            SELECT metric_uuid, fixed_count
+            FROM monitoring_metrics
+            WHERE metric_name = :metric_name
+            ORDER BY occurred_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute(['metric_name' => $metricName]);
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            // Aktualisiere bestehende Metrik
+            $fixedCount = (int)($existing['fixed_count'] ?? 0);
+            if (isset($metricData['fixed_count'])) {
+                $fixedCount += (int)$metricData['fixed_count'];
+            }
+            
+            $stmt = $db->prepare("
+                UPDATE monitoring_metrics
+                SET metric_value = :metric_value,
+                    metric_data = :metric_data,
+                    occurred_at = NOW(),
+                    fixed_at = CASE WHEN :fixed_count > 0 THEN NOW() ELSE fixed_at END,
+                    fixed_count = :fixed_count,
+                    updated_at = NOW()
+                WHERE metric_uuid = :metric_uuid
+            ");
+            $stmt->execute([
+                'metric_uuid' => $existing['metric_uuid'],
+                'metric_value' => $metricValue,
+                'metric_data' => json_encode($metricData),
+                'fixed_count' => $fixedCount
+            ]);
+        } else {
+            // Erstelle neue Metrik
+            $metricUuid = bin2hex(random_bytes(16));
+            $metricUuid = substr($metricUuid, 0, 8) . '-' . substr($metricUuid, 8, 4) . '-' . substr($metricUuid, 12, 4) . '-' . substr($metricUuid, 16, 4) . '-' . substr($metricUuid, 20, 12);
+            
+            $fixedCount = 0;
+            if (isset($metricData['fixed_count'])) {
+                $fixedCount = (int)$metricData['fixed_count'];
+            }
+            
+            $stmt = $db->prepare("
+                INSERT INTO monitoring_metrics (
+                    metric_uuid, metric_type, metric_name, metric_value, metric_data,
+                    fixed_at, fixed_count
+                ) VALUES (
+                    :metric_uuid, :metric_type, :metric_name, :metric_value, :metric_data,
+                    CASE WHEN :fixed_count > 0 THEN NOW() ELSE NULL END, :fixed_count
+                )
+            ");
+            $stmt->execute([
+                'metric_uuid' => $metricUuid,
+                'metric_type' => $metricType,
+                'metric_name' => $metricName,
+                'metric_value' => $metricValue,
+                'metric_data' => json_encode($metricData),
+                'fixed_count' => $fixedCount
+            ]);
+        }
+    } catch (\Exception $e) {
+        // Fehler beim Speichern der Metrik nicht kritisch - loggen und ignorieren
+        error_log("Fehler beim Speichern der Monitoring-Metrik: " . $e->getMessage());
     }
 }
 
@@ -1093,6 +1339,7 @@ function checkScheduledTasks(): array
             'TOM3-Neo4j-Sync-Worker' => ['required' => true, 'description' => 'Neo4j Sync Worker'],
             'TOM3-ClamAV-Scan-Worker' => ['required' => false, 'description' => 'ClamAV Scan Worker'],
             'TOM3-ExtractTextWorker' => ['required' => true, 'description' => 'Extract Text Worker'],
+            'TOM3-FixPendingScans' => ['required' => false, 'description' => 'Fix Pending Scans Worker'],
             'TOM3-DuplicateCheck' => ['required' => false, 'description' => 'Duplicate Check'],
             'TOM3-ActivityLog-Maintenance' => ['required' => false, 'description' => 'Activity Log Maintenance'],
             'MySQL-Auto-Recovery' => ['required' => false, 'description' => 'MySQL Auto Recovery'],
@@ -1110,7 +1357,7 @@ $tasks = @()
 $foundTaskNames = @()
 
 # Liste der zu suchenden Tasks
-$taskNamesToFind = @("TOM3-Neo4j-Sync-Worker", "TOM3-ClamAV-Scan-Worker", "TOM3-ExtractTextWorker", "TOM3-DuplicateCheck", "TOM3-ActivityLog-Maintenance", "MySQL-Auto-Recovery", "MySQL-Daily-Backup")
+$taskNamesToFind = @("TOM3-Neo4j-Sync-Worker", "TOM3-ClamAV-Scan-Worker", "TOM3-ExtractTextWorker", "TOM3-FixPendingScans", "TOM3-DuplicateCheck", "TOM3-ActivityLog-Maintenance", "MySQL-Auto-Recovery", "MySQL-Daily-Backup")
 
 # Methode 1: Get-ScheduledTask (findet Tasks des aktuellen Benutzers)
 try {
@@ -1556,6 +1803,68 @@ if ($tasks.Count -eq 0) {
             'stopped_tasks' => 0,
             'missing_required_tasks' => [],
             'tasks' => [],
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Gibt Scan-Metriken zurück (inkl. Statistiken über behobene Probleme)
+ */
+function getScanMetrics(PDO $db): array
+{
+    try {
+        // Hole Metriken für scan_pending_fix
+        $stmt = $db->prepare("
+            SELECT 
+                metric_name,
+                metric_value,
+                metric_data,
+                occurred_at,
+                fixed_at,
+                fixed_count,
+                updated_at
+            FROM monitoring_metrics
+            WHERE metric_type = 'scan_pending_fix'
+            ORDER BY occurred_at DESC
+            LIMIT 10
+        ");
+        $stmt->execute();
+        $metrics = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Parse metric_data JSON
+        foreach ($metrics as &$metric) {
+            if ($metric['metric_data']) {
+                $metric['metric_data'] = json_decode($metric['metric_data'], true);
+            }
+        }
+        
+        // Gesamt-Statistiken
+        $stmt = $db->prepare("
+            SELECT 
+                SUM(metric_value) as total_occurrences,
+                SUM(fixed_count) as total_fixed,
+                COUNT(*) as total_events,
+                MAX(occurred_at) as last_occurrence
+            FROM monitoring_metrics
+            WHERE metric_type = 'scan_pending_fix'
+        ");
+        $stmt->execute();
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Aktuelle pending Blobs
+        $pendingBlobs = checkPendingBlobsWithProcessedJobs($db);
+        
+        return [
+            'current_pending_blobs' => $pendingBlobs['count'],
+            'total_occurrences' => (int)($stats['total_occurrences'] ?? 0),
+            'total_fixed' => (int)($stats['total_fixed'] ?? 0),
+            'total_events' => (int)($stats['total_events'] ?? 0),
+            'last_occurrence' => $stats['last_occurrence'],
+            'recent_metrics' => $metrics
+        ];
+    } catch (Exception $e) {
+        return [
             'error' => $e->getMessage()
         ];
     }

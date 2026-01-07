@@ -185,7 +185,7 @@ class PersonService extends BaseEntityService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function searchPersons(string $query, ?bool $activeOnly = true): array
@@ -393,6 +393,6 @@ class PersonService extends BaseEntityService
     
     public function getRecentPersons(string $userId, int $limit = 10): array
     {
-        return $this->accessTrackingService->getRecentEntities($userId, 'person', $limit);
+        return $this->accessTrackingService->getRecentEntities('person', $userId, $limit);
     }
 }

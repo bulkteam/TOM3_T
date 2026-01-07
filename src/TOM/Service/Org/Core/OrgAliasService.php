@@ -44,7 +44,7 @@ class OrgAliasService
         
         $stmt = $this->db->prepare("SELECT * FROM org_alias WHERE alias_uuid = :uuid");
         $stmt->execute(['uuid' => $uuid]);
-        return $stmt->fetch() ?: [];
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**
@@ -54,9 +54,10 @@ class OrgAliasService
     {
         $stmt = $this->db->prepare("SELECT * FROM org_alias WHERE org_uuid = :uuid ORDER BY is_primary DESC, alias_name");
         $stmt->execute(['uuid' => $orgUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }
+
 
 
 

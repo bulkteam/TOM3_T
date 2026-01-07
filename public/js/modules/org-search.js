@@ -70,8 +70,10 @@ export class OrgSearchModule {
             }
         }, 100);
         
-        // Lade "Zuletzt verwendet"
-        this.loadRecentOrgs();
+        // Lade "Zuletzt verwendet" nach kurzer Verzögerung, damit User geladen ist
+        setTimeout(() => {
+            this.loadRecentOrgs();
+        }, 200);
         
         // Debounced Search-Input (zentralisiert)
         if (this._searchInputCleanup) {

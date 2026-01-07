@@ -22,7 +22,8 @@ class CaseService
     {
         // Generiere UUID für MySQL
         $uuidStmt = $this->db->query("SELECT UUID() as uuid");
-        $uuid = $uuidStmt->fetch()['uuid'];
+        $uuidRow = $uuidStmt->fetch(PDO::FETCH_ASSOC);
+        $uuid = $uuidRow ? $uuidRow['uuid'] : null;
         
         $stmt = $this->db->prepare("
             INSERT INTO case_item (case_uuid, case_type, engine, phase, status, owner_role, title, description, org_uuid, project_uuid, priority)
@@ -53,7 +54,7 @@ class CaseService
     {
         $stmt = $this->db->prepare("SELECT * FROM case_item WHERE case_uuid = :uuid");
         $stmt->execute(['uuid' => $caseUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     public function listCases(array $filters = []): array
@@ -75,7 +76,7 @@ class CaseService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function updateCase(string $caseUuid, array $data): array
@@ -109,7 +110,8 @@ class CaseService
     {
         // Generiere UUID für MySQL
         $uuidStmt = $this->db->query("SELECT UUID() as uuid");
-        $uuid = $uuidStmt->fetch()['uuid'];
+        $uuidRow = $uuidStmt->fetch(PDO::FETCH_ASSOC);
+        $uuid = $uuidRow ? $uuidRow['uuid'] : null;
         
         $stmt = $this->db->prepare("
             INSERT INTO case_note (note_uuid, case_uuid, note_type, body)
@@ -119,7 +121,7 @@ class CaseService
         
         $stmt = $this->db->prepare("SELECT * FROM case_note WHERE note_uuid = :uuid");
         $stmt->execute(['uuid' => $uuid]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function getBlockers(string $caseUuid): array
@@ -129,7 +131,7 @@ class CaseService
             WHERE case_uuid = :case_uuid AND is_fulfilled = false
         ");
         $stmt->execute(['case_uuid' => $caseUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function fulfillRequirement(string $caseUuid, string $requirementUuid, array $data): array
@@ -147,7 +149,7 @@ class CaseService
         
         $stmt = $this->db->prepare("SELECT * FROM case_requirement WHERE requirement_uuid = :uuid");
         $stmt->execute(['uuid' => $requirementUuid]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     }
 }
 

@@ -209,7 +209,7 @@ class AuthService
         ");
         $stmt->execute(['user_id' => $userId]);
         
-        if (!$stmt->fetch()) {
+        if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
             return false;
         }
         

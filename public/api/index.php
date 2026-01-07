@@ -69,23 +69,36 @@ register_shutdown_function(function() {
 });
 
 try {
-    // Parse URL path
-    $requestUri = $_SERVER['REQUEST_URI'];
-    $path = parse_url($requestUri, PHP_URL_PATH);
+    // Robust path parsing independent of deploy base (/TOM3/public or /)
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
     
-    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
-    $path = preg_replace('#^/tom3/public#i', '', $path);
+    // Script dir is the directory of this router, e.g. "/TOM3/public/api" or "/api"
+    $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
     
-    // Entferne /api prefix
-    $path = preg_replace('#^/api/?|^api/?#', '', $path);
-    $path = trim($path, '/');
+    // Strip scriptDir prefix from URL path if present
+    if ($scriptDir !== '' && stripos($path, $scriptDir) === 0) {
+        $path = substr($path, strlen($scriptDir));
+    }
     
-    $parts = explode('/', $path);
+    // If called as /api/index.php/... strip index.php
+    $path = preg_replace('#^/index\.php#i', '', $path);
     
-    $method = $_SERVER['REQUEST_METHOD'];
+    $path = trim($path, '/');               // e.g. "auth/current"
+    $parts = ($path === '') ? [] : explode('/', $path);
+    
+    $method   = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $resource = $parts[0] ?? '';
-    $id = $parts[1] ?? null; // Pass ID to sub-handlers
-    $action = $parts[2] ?? null; // Pass action to sub-handlers
+    $id       = $parts[1] ?? null;
+    $action   = $parts[2] ?? null;
+    
+    // Optional: helpful output if no resource given
+    if ($resource === '') {
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(["ok" => true, "message" => "API router is running"], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
     
     // Auth-Check (außer für öffentliche Endpunkte)
     if (!isPublicEndpoint($resource, $id, $action)) {
@@ -99,6 +112,12 @@ try {
     
     // Route to appropriate handler
     switch ($resource) {
+        case 'health':
+            // GET /api/health - Health check endpoint
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(["ok" => true, "message" => "API router is running"], JSON_UNESCAPED_SLASHES);
+            exit;
         case 'import':
             require __DIR__ . '/import.php';
             break;
@@ -168,6 +187,11 @@ try {
             require __DIR__ . '/monitoring.php';
             break;
         case 'auth':
+            // $id enthält den ersten Teil nach 'auth' (z.B. 'current' für /api/auth/current)
+            // auth.php erwartet $action als ersten Teil nach 'auth'
+            // Setze $action auf $id, damit auth.php es korrekt verarbeitet
+            $action = $id ?? $action ?? null;
+            $id = null; // Reset $id, da auth.php es nicht verwendet
             require __DIR__ . '/auth.php';
             break;
         case 'documents':
@@ -192,7 +216,12 @@ try {
             break;
         default:
             http_response_code(404);
-            echo json_encode(['error' => 'Not found', 'path' => $path, 'resource' => $resource]);
+            echo json_encode([
+                'error' => 'Not found',
+                'message' => 'API endpoint not found',
+                'resource' => $resource,
+                'path' => $path
+            ]);
             break;
     }
 } catch (Exception $e) {

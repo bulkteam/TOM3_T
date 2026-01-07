@@ -87,3 +87,4 @@ if ($created > 0) {
     echo "\n✅ Die Organisationen sollten jetzt in der Inside Sales Queue unter 'Neu' erscheinen.\n";
 }
 
+

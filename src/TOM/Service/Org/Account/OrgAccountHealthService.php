@@ -115,8 +115,8 @@ class OrgAccountHealthService
             WHERE org_uuid = :org_uuid
         ");
         $stmt->execute(['org_uuid' => $orgUuid]);
-        $result = $stmt->fetch();
-        return $result['last_contact'] ?? null;
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $result ? ($result['last_contact'] ?? null) : null;
     }
     
     private function getStaleOffers(string $orgUuid, int $daysThreshold): array
@@ -135,7 +135,7 @@ class OrgAccountHealthService
             ORDER BY updated_at ASC
         ");
         $stmt->execute(['org_uuid' => $orgUuid, 'threshold' => $daysThreshold]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     private function getWaitingProjects(string $orgUuid, int $daysThreshold): array
@@ -153,7 +153,7 @@ class OrgAccountHealthService
             ORDER BY updated_at ASC
         ");
         $stmt->execute(['org_uuid' => $orgUuid, 'threshold' => $daysThreshold]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     private function getOpenEscalations(string $orgUuid): array
@@ -166,9 +166,10 @@ class OrgAccountHealthService
             AND status = 'eskaliert'
         ");
         $stmt->execute(['org_uuid' => $orgUuid]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 }
+
 
 
 

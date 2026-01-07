@@ -46,7 +46,7 @@ class WorkflowService
         
         $stmt = $this->db->prepare("SELECT * FROM case_handover WHERE handover_uuid = :uuid");
         $stmt->execute(['uuid' => $uuid]);
-        $handover = $stmt->fetch();
+        $handover = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         
         // Update Case
         (new CaseService($this->db))->updateCase($caseUuid, ['owner_role' => $targetRole]);
@@ -86,7 +86,7 @@ class WorkflowService
         
         $stmt = $this->db->prepare("SELECT * FROM case_return WHERE return_uuid = :uuid");
         $stmt->execute(['uuid' => $uuid]);
-        $return = $stmt->fetch();
+        $return = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         
         // Update Case
         (new CaseService($this->db))->updateCase($caseUuid, ['owner_role' => $previousRole]);

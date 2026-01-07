@@ -1,0 +1,11 @@
+parameters:
+    level: 5
+    paths:
+        - src
+        - public/api
+    tmpDir: var/phpstan
+    reportUnmatchedIgnoredErrors: true
+    ignoreErrors:
+        - identifier: missingType.iterableValue
+        - identifier: missingType.generics
+

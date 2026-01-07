@@ -33,6 +33,7 @@ TOM3 benötigt folgende automatische Tasks:
 | `TOM3-Neo4j-Sync-Worker` | Synchronisiert Events aus MySQL nach Neo4j | Alle 5 Minuten | **Pflicht** |
 | `TOM3-ClamAV-Scan-Worker` | Verarbeitet Scan-Jobs für Dokumente (ClamAV) | Alle 5 Minuten | **Pflicht** (wenn ClamAV aktiv) |
 | `TOM3-ExtractTextWorker` | Extrahiert Text aus Dokumenten (PDF, DOCX, XLSX, etc.) | Alle 5 Minuten | **Pflicht** |
+| `TOM3-FixPendingScans` | Behebt automatisch Blobs mit pending Status (obwohl Jobs verarbeitet wurden) | Alle 15 Minuten | Empfohlen |
 | `TOM3-DuplicateCheck` | Prüft auf potenzielle Duplikate in Organisationen und Personen | Täglich 02:00 Uhr | Empfohlen |
 | `TOM3-ActivityLog-Maintenance` | Wartung für Activity-Log (Archivierung, Partitionierung, Löschung) | Monatlich am 1. Tag, 02:00 Uhr | Empfohlen |
 | `MySQL-Auto-Recovery` | Prüft und startet MySQL automatisch | Beim Systemstart | Optional |
@@ -242,6 +243,63 @@ Get-ScheduledTask -TaskName "TOM3-ClamAV-Scan-Worker" | Get-ScheduledTaskInfo
 
 **Unsichtbare Ausführung:** Der Task verwendet einen VBScript-Wrapper (`scripts/scan-blob-worker.vbs`), der das PHP-Script unsichtbar startet. Dadurch wird keine Konsole angezeigt.
 
+## 6. Fix Pending Scans Worker (Empfohlen)
+
+**Task-Name:** `TOM3-FixPendingScans`
+
+**Funktion:** Behebt automatisch Blobs mit `pending` Scan-Status, obwohl ihre Scan-Jobs bereits verarbeitet wurden. Dies kann vorkommen, wenn der Scan-Worker die Datei erfolgreich gescannt hat, aber der Status in der Datenbank nicht aktualisiert wurde (z.B. aufgrund von Datenbankfehlern oder Race Conditions).
+
+**Warum notwendig?**
+Manchmal bleiben Blobs im `pending` Status, obwohl:
+- Der Scan-Job bereits verarbeitet wurde (`processed_at IS NOT NULL`)
+- Die Datei erfolgreich gescannt wurde
+- Der Status-Update fehlgeschlagen ist (z.B. durch Datenbankfehler, Retry-Logik)
+
+**Einrichtung:**
+
+```powershell
+cd C:\xampp\htdocs\TOM3
+powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker-schtasks.ps1
+```
+
+**Alternative (mit Admin-Rechten):**
+```powershell
+cd C:\xampp\htdocs\TOM3
+powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker.ps1
+```
+
+**Konfiguration:**
+- **Intervall:** Alle 15 Minuten
+- **Script:** `scripts\jobs\fix-pending-scans.php`
+- **Max. Blobs pro Run:** 10 (konfigurierbar im Script)
+
+**Status prüfen:**
+```powershell
+Get-ScheduledTask -TaskName "TOM3-FixPendingScans" | Get-ScheduledTaskInfo
+```
+
+**Manuell testen:**
+```batch
+# Mit Output (für Debugging)
+php scripts\jobs\fix-pending-scans.php --verbose
+
+# Stumm (wie im Task Scheduler)
+php scripts\jobs\fix-pending-scans.php
+```
+
+**Was macht das Script?**
+1. Findet Blobs mit `scan_status = 'pending'`, die bereits verarbeitete Scan-Jobs haben
+2. Führt einen Re-Scan durch (falls ClamAV verfügbar)
+3. Aktualisiert den Status in der Datenbank
+4. Zeichnet Metriken in `monitoring_metrics` auf
+
+**Monitoring:**
+- Das Monitoring-Dashboard zeigt automatisch Warnungen, wenn pending Blobs gefunden werden
+- Metriken werden in der `monitoring_metrics` Tabelle gespeichert
+- Siehe `docs/MONITORING.md` für Details
+
+**Hinweis:** Dieser Task ist optional, aber **empfohlen**, um sicherzustellen, dass alle Dokumente korrekt gescannt werden und nicht im `pending` Status verbleiben.
+
 ## Einrichtung aller Tasks
 
 ### Option 1: Automatisch (Empfohlen)
@@ -268,6 +326,12 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-extract-text-worker-task.
 ```powershell
 cd C:\xampp\htdocs\TOM3
 powershell -ExecutionPolicy Bypass -File scripts\setup-clamav-scan-worker.ps1
+```
+
+**Fix Pending Scans Worker (empfohlen):**
+```powershell
+cd C:\xampp\htdocs\TOM3
+powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker-schtasks.ps1
 ```
 
 **MySQL Tasks:**
@@ -317,6 +381,11 @@ Get-ScheduledTask -TaskName "TOM3-ExtractTextWorker" | Get-ScheduledTaskInfo
 **ClamAV Scan Worker:**
 ```powershell
 Get-ScheduledTask -TaskName "TOM3-ClamAV-Scan-Worker" | Get-ScheduledTaskInfo
+```
+
+**Fix Pending Scans Worker:**
+```powershell
+Get-ScheduledTask -TaskName "TOM3-FixPendingScans" | Get-ScheduledTaskInfo
 ```
 
 **MySQL Daily Backup:**
@@ -378,6 +447,13 @@ Nach dem Portieren auf ein neues System:
 - [ ] **Extract Text Worker Status geprüft**
   ```powershell
   Get-ScheduledTask -TaskName "TOM3-ExtractTextWorker" | Get-ScheduledTaskInfo
+  ```
+- [ ] **Fix Pending Scans Worker eingerichtet** (Empfohlen)
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker-schtasks.ps1
+  ```
+  ```powershell
+  Get-ScheduledTask -TaskName "TOM3-FixPendingScans" | Get-ScheduledTaskInfo
   ```
 - [ ] **MySQL Auto-Recovery eingerichtet** (Optional)
   ```batch

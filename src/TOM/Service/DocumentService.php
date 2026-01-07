@@ -610,7 +610,7 @@ class DocumentService extends BaseEntityService
             'entity_uuid' => $entityUuid
         ]);
         
-        if ($stmt->fetch()) {
+        if ($stmt->fetch(PDO::FETCH_ASSOC)) {
             throw new \InvalidArgumentException("Document ist bereits mit dieser Entität verknüpft");
         }
         
@@ -860,12 +860,13 @@ class DocumentService extends BaseEntityService
             $sql .= " AND d.status = 'active'";
         }
         
-        // Filter: Scan-Status (default: clean)
+        // Filter: Scan-Status (default: alle außer infected)
         if (!empty($filters['scan_status'])) {
             $sql .= " AND b.scan_status = :scan_status";
             $params['scan_status'] = $filters['scan_status'];
         } else {
-            $sql .= " AND b.scan_status = 'clean'";
+            // Standard: Zeige alle Dokumente außer infizierte
+            $sql .= " AND (b.scan_status IS NULL OR b.scan_status != 'infected')";
         }
         
         // Filter: Extraction-Status (optional, standardmäßig auch pending erlauben)
@@ -1061,12 +1062,13 @@ class DocumentService extends BaseEntityService
             $sql .= " AND d.status = 'active'";
         }
         
-        // Filter: Scan-Status (default: clean)
+        // Filter: Scan-Status (default: alle außer infected)
         if (!empty($filters['scan_status'])) {
             $sql .= " AND b.scan_status = :scan_status";
             $params['scan_status'] = $filters['scan_status'];
         } else {
-            $sql .= " AND b.scan_status = 'clean'";
+            // Standard: Zeige alle Dokumente außer infizierte
+            $sql .= " AND (b.scan_status IS NULL OR b.scan_status != 'infected')";
         }
         
         // Filter: Zeitraum
@@ -1128,6 +1130,24 @@ class DocumentService extends BaseEntityService
                 $sql .= " AND JSON_CONTAINS(d.tags, :{$paramName})";
                 $params[$paramName] = json_encode($tag);
             }
+        }
+        
+        // Filter: Schließe Dokumente aus, die NUR mit import_batch verknüpft sind
+        // (außer wenn explizit entity_type='import_batch' gefiltert wird)
+        // Dokumente, die sowohl mit import_batch als auch mit anderen Entitäten verknüpft sind, werden angezeigt
+        if (empty($filters['entity_type']) || $filters['entity_type'] !== 'import_batch') {
+            $sql .= " AND NOT (
+                EXISTS (
+                    SELECT 1 FROM document_attachments da
+                    WHERE da.document_uuid = d.document_uuid
+                      AND da.entity_type = 'import_batch'
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM document_attachments da
+                    WHERE da.document_uuid = d.document_uuid
+                      AND da.entity_type != 'import_batch'
+                )
+            )";
         }
         
         $sql .= " ORDER BY relevance_score DESC, d.created_at DESC LIMIT :limit OFFSET :offset";

@@ -179,7 +179,7 @@ class UserPermissionService
         } else {
             $stmt = $this->db->prepare("SELECT user_id FROM users WHERE user_id = :user_id AND is_active = 1");
             $stmt->execute(['user_id' => (int)$userId]);
-            $user = $stmt->fetch();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
         }
         
         return $user !== null; // Alle aktiven User können Account Owner sein

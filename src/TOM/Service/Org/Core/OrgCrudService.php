@@ -211,7 +211,8 @@ class OrgCrudService extends BaseEntityService
         
         // Generiere UUID für MySQL
         $uuidStmt = $this->db->query("SELECT UUID() as uuid");
-        $caseUuid = $uuidStmt->fetch()['uuid'];
+        $uuidRow = $uuidStmt->fetch(PDO::FETCH_ASSOC);
+        $caseUuid = $uuidRow ? $uuidRow['uuid'] : null;
         
         // Erstelle case_item für Inside Sales Queue
         $stmt = $this->db->prepare("
@@ -266,7 +267,7 @@ class OrgCrudService extends BaseEntityService
             WHERE o.org_uuid = :uuid
         ");
         $stmt->execute(['uuid' => $orgUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     /**

@@ -217,7 +217,7 @@ class OrgService extends BaseEntityService
             ORDER BY uoa.accessed_at DESC
         ");
         $stmt->execute(['user_id' => $userId]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     /**

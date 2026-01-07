@@ -19,6 +19,7 @@ use TOM\Infrastructure\Auth\AuthService;
 use TOM\Infrastructure\Activity\ActivityLogService;
 use TOM\Infrastructure\Security\RateLimiter;
 use TOM\Infrastructure\Database\DatabaseConnection;
+use TOM\Service\User\UserPermissionService;
 require_once __DIR__ . '/api-security.php';
 
 // Headers werden bereits vom Router gesetzt
@@ -94,23 +95,82 @@ try {
     switch ($method) {
         case 'GET':
             if ($action === 'current') {
-                // GET /api/auth/current - Aktueller User
+                // GET /api/auth/current - Aktueller User (minimal response mit Capabilities)
                 try {
                     $user = $auth->getCurrentUser();
                     if ($user) {
-                        // Entferne sensitive Daten
-                        unset($user['last_login_at']);
-                        $json = json_encode($user, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        // Cache-Control: keine Proxy-Caches für User-Daten
+                        header('Cache-Control: no-store, no-cache, must-revalidate, private');
+                        header('Pragma: no-cache');
+                        header('Expires: 0');
+                        
+                        // Minimal-Response: nur das Nötige für Frontend
+                        $userId = (int)$user['user_id'];
+                        $userRoles = $user['roles'] ?? [];
+                        
+                        // Lade Capabilities für den User
+                        $permissionService = new UserPermissionService();
+                        $allCapabilities = $permissionService->getUserCapabilities($userId, $userRoles);
+                        
+                        // Filter: Nur Frontend-relevante Capabilities senden
+                        // Backend-interne Capabilities (z.B. import.commit, import.delete) werden nicht gesendet
+                        $frontendCapabilities = [
+                            // Org-Management
+                            'org.read', 'org.write', 'org.delete', 'org.archive', 'org.export',
+                            // Person-Management
+                            'person.read', 'person.write', 'person.delete',
+                            // Document-Management
+                            'document.read', 'document.upload', 'document.delete',
+                            // Import (nur Upload/Review, nicht Backend-Operationen)
+                            'import.upload', 'import.review',
+                            // Case-Management
+                            'case.read', 'case.write', 'case.delete',
+                            // Project-Management
+                            'project.read', 'project.write', 'project.delete',
+                            // Admin
+                            'admin.manage_users', 'admin.manage_roles', 'admin.view_monitoring', 'admin.export_data'
+                        ];
+                        
+                        // Filtere nur die Capabilities, die der User hat UND Frontend-relevant sind
+                        $capabilities = array_intersect($allCapabilities, $frontendCapabilities);
+                        
+                        // Minimal-Response (keine PII wie Email, keine Role-Details)
+                        // WICHTIG: user_id muss vorhanden sein für Frontend-Kompatibilität
+                        $response = [
+                            'authenticated' => true,
+                            'user_id' => (string)$userId, // Als String für Konsistenz
+                            'user' => [
+                                'id' => $userId,
+                                'user_id' => (string)$userId, // Für Frontend-Kompatibilität
+                                'name' => $user['name'] ?? 'Unknown',
+                                'email' => $user['email'] ?? null,
+                                'displayName' => $user['name'] ?? 'Unknown',
+                                'roles' => $userRoles
+                            ],
+                            'capabilities' => array_values($capabilities) // array_values für konsistente Indizierung
+                        ];
+                        
+                        // Optional: Roles für Backward Compatibility (kann später entfernt werden)
+                        if (!empty($userRoles)) {
+                            $response['roles'] = $userRoles;
+                        }
+                        
+                        $json = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                         if ($json === false) {
                             throw new \RuntimeException('JSON encoding failed: ' . json_last_error_msg());
                         }
                         echo $json;
                     } else {
                         http_response_code(401);
-                        echo json_encode(['error' => 'Not authenticated']);
+                        header('Cache-Control: no-store, no-cache, must-revalidate, private');
+                        echo json_encode([
+                            'authenticated' => false,
+                            'error' => 'Not authenticated'
+                        ]);
                     }
                 } catch (\Exception $e) {
                     http_response_code(500);
+                    header('Cache-Control: no-store, no-cache, must-revalidate, private');
                     echo json_encode([
                         'error' => 'Failed to get current user',
                         'message' => $e->getMessage(),

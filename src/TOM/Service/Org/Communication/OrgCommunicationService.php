@@ -110,7 +110,7 @@ class OrgCommunicationService
     {
         $stmt = $this->db->prepare("SELECT * FROM org_communication_channel WHERE channel_uuid = :uuid");
         $stmt->execute(['uuid' => $channelUuid]);
-        return $stmt->fetch() ?: null;
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     
     public function getCommunicationChannels(string $orgUuid, ?string $channelType = null): array
@@ -127,7 +127,7 @@ class OrgCommunicationService
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
     
     public function updateCommunicationChannel(string $channelUuid, array $data, ?string $userId = null): array
@@ -362,6 +362,7 @@ class OrgCommunicationService
         return (string)$value;
     }
 }
+
 
 
 

@@ -160,17 +160,16 @@ class ImportIndustryCombinationChecker
                         }
                         
                         // Füge Kombination hinzu, auch wenn Level 3 neu angelegt werden muss
-                        if (!empty($level2Matches)) {
-                            $suggestions[] = [
-                                'excel_level1' => $excelLevel1,
-                                'excel_level2' => $excelLevel2,
-                                'excel_level3s' => $excelLevel3s,
-                                'db_level1' => $dbLevel1,
-                                'level2_matches' => $level2Matches,
-                                'level3_matches' => $level3Matches,
-                                'level3_needs_creation' => $level3Results
-                            ];
-                        }
+                        // $level2Matches ist hier garantiert nicht leer, da wir gerade ein Element hinzugefügt haben
+                        $suggestions[] = [
+                            'excel_level1' => $excelLevel1,
+                            'excel_level2' => $excelLevel2,
+                            'excel_level3s' => $excelLevel3s,
+                            'db_level1' => $dbLevel1,
+                            'level2_matches' => $level2Matches,
+                            'level3_matches' => $level3Matches,
+                            'level3_needs_creation' => $level3Results
+                        ];
                     }
                 }
             }
@@ -334,6 +333,7 @@ class ImportIndustryCombinationChecker
         return $suggestions;
     }
 }
+
 
 
 
