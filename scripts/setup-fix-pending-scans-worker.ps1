@@ -42,12 +42,14 @@ if ($existingTask) {
 }
 
 # VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
-$vbsWrapper = Join-Path $PSScriptRoot "fix-pending-scans.vbs"
+$vbsWrapper = Join-Path $PSScriptRoot "fix-pending-scans-worker.vbs"
 if (Test-Path $vbsWrapper) {
     $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsWrapper`""
+    Write-Host "Verwende VBScript-Wrapper für unsichtbare Ausführung" -ForegroundColor Green
 } else {
     # Fallback: PHP direkt (kann kurz aufblinken)
     $action = New-ScheduledTaskAction -Execute $phpPath -Argument "`"$scriptPath`""
+    Write-Host "WARNUNG: VBScript-Wrapper nicht gefunden, verwende PHP direkt (kann kurz aufblinken)" -ForegroundColor Yellow
 }
 
 # Task-Trigger: Alle 15 Minuten

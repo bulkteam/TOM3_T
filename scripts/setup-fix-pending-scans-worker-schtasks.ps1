@@ -54,13 +54,28 @@ if ($taskExists) {
     Write-Host "Alter Task entfernt." -ForegroundColor Yellow
 }
 
+# Prüfe, ob VBScript-Wrapper existiert
+$vbsWrapper = Join-Path $PSScriptRoot "fix-pending-scans-worker.vbs"
+$useVbsWrapper = Test-Path $vbsWrapper
+
 # Erstelle Task mit schtasks.exe (ohne XML, direkt mit Parametern)
 try {
     # Verwende schtasks.exe mit direkten Parametern
     $startTime = Get-Date -Format "HH:mm"
+    
+    if ($useVbsWrapper) {
+        # Verwende VBScript-Wrapper für unsichtbare Ausführung
+        $taskCommand = "wscript.exe `"$vbsWrapper`""
+        Write-Host "Verwende VBScript-Wrapper für unsichtbare Ausführung" -ForegroundColor Green
+    } else {
+        # Fallback: PHP direkt (kann kurz aufblinken)
+        $taskCommand = "$phpPath `"$scriptPath`""
+        Write-Host "WARNUNG: VBScript-Wrapper nicht gefunden, verwende PHP direkt (kann kurz aufblinken)" -ForegroundColor Yellow
+    }
+    
     $result = schtasks /Create `
         /TN $taskName `
-        /TR "$phpPath `"$scriptPath`"" `
+        /TR $taskCommand `
         /SC MINUTE `
         /MO 15 `
         /ST $startTime `
@@ -74,7 +89,11 @@ try {
         Write-Host ""
         Write-Host "Konfiguration:" -ForegroundColor Cyan
         Write-Host "  - Name: $taskName"
-        Write-Host "  - Script: $scriptPath"
+        if ($useVbsWrapper) {
+            Write-Host "  - Script: $scriptPath (über VBScript-Wrapper - unsichtbar)" -ForegroundColor Green
+        } else {
+            Write-Host "  - Script: $scriptPath (direkt - kann kurz aufblinken)" -ForegroundColor Yellow
+        }
         Write-Host "  - Intervall: Alle 15 Minuten"
         Write-Host "  - User: $env:USERDOMAIN\$env:USERNAME"
         Write-Host ""
