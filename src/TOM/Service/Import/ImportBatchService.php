@@ -63,8 +63,9 @@ final class ImportBatchService
                 b.imported_at,
                 b.stats_json,
                 COUNT(DISTINCT s.staging_uuid) as total_rows,
-                SUM(CASE WHEN s.disposition = 'approved' AND s.import_status != 'imported' THEN 1 ELSE 0 END) as approved_rows,
-                SUM(CASE WHEN s.disposition = 'pending' AND s.import_status != 'imported' THEN 1 ELSE 0 END) as pending_rows,
+                SUM(CASE WHEN s.disposition = 'approved' AND s.import_status = 'pending' THEN 1 ELSE 0 END) as approved_rows,
+                SUM(CASE WHEN s.disposition = 'pending' AND s.import_status = 'pending' THEN 1 ELSE 0 END) as pending_rows,
+                SUM(CASE WHEN s.duplicate_status IN ('confirmed','possible') AND s.import_status != 'imported' THEN 1 ELSE 0 END) as redundant_rows,
                 SUM(CASE WHEN s.disposition = 'skip' THEN 1 ELSE 0 END) as skipped_rows,
                 SUM(CASE WHEN s.import_status = 'imported' THEN 1 ELSE 0 END) as imported_rows,
                 SUM(CASE WHEN s.import_status = 'failed' THEN 1 ELSE 0 END) as failed_rows
@@ -107,20 +108,26 @@ final class ImportBatchService
             // Berechne korrekten Status basierend auf tatsächlichen importierten Rows
             $totalRows = (int)($row['total_rows'] ?? 0);
             $importedRows = (int)($row['imported_rows'] ?? 0);
+            $redundantRows = (int)($row['redundant_rows'] ?? 0);
+            $skippedRows = (int)($row['skipped_rows'] ?? 0);
             $actualStatus = $row['status'];
             
-            // Wenn Status IMPORTED ist, aber nicht alle Rows importiert wurden, korrigiere Status
-            if ($actualStatus === 'IMPORTED' && $totalRows > 0 && $importedRows < $totalRows) {
-                // Nicht alle Rows importiert - Status sollte nicht IMPORTED sein
-                $approvedRows = (int)($row['approved_rows'] ?? 0);
-                $pendingRows = (int)($row['pending_rows'] ?? 0);
-                
-                if ($approvedRows > 0) {
-                    $actualStatus = 'APPROVED';
-                } else if ($pendingRows > 0) {
-                    $actualStatus = 'STAGED';
-                } else {
-                    $actualStatus = 'STAGED'; // Fallback
+            // Wenn alle Rows entweder importiert, redundant oder explizit übersprungen sind → IMPORTED
+            if ($totalRows > 0 && ($importedRows + $redundantRows + $skippedRows) >= $totalRows) {
+                $actualStatus = 'IMPORTED';
+            } else {
+                // Wenn Status IMPORTED ist, aber noch offene Rows existieren, korrigiere Status
+                if ($actualStatus === 'IMPORTED' && $totalRows > 0 && $importedRows < $totalRows) {
+                    $approvedRows = (int)($row['approved_rows'] ?? 0);
+                    $pendingRows = (int)($row['pending_rows'] ?? 0);
+                    
+                    if ($approvedRows > 0) {
+                        $actualStatus = 'APPROVED';
+                    } else if ($pendingRows > 0) {
+                        $actualStatus = 'STAGED';
+                    } else {
+                        $actualStatus = 'STAGED'; // Fallback
+                    }
                 }
             }
             
@@ -139,6 +146,7 @@ final class ImportBatchService
                     'total_rows' => $totalRows,
                     'approved_rows' => (int)($row['approved_rows'] ?? 0),
                     'pending_rows' => (int)($row['pending_rows'] ?? 0),
+                    'redundant_rows' => (int)($row['redundant_rows'] ?? 0),
                     'skipped_rows' => (int)($row['skipped_rows'] ?? 0),
                     'imported_rows' => $importedRows,
                     'failed_rows' => (int)($row['failed_rows'] ?? 0)
@@ -184,8 +192,9 @@ final class ImportBatchService
             SELECT 
                 b.*,
                 COUNT(DISTINCT s.staging_uuid) as total_rows,
-                SUM(CASE WHEN s.disposition = 'approved' AND s.import_status != 'imported' THEN 1 ELSE 0 END) as approved_rows,
-                SUM(CASE WHEN s.disposition = 'pending' AND s.import_status != 'imported' THEN 1 ELSE 0 END) as pending_rows,
+                SUM(CASE WHEN s.disposition = 'approved' AND s.import_status = 'pending' THEN 1 ELSE 0 END) as approved_rows,
+                SUM(CASE WHEN s.disposition = 'pending' AND s.import_status = 'pending' THEN 1 ELSE 0 END) as pending_rows,
+                SUM(CASE WHEN s.duplicate_status IN ('confirmed','possible') AND s.import_status != 'imported' THEN 1 ELSE 0 END) as redundant_rows,
                 SUM(CASE WHEN s.disposition = 'skip' THEN 1 ELSE 0 END) as skipped_rows,
                 SUM(CASE WHEN s.import_status = 'imported' THEN 1 ELSE 0 END) as imported_rows,
                 SUM(CASE WHEN s.import_status = 'failed' THEN 1 ELSE 0 END) as failed_rows,
@@ -239,15 +248,16 @@ final class ImportBatchService
             'staged_at' => $row['staged_at'],
             'imported_at' => $row['imported_at'],
             'mapping_config' => isset($row['mapping_config']) && $row['mapping_config'] ? json_decode($row['mapping_config'], true) : null,
-            'stats' => [
-                'total_rows' => $totalRows,
-                'approved_rows' => (int)($row['approved_rows'] ?? 0),
-                'pending_rows' => (int)($row['pending_rows'] ?? 0),
-                'skipped_rows' => (int)($row['skipped_rows'] ?? 0),
-                'imported_rows' => $importedRows,
-                'failed_rows' => (int)($row['failed_rows'] ?? 0),
-                'valid_rows' => (int)($row['valid_rows'] ?? 0),
-                'warning_rows' => (int)($row['warning_rows'] ?? 0),
+                'stats' => [
+                    'total_rows' => $totalRows,
+                    'approved_rows' => (int)($row['approved_rows'] ?? 0),
+                    'pending_rows' => (int)($row['pending_rows'] ?? 0),
+                    'redundant_rows' => (int)($row['redundant_rows'] ?? 0),
+                    'skipped_rows' => (int)($row['skipped_rows'] ?? 0),
+                    'imported_rows' => $importedRows,
+                    'failed_rows' => (int)($row['failed_rows'] ?? 0),
+                    'valid_rows' => (int)($row['valid_rows'] ?? 0),
+                    'warning_rows' => (int)($row['warning_rows'] ?? 0),
                 'error_rows' => (int)($row['error_rows'] ?? 0)
             ],
             'server_stats' => $stats

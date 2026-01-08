@@ -25,13 +25,12 @@ class ImportDedupeService
     {
         $duplicates = [];
         
-        // Name + Domain + PLZ + Land
         $name = $this->normalizeString($rowData['name'] ?? '');
         $domain = $this->extractDomain($rowData['website'] ?? '');
         $postalCode = $rowData['address_postal_code'] ?? null;
         $country = strtoupper(trim($rowData['address_country'] ?? 'DE'));
+        $city = $this->normalizeString($rowData['address_city'] ?? '');
         
-        // Suche nach ähnlichen Orgs
         $query = "
             SELECT org_uuid, name, website
             FROM org
@@ -42,16 +41,12 @@ class ImportDedupeService
         
         // Name-Match
         if (!empty($name)) {
+            $nameNoLegal = $this->stripLegalForms($name);
             $query .= " AND LOWER(TRIM(name)) LIKE :name_pattern";
-            $params['name_pattern'] = '%' . $name . '%';
+            $params['name_pattern'] = '%' . $nameNoLegal . '%';
         }
         
-        // Domain-Match
-        if (!empty($domain)) {
-            $query .= " AND (website LIKE :domain_pattern1 OR website LIKE :domain_pattern2)";
-            $params['domain_pattern1'] = '%' . $domain . '%';
-            $params['domain_pattern2'] = '%' . str_replace('www.', '', $domain) . '%';
-        }
+        // Domain nicht als SQL-Filter erzwingen; nur im Score berücksichtigen
         
         // PLZ-Match (über Adressen)
         if (!empty($postalCode)) {
@@ -63,11 +58,20 @@ class ImportDedupeService
             $params['postal_code'] = $postalCode;
         }
         
+        // City-Match (über Adressen)
+        if (!empty($city)) {
+            $query .= " AND EXISTS (
+                SELECT 1 FROM org_address 
+                WHERE org_address.org_uuid = org.org_uuid 
+                  AND LOWER(TRIM(org_address.city)) = :city
+            )";
+            $params['city'] = $city;
+        }
+        
         $stmt = $this->db->prepare($query);
         $stmt->execute($params);
         $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         
-        // Berechne Match-Score für jeden Kandidaten
         foreach ($candidates as $candidate) {
             $score = $this->calculateMatchScore($rowData, $candidate);
             
@@ -91,26 +95,26 @@ class ImportDedupeService
      */
     private function calculateMatchScore(array $rowData, array $candidate): float
     {
-        /** @var array<string, float> $scores */
         $scores = [];
         
-        // Name-Match
         $name1 = $this->normalizeString($rowData['name'] ?? '');
         $name2 = $this->normalizeString($candidate['name'] ?? '');
         if (!empty($name1) && !empty($name2)) {
-            $scores['name'] = $this->stringSimilarity($name1, $name2);
+            $scores['name'] = $this->stringSimilarity($this->normalizeForNameComparison($name1), $this->normalizeForNameComparison($name2));
         }
         
-        // Domain-Match
         $domain1 = $this->extractDomain($rowData['website'] ?? '');
         $domain2 = $this->extractDomain($candidate['website'] ?? '');
         if (!empty($domain1) && !empty($domain2)) {
             $scores['domain'] = $domain1 === $domain2 ? 1.0 : 0.0;
         }
         
-        // Gewichteter Durchschnitt
-        /** @var array<string, float> $weights */
-        $weights = ['name' => 0.5, 'domain' => 0.5];
+        $city1 = $this->normalizeString($rowData['address_city'] ?? '');
+        if (!empty($city1)) {
+            $scores['city'] = 1.0; // City-Match wird durch SQL-EXISTS abgesichert
+        }
+        
+        $weights = ['name' => 0.6, 'domain' => 0.2, 'city' => 0.2];
         $totalScore = 0.0;
         $totalWeight = 0.0;
         
@@ -133,13 +137,18 @@ class ImportDedupeService
         $name1 = $this->normalizeString($rowData['name'] ?? '');
         $name2 = $this->normalizeString($candidate['name'] ?? '');
         if (!empty($name1) && !empty($name2)) {
-            $reasons['name_match'] = $this->stringSimilarity($name1, $name2);
+            $reasons['name_match'] = $this->stringSimilarity($this->normalizeForNameComparison($name1), $this->normalizeForNameComparison($name2));
         }
         
         $domain1 = $this->extractDomain($rowData['website'] ?? '');
         $domain2 = $this->extractDomain($candidate['website'] ?? '');
         if (!empty($domain1) && !empty($domain2)) {
             $reasons['domain_match'] = $domain1 === $domain2 ? 1.0 : 0.0;
+        }
+        
+        $city1 = $this->normalizeString($rowData['address_city'] ?? '');
+        if (!empty($city1)) {
+            $reasons['city_match'] = 1.0;
         }
         
         return $reasons;
@@ -188,6 +197,30 @@ class ImportDedupeService
         return $str;
     }
     
+    private function normalizeForNameComparison(string $str): string
+    {
+        $str = mb_strtolower($str);
+        $str = $this->stripLegalForms($str);
+        $str = preg_replace('/[^a-z0-9]/u', '', $str);
+        return $str;
+    }
+    
+    private function stripLegalForms(string $str): string
+    {
+        $forms = [
+            'gmbh', 'ag', 'kg', 'mbh', 'co', 'cokg', 'se', 'ug', 'ek', 'e.k.', 'ltd', 'llc',
+            'inc', 'sarl', 'spa', 'bv', 'nv', 'oy', 'oyj', 'kk', 'as', 'ab'
+        ];
+        foreach ($forms as $form) {
+            $str = preg_replace('/\b' . preg_quote($form, '/') . '\b/u', '', $str);
+        }
+        // Spezielle zusammengesetzte Form
+        $str = preg_replace('/\bgmbh\s*&\s*co\s*kg\b/u', '', $str);
+        // Mehrfache Leerzeichen reduzieren
+        $str = preg_replace('/\s+/u', ' ', trim($str));
+        return $str;
+    }
+    
     /**
      * Extrahiert Domain
      */
@@ -231,4 +264,3 @@ class ImportDedupeService
         return 1.0 - ($distance / $maxLen);
     }
 }
-

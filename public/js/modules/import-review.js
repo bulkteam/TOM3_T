@@ -78,11 +78,9 @@ export class ImportReviewModule {
                 
                 if ((hasPendingRows || hasApprovedRows) && isNotFullyImported) {
                     commitBtn.style.display = 'inline-block';
-                    if (hasPendingRows) {
-                        commitBtn.textContent = 'Alle freigeben & importieren →';
-                    } else {
-                        commitBtn.textContent = 'Importieren →';
-                    }
+                    commitBtn.textContent = hasApprovedRows 
+                        ? 'Freigegebene Zeilen importieren →' 
+                        : 'Alle freigeben & importieren →';
                 } else {
                     commitBtn.style.display = 'none';
                 }
@@ -325,6 +323,10 @@ export class ImportReviewModule {
                 if (index !== -1) {
                     this.importModule.stagingRows[index] = row;
                 }
+            }
+            
+            if (typeof this.updateCommitButton === 'function') {
+                this.updateCommitButton();
             }
             
         } catch (error) {
@@ -737,21 +739,11 @@ export class ImportReviewModule {
         }
         
         try {
-            // Bestimme Commit-Mode
-            const commitBtn = document.getElementById('commit-btn');
-            const buttonText = commitBtn ? commitBtn.textContent : '';
             let commitMode = 'APPROVED_ONLY';
-            
-            if (buttonText.includes('Alle freigeben')) {
-                commitMode = 'PENDING_AUTO_APPROVE';
-            } else if (hasPendingRows && !hasApprovedRows) {
+            if (hasPendingRows && !hasApprovedRows) {
                 commitMode = 'PENDING_AUTO_APPROVE';
             } else if (hasPendingRows && hasApprovedRows) {
-                if (buttonText.includes('Alle freigeben')) {
-                    commitMode = 'PENDING_AUTO_APPROVE';
-                } else {
-                    commitMode = 'APPROVED_ONLY';
-                }
+                commitMode = 'APPROVED_ONLY';
             }
             
             Utils.showInfo('Import wird durchgeführt...');
@@ -795,6 +787,23 @@ export class ImportReviewModule {
             console.error('Commit error:', error);
             Utils.showError('Fehler beim Import: ' + error.message);
         }
+    }
+    
+    updateCommitButton() {
+        const commitBtn = document.getElementById('commit-btn');
+        if (!commitBtn) return;
+        const rows = Array.isArray(this.importModule.stagingRows) ? this.importModule.stagingRows : [];
+        const pending = rows.filter(r => r.import_status !== 'imported' && r.disposition === 'pending').length;
+        const approved = rows.filter(r => r.import_status !== 'imported' && r.disposition === 'approved').length;
+        const show = (pending + approved) > 0;
+        if (!show) {
+            commitBtn.style.display = 'none';
+            return;
+        }
+        commitBtn.style.display = 'inline-block';
+        commitBtn.textContent = (approved > 0) 
+            ? 'Freigegebene Zeilen importieren →' 
+            : 'Alle freigeben & importieren →';
     }
 }
 

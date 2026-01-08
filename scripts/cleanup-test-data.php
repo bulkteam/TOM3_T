@@ -33,23 +33,7 @@ echo "   - Workflows/Cases\n";
 echo "   - Import-Daten\n";
 echo "   - Alle abhängigen Daten\n\n";
 echo "BEHÄLT: User, Rollen, Berechtigungen, Industries, Workflow-Definitionen\n\n";
-
-// Prüfe ob --force Flag gesetzt ist
-$force = in_array('--force', $argv) || in_array('-f', $argv);
-
-if (!$force) {
-    echo "Möchten Sie fortfahren? (yes/no): ";
-    $handle = fopen("php://stdin", "r");
-    $line = trim(fgets($handle));
-    fclose($handle);
-    
-    if (strtolower($line) !== 'yes') {
-        echo "\n❌ Abgebrochen.\n";
-        exit(0);
-    }
-} else {
-    echo "⚠️  --force Flag gesetzt, überspringe Bestätigung...\n";
-}
+echo "⚠️  Cleanup startet ohne Rückfrage...\n";
 
 echo "\n🚀 Starte Löschvorgang...\n\n";
 

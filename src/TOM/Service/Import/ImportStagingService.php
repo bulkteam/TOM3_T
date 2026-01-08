@@ -9,6 +9,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Utils\UuidHelper;
 use TOM\Infrastructure\Activity\ActivityLogService;
+use TOM\Service\Import\ImportDedupeService;
 
 /**
  * ImportStagingService
@@ -26,6 +27,7 @@ final class ImportStagingService
     private IndustryResolver $resolver;
     private ImportMappingService $mappingService;
     private ActivityLogService $activityLogService;
+    private ImportDedupeService $dedupeService;
     
     public function __construct(
         ?PDO $db = null,
@@ -37,6 +39,7 @@ final class ImportStagingService
         $this->resolver = $resolver ?? new IndustryResolver($this->db);
         $this->mappingService = $mappingService ?? new ImportMappingService($this->db);
         $this->activityLogService = $activityLogService ?? new ActivityLogService($this->db);
+        $this->dedupeService = new ImportDedupeService($this->db);
     }
     
     /**
@@ -118,6 +121,72 @@ final class ImportStagingService
                     $rowFingerprint,
                     $fileFingerprint
                 );
+
+                // 7.6 Duplikat-Erkennung und Status-Update
+                $dedupeInput = [
+                    'name' => $mappedData['org']['name'] ?? '',
+                    'website' => $mappedData['org']['website'] ?? '',
+                    'address_postal_code' => $mappedData['address']['postal_code'] ?? '',
+                    'address_city' => $mappedData['address']['city'] ?? ''
+                ];
+                $duplicates = $this->dedupeService->findDuplicates($dedupeInput);
+
+                $dupStatus = 'none';
+                $dupSummary = null;
+                if (!empty($duplicates)) {
+                    $best = $duplicates[0];
+                    $bestScore = (float)($best['score'] ?? 0.0);
+                    $dupStatus = $bestScore >= 0.8 ? 'confirmed' : 'possible';
+                    $dupSummary = [
+                        'count' => count($duplicates),
+                        'best_score' => $bestScore,
+                        'best_org_uuid' => $best['org_uuid'] ?? null,
+                        'best_reasons' => $best['reasons'] ?? []
+                    ];
+                }
+
+                $stmtUpdateDup = $this->db->prepare("
+                    UPDATE org_import_staging
+                    SET duplicate_status = :dup_status,
+                        duplicate_summary = :dup_summary
+                    WHERE staging_uuid = :staging_uuid
+                ");
+                $stmtUpdateDup->execute([
+                    'dup_status' => $dupStatus,
+                    'dup_summary' => $dupSummary ? json_encode($dupSummary, JSON_UNESCAPED_UNICODE) : null,
+                    'staging_uuid' => $stagingUuid
+                ]);
+
+                // 7.7 Fingerprint-basierte Idempotenz: Falls gleiche Zeile früher bereits importiert wurde
+                $stmtFp = $this->db->prepare("
+                    SELECT staging_uuid, imported_at
+                    FROM org_import_staging
+                    WHERE row_fingerprint = :fp
+                      AND import_status = 'imported'
+                    LIMIT 1
+                ");
+                $stmtFp->execute(['fp' => $rowFingerprint]);
+                $fpMatch = $stmtFp->fetch(PDO::FETCH_ASSOC);
+                if ($fpMatch) {
+                    $dupStatus = 'confirmed';
+                    $dupSummary = [
+                        'count' => ($dupSummary['count'] ?? 0) + 1,
+                        'best_score' => max($dupSummary['best_score'] ?? 0.0, 1.0),
+                        'fingerprint_match' => true,
+                        'imported_at' => $fpMatch['imported_at'] ?? null
+                    ];
+                    $stmtUpdateDup = $this->db->prepare("
+                        UPDATE org_import_staging
+                        SET duplicate_status = :dup_status,
+                            duplicate_summary = :dup_summary
+                        WHERE staging_uuid = :staging_uuid
+                    ");
+                    $stmtUpdateDup->execute([
+                        'dup_status' => $dupStatus,
+                        'dup_summary' => json_encode($dupSummary, JSON_UNESCAPED_UNICODE),
+                        'staging_uuid' => $stagingUuid
+                    ]);
+                }
                 
                 $stats['imported']++;
                 

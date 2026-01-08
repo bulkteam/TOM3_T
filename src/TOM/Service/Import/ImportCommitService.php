@@ -11,6 +11,7 @@ use TOM\Service\OrgService;
 use TOM\Service\Org\OrgAddressService;
 use TOM\Service\Import\IndustryResolver;
 use TOM\Service\Import\IndustryNormalizer;
+use TOM\Service\Import\ImportDedupeService;
 
 /**
  * ImportCommitService
@@ -98,7 +99,41 @@ final class ImportCommitService
         }
         
         // 3. Update Batch-Status
-        $this->updateBatchStatus($batchUuid, 'IMPORTED', $stats);
+        // Korrigiere Status basierend auf tatsächlichen DB-Zahlen
+        $stmt = $this->db->prepare("
+            SELECT 
+                COUNT(*) as total_rows,
+                SUM(CASE WHEN disposition = 'approved' AND import_status = 'pending' THEN 1 ELSE 0 END) as approved_rows,
+                SUM(CASE WHEN disposition = 'pending' AND import_status = 'pending' THEN 1 ELSE 0 END) as pending_rows,
+                SUM(CASE WHEN duplicate_status IN ('confirmed','possible') AND import_status != 'imported' THEN 1 ELSE 0 END) as redundant_rows,
+                SUM(CASE WHEN disposition = 'skip' THEN 1 ELSE 0 END) as skipped_rows,
+                SUM(CASE WHEN import_status = 'imported' THEN 1 ELSE 0 END) as imported_rows,
+                SUM(CASE WHEN import_status = 'failed' THEN 1 ELSE 0 END) as failed_rows
+            FROM org_import_staging
+            WHERE import_batch_uuid = :batch_uuid
+        ");
+        $stmt->execute(['batch_uuid' => $batchUuid]);
+        $agg = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $totalRows = (int)($agg['total_rows'] ?? 0);
+        $importedRows = (int)($agg['imported_rows'] ?? 0);
+        $redundantRows = (int)($agg['redundant_rows'] ?? 0);
+        $skippedRows = (int)($agg['skipped_rows'] ?? 0);
+        $approvedRows = (int)($agg['approved_rows'] ?? 0);
+        $pendingRows = (int)($agg['pending_rows'] ?? 0);
+
+        $actualStatus = 'STAGED';
+        if ($totalRows > 0 && ($importedRows + $redundantRows + $skippedRows) >= $totalRows) {
+            $actualStatus = 'IMPORTED';
+        } elseif ($approvedRows > 0) {
+            $actualStatus = 'APPROVED';
+        }
+
+        $stats['rows_total'] = $totalRows;
+        $stats['rows_imported'] = $importedRows;
+        $stats['rows_failed'] = (int)($agg['failed_rows'] ?? 0);
+        $stats['rows_skipped'] = $skippedRows;
+
+        $this->updateBatchStatus($batchUuid, $actualStatus, $stats);
         
         // 4. Activity-Log
         $this->activityLogService->logActivity(
@@ -150,14 +185,81 @@ final class ImportCommitService
                 'current_disposition' => $row['disposition']
             ];
         }
+
+        // Harte Duplikat-Grenze: Wenn Staging bereits als Duplikat markiert ist, nicht importieren
+        if (in_array($row['duplicate_status'] ?? 'none', ['confirmed', 'possible'], true)) {
+            $this->markSkipped($row['staging_uuid'], 'DUPLICATE_FLAGGED_IN_STAGING', [
+                'duplicate_status' => $row['duplicate_status']
+            ]);
+            $stats['rows_skipped'] = ($stats['rows_skipped'] ?? 0) + 1;
+            return [
+                'staging_uuid' => $row['staging_uuid'],
+                'status' => 'skipped',
+                'reason' => 'DUPLICATE_FLAGGED_IN_STAGING'
+            ];
+        }
+
+        // Fingerprint-basierte Idempotenzprüfung: gleiche Zeile wurde bereits importiert
+        if (!empty($row['row_fingerprint'])) {
+            $stmtFp = $this->db->prepare("
+                SELECT staging_uuid 
+                FROM org_import_staging
+                WHERE row_fingerprint = :fp
+                  AND import_status = 'imported'
+                LIMIT 1
+            ");
+            $stmtFp->execute(['fp' => $row['row_fingerprint']]);
+            $fpMatch = $stmtFp->fetch(PDO::FETCH_ASSOC);
+            if ($fpMatch) {
+                $this->markSkipped($row['staging_uuid'], 'FINGERPRINT_DUPLICATE', [
+                    'match_staging_uuid' => $fpMatch['staging_uuid']
+                ]);
+                $stats['rows_skipped'] = ($stats['rows_skipped'] ?? 0) + 1;
+                return [
+                    'staging_uuid' => $row['staging_uuid'],
+                    'status' => 'skipped',
+                    'reason' => 'FINGERPRINT_DUPLICATE'
+                ];
+            }
+        }
         
         // Parse JSON-Daten
         $mappedData = json_decode($row['mapped_data'] ?? '{}', true);
-        $industryResolution = json_decode($row['industry_resolution'] ?? '{}', true);
+        $effectiveData = json_decode($row['effective_data'] ?? '{}', true);
         $corrections = json_decode($row['corrections_json'] ?? 'null', true);
+        $industryResolution = json_decode($row['industry_resolution'] ?? '{}', true);
         
         // Merge mapped_data + corrections = effective_data
         $effectiveData = $this->mergeRecursive($mappedData, $corrections ?? []);
+        
+        // Harte Duplikat-Prüfung vor Erstellung (Commit-Guard)
+        try {
+            $orgDataForDedupe = $effectiveData['org'] ?? [];
+            $addressDataForDedupe = $effectiveData['address'] ?? [];
+            $rowDataForDedupe = [
+                'name' => $orgDataForDedupe['name'] ?? '',
+                'website' => $orgDataForDedupe['website'] ?? '',
+                'address_city' => $addressDataForDedupe['city'] ?? '',
+                'address_postal_code' => $addressDataForDedupe['postal_code'] ?? '',
+                'address_country' => $addressDataForDedupe['country'] ?? 'DE'
+            ];
+            $dedupe = new ImportDedupeService($this->db);
+            $dupesOnCommit = $dedupe->findDuplicates($rowDataForDedupe);
+            if (!empty($dupesOnCommit)) {
+                $this->markSkipped($row['staging_uuid'], 'DUPLICATE_DETECTED_ON_COMMIT', [
+                    'candidate' => $dupesOnCommit[0] ?? null
+                ]);
+                $stats['rows_skipped'] = ($stats['rows_skipped'] ?? 0) + 1;
+                return [
+                    'staging_uuid' => $row['staging_uuid'],
+                    'status' => 'skipped',
+                    'reason' => 'DUPLICATE_DETECTED_ON_COMMIT'
+                ];
+            }
+        } catch (\Exception $e) {
+            // Fehler in der Duplikat-Prüfung soll Import nicht blockieren, aber geloggt werden
+            error_log("Duplicate check on commit failed: " . $e->getMessage());
+        }
         
         // 1. Verarbeite Industry-Entscheidung
         $decision = $industryResolution['decision'] ?? [];
@@ -209,6 +311,25 @@ final class ImportCommitService
         
         if (empty($orgData['name'])) {
             throw new \RuntimeException('ORG_NAME_REQUIRED: Organisationsname fehlt');
+        }
+        
+        $dedupeService = new ImportDedupeService($this->db);
+        $dupRowData = [
+            'name' => $orgData['name'],
+            'website' => $orgData['website'] ?? null,
+            'address_postal_code' => $effectiveData['address']['postal_code'] ?? null,
+            'address_country' => strtoupper(trim($effectiveData['address']['country'] ?? 'DE'))
+        ];
+        $duplicates = $dedupeService->findDuplicates($dupRowData);
+        if (!empty($duplicates)) {
+            $this->markSkipped($row['staging_uuid'], 'DUPLICATE_FOUND', ['duplicates' => $duplicates]);
+            $stats['rows_skipped']++;
+            return [
+                'staging_uuid' => $row['staging_uuid'],
+                'status' => 'skipped',
+                'reason' => 'DUPLICATE_FOUND',
+                'duplicates' => $duplicates
+            ];
         }
         
         $org = $this->orgService->createOrg($orgData, $userId);
@@ -358,11 +479,13 @@ final class ImportCommitService
                 row_number,
                 raw_data,
                 mapped_data,
+                row_fingerprint,
                 industry_resolution,
                 corrections_json,
                 validation_status,
                 disposition,
-                import_status
+                import_status,
+                duplicate_status
             FROM org_import_staging
             WHERE import_batch_uuid = :batch_uuid
             AND disposition = 'approved'
@@ -410,6 +533,30 @@ final class ImportCommitService
         $commitLog = [
             [
                 'action' => 'COMMIT_FAILED',
+                'reason' => $reason,
+                'details' => $details,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]
+        ];
+        
+        $stmt->execute([
+            'staging_uuid' => $stagingUuid,
+            'commit_log' => json_encode($commitLog, JSON_UNESCAPED_UNICODE)
+        ]);
+    }
+    
+    private function markSkipped(string $stagingUuid, string $reason, array $details = []): void
+    {
+        $stmt = $this->db->prepare("
+            UPDATE org_import_staging
+            SET import_status = 'skipped',
+                commit_log = :commit_log
+            WHERE staging_uuid = :staging_uuid
+        ");
+        
+        $commitLog = [
+            [
+                'action' => 'ROW_SKIPPED',
                 'reason' => $reason,
                 'details' => $details,
                 'timestamp' => date('Y-m-d H:i:s')

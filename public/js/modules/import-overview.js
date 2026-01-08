@@ -118,6 +118,7 @@ export class ImportOverviewModule {
             const stats = batch.stats || {};
             const pendingCount = stats.pending_rows || 0;
             const approvedCount = stats.approved_rows || 0;
+            const redundantCount = stats.redundant_rows || 0;
             const importedCount = stats.imported_rows || 0;
             const totalCount = stats.total_rows || 0;
             // Batch kann gelöscht werden, wenn nicht ALLE Rows importiert wurden
@@ -169,7 +170,10 @@ export class ImportOverviewModule {
                         <div style="font-size: 13px;">
                             <div><strong>${totalCount}</strong> gesamt</div>
                             ${pendingCount > 0 ? `<div style="color: #ffc107; font-size: 11px;">${pendingCount} pending</div>` : ''}
-                            ${approvedCount > 0 ? `<div style="color: #198754; font-size: 11px;">${approvedCount} approved</div>` : ''}
+                            ${redundantCount > 0 
+                                ? `<div style="color: #fd7e14; font-size: 11px;">${redundantCount} Redundanzen</div>` 
+                                : (approvedCount > 0 ? `<div style="color: #198754; font-size: 11px;">${approvedCount} approved</div>` : '')
+                            }
                             ${stats.skipped_rows > 0 ? `<div style="color: #6c757d; font-size: 11px;">${stats.skipped_rows} übersprungen</div>` : ''}
                             ${importedCount > 0 ? `<div style="color: #198754; font-size: 11px;">${importedCount} importiert</div>` : ''}
                         </div>
