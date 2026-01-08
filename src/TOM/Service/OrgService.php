@@ -42,13 +42,18 @@ class OrgService extends BaseEntityService
     private OrgEnrichmentService $enrichmentService;
     private OrgAuditHelperService $auditHelperService;
     
-    public function __construct(?PDO $db = null)
-    {
+    public function __construct(
+        ?PDO $db = null,
+        ?AccessTrackingService $accessTrackingService = null,
+        ?OrgAddressService $addressService = null,
+        ?OrgVatService $vatService = null,
+        ?OrgRelationService $relationService = null
+    ) {
         parent::__construct($db);
-        $this->accessTrackingService = new AccessTrackingService($this->db);
-        $this->addressService = new OrgAddressService($this->db);
-        $this->vatService = new OrgVatService($this->db);
-        $this->relationService = new OrgRelationService($this->db);
+        $this->accessTrackingService = $accessTrackingService ?? new AccessTrackingService($this->db);
+        $this->addressService = $addressService ?? new OrgAddressService($this->db);
+        $this->vatService = $vatService ?? new OrgVatService($this->db);
+        $this->relationService = $relationService ?? new OrgRelationService($this->db);
         
         // Phase 3: Customer Number Service (keine Abhängigkeiten)
         $this->customerNumberService = new OrgCustomerNumberService($this->db);

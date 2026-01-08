@@ -3,6 +3,14 @@
  * TOM3 - Recent Documents API
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -16,17 +24,13 @@ try {
     $db = DatabaseConnection::getInstance();
     $documentService = new DocumentService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed']);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 // Hole aktuellen User aus Session/Auth oder Query-Parameter
@@ -44,10 +48,9 @@ try {
     if (!is_array($recent)) {
         $recent = [];
     }
-    echo json_encode($recent);
+    jsonResponse($recent);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'Get recent documents');
 }
 
 

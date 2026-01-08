@@ -3,6 +3,13 @@
  * TOM3 - Orgs API
  */
 
+// Security Guard: Verhindere direkten Aufruf (nur über Router)
+if (!defined('TOM3_API_ROUTER')) {
+    require_once __DIR__ . '/base-api-handler.php';
+    initApiErrorHandling();
+    jsonError('Direct access not allowed', 403);
+}
+
 require_once __DIR__ . '/base-api-handler.php';
 require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
@@ -19,12 +26,7 @@ try {
     $db = DatabaseConnection::getInstance();
     $orgService = new OrgService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -52,7 +54,7 @@ if ($id === 'owners') {
     } else {
         $owners = $orgService->getAvailableAccountOwners();
     }
-    echo json_encode($owners);
+    jsonResponse($owners);
     exit;
 }
 
@@ -61,7 +63,7 @@ if ($id === 'next-customer-number') {
     // GET /api/orgs/next-customer-number - Nächste verfügbare Kundennummer
     try {
         $nextNumber = $orgService->getNextCustomerNumber();
-        echo json_encode(['next_customer_number' => $nextNumber]);
+        jsonResponse(['next_customer_number' => $nextNumber]);
     } catch (Exception $e) {
         handleApiException($e, 'Get next customer number');
     }
@@ -88,40 +90,38 @@ switch ($method) {
                 // GET /api/orgs/{uuid}/addresses
                 $addressType = $_GET['type'] ?? null;
                 $addresses = $orgService->getAddresses($orgUuid, $addressType);
-                echo json_encode($addresses ?: []);
+                jsonResponse($addresses ?: []);
             } elseif ($action === 'relations') {
                 // GET /api/orgs/{uuid}/relations
                 $direction = $_GET['direction'] ?? null; // 'parent' | 'child' | null
                 $relations = $orgService->getRelations($orgUuid, $direction);
-                echo json_encode($relations ?: []);
+                jsonResponse($relations ?: []);
             } elseif ($action === 'channels') {
                 // GET /api/orgs/{uuid}/channels
                 $channelType = $_GET['type'] ?? null;
                 $channels = $orgService->getCommunicationChannels($orgUuid, $channelType);
-                echo json_encode($channels ?: []);
+                jsonResponse($channels ?: []);
             } elseif ($action === 'vat-registrations') {
                 // GET /api/orgs/{uuid}/vat-registrations
                 $onlyValid = !isset($_GET['all']) || $_GET['all'] !== 'true';
                 $vatRegs = $orgService->getVatRegistrations($orgUuid, $onlyValid);
-                echo json_encode($vatRegs ?: []);
+                jsonResponse($vatRegs ?: []);
             } elseif ($action === 'details') {
                 // GET /api/orgs/{uuid}/details (mit Adressen und Relationen)
                 $org = $orgService->getOrgWithDetails($orgUuid);
                 if ($org) {
                     $org['health'] = $orgService->getAccountHealth($orgUuid);
                 }
-                echo json_encode($org);
+                jsonResponse($org);
             } elseif ($action === 'audit-trail') {
                 // GET /api/orgs/{uuid}/audit-trail
                 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
                 $auditTrail = $orgService->getAuditTrail($orgUuid, $limit);
-                echo json_encode($auditTrail);
+                jsonResponse($auditTrail);
             } elseif ($action === 'track-access') {
                 // POST /api/orgs/{uuid}/track-access
                 if ($method !== 'POST') {
-                    http_response_code(405);
-                    echo json_encode(['error' => 'Method not allowed. Use POST.']);
-                    exit;
+                    jsonError('Method not allowed. Use POST.', 405);
                 }
                 
                 // Security: Auth erzwingen (kein 'default_user' Fallback)
@@ -134,14 +134,14 @@ switch ($method) {
                 
                 try {
                     $orgService->trackAccess($userId, $orgUuid, $accessType);
-                    echo json_encode(['success' => true]);
+                    jsonResponse(['success' => true]);
                 } catch (Exception $e) {
                     handleApiException($e, 'Track access');
                 }
             } elseif ($action === 'health') {
                 // GET /api/orgs/{uuid}/health - Account-Gesundheit
                 $health = $orgService->getAccountHealth($orgUuid);
-                echo json_encode($health);
+                jsonResponse($health);
             } else {
                 // GET /api/orgs/{uuid}
                 $org = $orgService->getOrg($orgUuid);
@@ -160,7 +160,7 @@ switch ($method) {
                     }
                 }
                 
-                echo json_encode($org);
+                jsonResponse($org);
             }
         } else {
             // GET /api/orgs
@@ -178,7 +178,7 @@ switch ($method) {
             
             $orgs = $orgService->listOrgs($filters);
             // Stelle sicher, dass immer ein Array zurückgegeben wird
-            echo json_encode($orgs ?: []);
+            jsonResponse($orgs ?: []);
         }
         break;
         
@@ -196,7 +196,7 @@ switch ($method) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
             
-            echo json_encode($result);
+            jsonResponse($result);
         } elseif ($orgUuid && $action === 'relations') {
             // POST /api/orgs/{uuid}/relations
             $data = json_decode(file_get_contents('php://input'), true);
@@ -214,7 +214,7 @@ switch ($method) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
             
-            echo json_encode($result);
+            jsonResponse($result);
         } elseif ($orgUuid && $action === 'channels') {
             // POST /api/orgs/{uuid}/channels
             $data = json_decode(file_get_contents('php://input'), true);
@@ -228,22 +228,18 @@ switch ($method) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
             
-            echo json_encode($result);
+            jsonResponse($result);
         } elseif ($orgUuid && $action === 'vat-registrations') {
             // POST /api/orgs/{uuid}/vat-registrations
             $rawInput = file_get_contents('php://input');
             $data = json_decode($rawInput, true);
             
             if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Invalid JSON data', 'json_error' => json_last_error_msg()]);
-                exit;
+                jsonError('Invalid JSON data: ' . json_last_error_msg(), 400);
             }
             
             if (empty($data['vat_id']) || empty($data['country_code'])) {
-                http_response_code(400);
-                echo json_encode(['error' => 'vat_id and country_code required']);
-                exit;
+                jsonError('vat_id and country_code required', 400);
             }
             
             try {
@@ -258,7 +254,7 @@ switch ($method) {
                     error_log("Tracking error (non-fatal): " . $e->getMessage());
                 }
                 
-                echo json_encode($result);
+                jsonResponse($result);
             } catch (Exception $e) {
                 handleApiException($e, 'Add VAT registration');
             }
@@ -267,7 +263,7 @@ switch ($method) {
             // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
                 $result = $orgService->archiveOrg($orgUuid, $currentUserId);
-                echo json_encode($result);
+                jsonResponse($result);
             } catch (Exception $e) {
                 handleApiException($e, 'Archive org');
             }
@@ -276,7 +272,7 @@ switch ($method) {
             // $currentUserId ist bereits durch requireAuth() gesetzt
             try {
                 $result = $orgService->unarchiveOrg($orgUuid, $currentUserId);
-                echo json_encode($result);
+                jsonResponse($result);
             } catch (Exception $e) {
                 handleApiException($e, 'Unarchive org');
             }
@@ -291,9 +287,8 @@ switch ($method) {
                 // InputValidator::validateLength($data['name'] ?? '', 1, 255, 'name');
                 
                 $result = $orgService->createOrg($data, $currentUserId);
-                http_response_code(201);
                 // Warnungen werden im Ergebnis mit _warnings Feld zurückgegeben
-                echo json_encode($result);
+                jsonResponse($result, 201);
             } catch (\InvalidArgumentException $e) {
                 handleApiException($e, 'Create org');
             } catch (\Exception $e) {
@@ -309,9 +304,7 @@ switch ($method) {
             
             // Validierung: Stelle sicher, dass orgUuid nicht leer ist
             if (empty($orgUuid)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'org_uuid is required']);
-                exit;
+                jsonError('org_uuid is required', 400);
             }
             
             // Track Zugriff beim Bearbeiten
@@ -323,15 +316,13 @@ switch ($method) {
                 // Tracking-Fehler sollten die Antwort nicht beeinflussen
             }
             
-            echo json_encode($result);
+            jsonResponse($result);
         } elseif ($orgUuid && $action === 'addresses') {
             // PUT /api/orgs/{uuid}/addresses/{address_uuid}
             // address_uuid ist in $parts[3] nach dem Parsen
             $addressUuid = $pathParts[2] ?? null;
             if (!$addressUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'address_uuid required']);
-                exit;
+                jsonError('address_uuid required', 400);
             }
             $data = json_decode(file_get_contents('php://input'), true);
             // $currentUserId ist bereits durch requireAuth() gesetzt
@@ -369,9 +360,7 @@ switch ($method) {
             // PUT /api/orgs/{uuid}/channels/{channel_uuid}
             $channelUuid = $pathParts[2] ?? null;
             if (!$channelUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'channel_uuid required']);
-                exit;
+                jsonError('channel_uuid required', 400);
             }
             $data = json_decode(file_get_contents('php://input'), true);
             // $currentUserId ist bereits durch requireAuth() gesetzt
@@ -386,29 +375,22 @@ switch ($method) {
                     // Tracking-Fehler sollten die Antwort nicht beeinflussen
                 }
                 
-                echo json_encode($result);
+                jsonResponse($result);
             } catch (Exception $e) {
-                http_response_code(500);
-                error_log('Error updating communication channel: ' . $e->getMessage());
-                error_log('Stack trace: ' . $e->getTraceAsString());
-                echo json_encode(['error' => $e->getMessage()]);
+                handleApiException($e, 'Updating communication channel');
             }
         } elseif ($orgUuid && $action === 'vat-registrations') {
             // PUT /api/orgs/{uuid}/vat-registrations/{vat_registration_uuid}
             $vatUuid = $pathParts[2] ?? null;
             if (!$vatUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'vat_registration_uuid required']);
-                exit;
+                jsonError('vat_registration_uuid required', 400);
             }
             try {
                 $rawInput = file_get_contents('php://input');
                 $data = json_decode($rawInput, true);
                 
                 if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-                    http_response_code(400);
-                    echo json_encode(['error' => 'Invalid JSON data', 'json_error' => json_last_error_msg()]);
-                    exit;
+                    jsonError('Invalid JSON data: ' . json_last_error_msg(), 400);
                 }
                 
                 // Debug: Log die empfangenen Daten
@@ -419,9 +401,7 @@ switch ($method) {
                 $result = $orgService->updateVatRegistration($vatUuid, $data, $currentUserId);
                 
                 if (!$result) {
-                    http_response_code(404);
-                    echo json_encode(['error' => 'VAT registration not found']);
-                    exit;
+                    jsonError('VAT registration not found', 404);
                 }
                 
                 // Track Zugriff beim Bearbeiten einer USt-ID
@@ -432,55 +412,12 @@ switch ($method) {
                     error_log("Tracking error (non-fatal): " . $e->getMessage());
                 }
                 
-                $jsonResult = json_encode($result);
-                if ($jsonResult === false) {
-                    error_log("JSON encode error: " . json_last_error_msg());
-                    http_response_code(500);
-                    echo json_encode([
-                        'error' => 'Failed to encode response',
-                        'json_error' => json_last_error_msg()
-                    ]);
-                    exit;
-                }
-                echo $jsonResult;
-                exit;
-            } catch (PDOException $e) {
-                http_response_code(500);
-                $errorMsg = $e->getMessage();
-                error_log("VAT Registration Update PDO Error: " . $errorMsg);
-                error_log("PDO Error Info: " . json_encode($e->errorInfo ?? []));
-                echo json_encode([
-                    'error' => 'Database error',
-                    'message' => $errorMsg,
-                    'code' => $e->getCode()
-                ]);
-                exit;
-            } catch (Exception $e) {
-                http_response_code(500);
-                $errorMsg = $e->getMessage();
-                error_log("VAT Registration Update Error: " . $errorMsg);
-                error_log("Error in file: " . $e->getFile() . " line " . $e->getLine());
-                echo json_encode([
-                    'error' => 'Failed to update VAT registration',
-                    'message' => $errorMsg,
-                    'file' => basename($e->getFile()),
-                    'line' => $e->getLine()
-                ]);
-                exit;
-            } catch (Throwable $e) {
-                http_response_code(500);
-                $errorMsg = $e->getMessage();
-                error_log("VAT Registration Update Fatal Error: " . $errorMsg);
-                echo json_encode([
-                    'error' => 'Fatal error',
-                    'message' => $errorMsg,
-                    'type' => get_class($e)
-                ]);
-                exit;
+                jsonResponse($result);
+            } catch (\Throwable $e) {
+                handleApiException($e, 'Update VAT registration');
             }
         } else {
-            http_response_code(400);
-            echo json_encode(['error' => 'Invalid endpoint']);
+            jsonError('Invalid endpoint', 400);
         }
         break;
         
@@ -489,24 +426,20 @@ switch ($method) {
             // DELETE /api/orgs/{uuid}/addresses/{address_uuid}
             $addressUuid = $pathParts[2] ?? null;
             if (!$addressUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'address_uuid required']);
-                exit;
+                jsonError('address_uuid required', 400);
             }
             // $currentUserId ist bereits durch requireAuth() gesetzt
             $result = $orgService->deleteAddress($addressUuid, $currentUserId);
-            echo json_encode(['success' => $result]);
+            jsonResponse(['success' => $result]);
         } elseif ($orgUuid && $action === 'relations') {
             // DELETE /api/orgs/{uuid}/relations/{relation_uuid}
             $relationUuid = $pathParts[2] ?? null;
             if (!$relationUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'relation_uuid required']);
-                exit;
+                jsonError('relation_uuid required', 400);
             }
             // $currentUserId ist bereits durch requireAuth() gesetzt
             $result = $orgService->deleteRelation($relationUuid, $currentUserId);
-            echo json_encode(['success' => $result]);
+            jsonResponse(['success' => $result]);
         } elseif ($orgUuid && $action === 'channels') {
             // DELETE /api/orgs/{uuid}/channels/{channel_uuid}
             // pathParts nach Filterung: [0] = org_uuid, [1] = channels, [2] = channel_uuid
@@ -523,74 +456,47 @@ switch ($method) {
             
             // urlParts: [0] = orgs, [1] = org_uuid, [2] = channels, [3] = channel_uuid
             $channelUuid = $urlParts[3] ?? null;
+            if (!$channelUuid) {
+                // Alternativ aus pathParts probieren
+                $channelUuid = $pathParts[2] ?? null;
+            }
             
             if (!$channelUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'channel_uuid required']);
-                exit;
+                jsonError('channel_uuid required', 400);
             }
-            
-            $result = $orgService->deleteCommunicationChannel($channelUuid);
-            
-            if (!$result) {
-                http_response_code(404);
-                echo json_encode(['error' => 'Channel not found or could not be deleted']);
-                exit;
-            }
-            
-            // Track Zugriff beim Löschen eines Kanals
             // $currentUserId ist bereits durch requireAuth() gesetzt
-            try {
-                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
-            } catch (Exception $e) {
-                // Tracking-Fehler sollten die Antwort nicht beeinflussen
-            }
             
-            echo json_encode(['success' => true]);
+            try {
+                $result = $orgService->deleteCommunicationChannel($channelUuid, $currentUserId);
+                jsonResponse(['success' => $result]);
+            } catch (Exception $e) {
+                handleApiException($e, 'Deleting communication channel');
+            }
         } elseif ($orgUuid && $action === 'vat-registrations') {
             // DELETE /api/orgs/{uuid}/vat-registrations/{vat_registration_uuid}
-            $requestUri = $_SERVER['REQUEST_URI'];
-            $path = parse_url($requestUri, PHP_URL_PATH);
-            $path = preg_replace('#^/TOM3/public#', '', $path);
-            $path = preg_replace('#^/api/?|^api/?#', '', $path);
-            $path = trim($path, '/');
-            $urlParts = explode('/', $path);
-            
-            // urlParts: [0] = orgs, [1] = org_uuid, [2] = vat-registrations, [3] = vat_uuid
-            $vatUuid = $urlParts[3] ?? null;
-            
+            $vatUuid = $pathParts[2] ?? null;
             if (!$vatUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'vat_registration_uuid required']);
-                exit;
+                jsonError('vat_registration_uuid required', 400);
             }
-            
-            // $currentUserId ist bereits durch requireAuth() gesetzt
-            $result = $orgService->deleteVatRegistration($vatUuid, $currentUserId);
-            
-            if (!$result) {
-                http_response_code(404);
-                echo json_encode(['error' => 'VAT registration not found or could not be deleted']);
-                exit;
-            }
-            
-            // Track Zugriff beim Löschen einer USt-ID
             try {
-                $orgService->trackAccess($currentUserId, $orgUuid, 'recent');
+                // $currentUserId ist bereits durch requireAuth() gesetzt
+                $result = $orgService->deleteVatRegistration($vatUuid, $currentUserId);
+                
+                if (!$result) {
+                    jsonError('VAT registration not found', 404);
+                }
+                
+                jsonResponse(['success' => true]);
             } catch (Exception $e) {
-                // Tracking-Fehler sollten die Antwort nicht beeinflussen
+                handleApiException($e, 'Delete VAT registration');
             }
-            
-            echo json_encode(['success' => true]);
         } else {
-            http_response_code(400);
-            echo json_encode(['error' => 'Invalid endpoint']);
+            jsonError('Invalid endpoint', 400);
         }
         break;
         
     default:
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
+        jsonError('Method not allowed', 405);
         break;
 }
 

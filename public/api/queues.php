@@ -8,6 +8,11 @@ require_once __DIR__ . '/base-api-handler.php';
 require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -20,12 +25,7 @@ try {
     $db = DatabaseConnection::getInstance();
     $workItemService = new WorkItemService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -56,13 +56,11 @@ if ($engine === 'inside-sales' && $action === 'next') {
             // Stelle sicher, dass company_phone als String zurückgegeben wird (auch wenn leer)
             $lead['company_phone'] = isset($lead['company_phone']) ? trim((string)$lead['company_phone']) : null;
         }
-        echo json_encode($lead ?: null);
+        jsonResponse($lead ?: null);
     } else {
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
+        jsonError('Method not allowed', 405);
     }
 } else {
-    http_response_code(404);
-    echo json_encode(['error' => 'Not found']);
+    jsonError('Not found', 404);
 }
 

@@ -8,25 +8,19 @@ if (!defined('TOM3_AUTOLOADED')) {
     define('TOM3_AUTOLOADED', true);
 }
 
-header('Content-Type: application/json; charset=utf-8');
-
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 $configFile = __DIR__ . '/../../config/address_types.php';
 if (!file_exists($configFile)) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Address types config not found']);
-    exit;
+    jsonError('Address types config not found', 500);
 }
 
 $addressTypes = require $configFile;
-echo json_encode($addressTypes);
+jsonResponse($addressTypes);
 
 
 

@@ -5,27 +5,29 @@
  * Gibt Stadt und Bundesland für eine PLZ zurück
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
 }
 
-header('Content-Type: application/json; charset=utf-8');
-
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 $plz = $_GET['plz'] ?? '';
 
 if (empty($plz)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'PLZ required']);
-    exit;
+    jsonError('PLZ required', 400);
 }
 
 // Lade PLZ-Mapping
@@ -33,10 +35,9 @@ require_once __DIR__ . '/../../config/plz_mapping.php';
 
 try {
     $result = mapPlzToBundeslandAndCity($plz);
-    echo json_encode($result);
+    jsonResponse($result);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'PLZ Lookup');
 }
 
 

@@ -3,6 +3,23 @@
  * TOM3 - Orgs Search API (Autocomplete)
  */
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    // Da dies ein eigenständiges Skript sein könnte, laden wir den Handler
+    if (file_exists(__DIR__ . '/base-api-handler.php')) {
+        require_once __DIR__ . '/base-api-handler.php';
+        initApiErrorHandling();
+        jsonError('Direct access not allowed', 403);
+    } else {
+        http_response_code(403);
+        echo json_encode(['error' => 'Direct access not allowed']);
+        exit;
+    }
+}
+
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -15,20 +32,13 @@ try {
     $db = DatabaseConnection::getInstance();
     $orgService = new OrgService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 // Query und Filter aus Query-Parametern extrahieren
@@ -48,10 +58,12 @@ if (!empty($_GET['employees_min'])) $filters['employees_min'] = (int)$_GET['empl
 $filters['include_archived'] = isset($_GET['include_archived']) ? $_GET['include_archived'] === 'true' : true;
 
 if (empty($query) && empty($filters)) {
-    echo json_encode([]);
-    exit;
+    jsonResponse([]);
 }
 
-$results = $orgService->searchOrgs($query, $filters, $limit);
-echo json_encode($results ?: []);
-
+try {
+    $results = $orgService->searchOrgs($query, $filters, $limit);
+    jsonResponse($results ?: []);
+} catch (Exception $e) {
+    handleApiException($e, 'Search orgs');
+}

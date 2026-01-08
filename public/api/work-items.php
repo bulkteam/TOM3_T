@@ -8,6 +8,11 @@ require_once __DIR__ . '/base-api-handler.php';
 require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -24,12 +29,7 @@ try {
     $timelineService = new WorkItemTimelineService($db);
     $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -56,7 +56,7 @@ switch ($method) {
                 // GET /api/work-items/{uuid}/timeline
                 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
                 $timeline = $workItemService->getTimeline($workItemUuid, $limit);
-                echo json_encode($timeline);
+                jsonResponse($timeline);
             } else {
                 // GET /api/work-items/{uuid}
                 $workItem = $workItemService->getWorkItem($workItemUuid);
@@ -65,10 +65,9 @@ switch ($method) {
                     $workItem['priority_stars'] = isset($workItem['priority_stars']) ? (int)$workItem['priority_stars'] : 0;
                     // Stelle sicher, dass company_phone als String zurückgegeben wird (auch wenn leer)
                     $workItem['company_phone'] = isset($workItem['company_phone']) ? trim((string)$workItem['company_phone']) : null;
-                    echo json_encode($workItem);
+                    jsonResponse($workItem);
                 } else {
-                    http_response_code(404);
-                    echo json_encode(['error' => 'Work item not found']);
+                    jsonError('Work item not found', 404);
                 }
             }
         } else {
@@ -88,7 +87,7 @@ switch ($method) {
             unset($item);
             $stats = $workItemService->getQueueStats($type, $currentUserId);
             
-            echo json_encode([
+            jsonResponse([
                 'items' => $items,
                 'counts' => $stats
             ]);
@@ -99,12 +98,7 @@ switch ($method) {
         if ($workItemUuid) {
             // Rate-Limit prüfen
             if (!$rateLimiter->checkUserLimit('work-items-patch', $currentUserId, 30, 60)) {
-                http_response_code(429);
-                echo json_encode([
-                    'error' => 'Rate limit exceeded',
-                    'message' => 'Too many requests. Please try again later.'
-                ]);
-                exit;
+                jsonError('Rate limit exceeded: Too many requests. Please try again later.', 429);
             }
             
             // PATCH /api/work-items/{uuid}
@@ -144,20 +138,16 @@ switch ($method) {
             }
             
             if (!empty($errors)) {
-                http_response_code(400);
-                echo json_encode([
+                jsonResponse([
                     'error' => 'Validation failed',
                     'errors' => $errors
-                ]);
-                exit;
+                ], 400);
             }
             
             // Hole aktuelles WorkItem für Audit
             $oldWorkItem = $workItemService->getWorkItem($workItemUuid);
             if (!$oldWorkItem) {
-                http_response_code(404);
-                echo json_encode(['error' => 'Work item not found']);
-                exit;
+                jsonError('Work item not found', 404);
             }
             
             // Update WorkItem
@@ -217,7 +207,7 @@ switch ($method) {
                 $nextActionType
             );
             
-            echo json_encode(['timeline_id' => $timelineId]);
+            jsonResponse(['timeline_id' => $timelineId]);
         } elseif ($workItemUuid && ($action === 'handover' || $action === 'handoff')) {
             // POST /api/work-items/{uuid}/handover (oder /handoff für Kompatibilität)
             $data = json_decode(file_get_contents('php://input'), true);
@@ -296,20 +286,18 @@ switch ($method) {
             
             $workItemService->updateWorkItem($workItemUuid, $updateData);
             
-            echo json_encode([
+            jsonResponse([
                 'timeline_id' => $timelineId,
                 'stage' => $updateData['stage'],
                 'owner_role' => $updateData['owner_role']
             ]);
         } else {
-            http_response_code(400);
-            echo json_encode(['error' => 'Invalid request']);
+            jsonError('Invalid request', 400);
         }
         break;
         
     default:
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
+        jsonError('Method not allowed', 405);
         break;
 }
 

@@ -3,10 +3,12 @@
  * TOM3 - Accounts API (Account Owner Dashboard)
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
 // Security Guard: Verhindere direkten Aufruf (nur über Router)
 if (!defined('TOM3_API_ROUTER')) {
-    http_response_code(404);
-    exit;
+    jsonError('Direct access not allowed', 403);
 }
 
 if (!defined('TOM3_AUTOLOADED')) {
@@ -21,20 +23,13 @@ try {
     $db = DatabaseConnection::getInstance();
     $orgService = new OrgService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 // GET /api/accounts?user_id=...
@@ -54,10 +49,9 @@ try {
         return $aStatus <=> $bStatus;
     });
     
-    echo json_encode($accounts ?: []);
+    jsonResponse($accounts ?: []);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'Get accounts');
 }
 
 

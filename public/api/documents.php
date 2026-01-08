@@ -7,6 +7,15 @@
 
 declare(strict_types=1);
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    // Wenn nicht über Router geladen, prüfe ob direkt aufgerufen und breche ab
+    // Da wir aber require_once 'base-api-handler.php' machen, haben wir jsonError
+    require_once __DIR__ . '/base-api-handler.php';
+    initApiErrorHandling();
+    jsonError('Direct access not allowed', 403);
+}
+
 require_once __DIR__ . '/base-api-handler.php';
 require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
@@ -311,8 +320,7 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         // Prüfe ob Dokument existiert
         $document = $service->getDocument($documentUuid);
         if (!$document) {
-            http_response_code(404);
-            echo 'Document not found';
+            jsonError('Document not found', 404);
             return;
         }
         
@@ -322,8 +330,7 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         if (empty($attachments)) {
             // Dokument ohne Attachments: Nur Admins dürfen zugreifen
             if (!$currentUser || !in_array('admin', $currentUser['roles'] ?? [])) {
-                http_response_code(403);
-                echo 'Access denied';
+                jsonError('Access denied', 403);
                 return;
             }
         }
@@ -331,8 +338,7 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         
         // Nur wenn scan_status = clean
         if ($document['scan_status'] !== 'clean') {
-            http_response_code(403);
-            echo 'Document is not available for download (scan status: ' . $document['scan_status'] . ')';
+            jsonError('Document is not available for download (scan status: ' . $document['scan_status'] . ')', 403);
             return;
         }
         
@@ -341,8 +347,7 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         $filePath = $blobService->getBlobFilePath($document['current_blob_uuid']);
         
         if (!$filePath || !file_exists($filePath)) {
-            http_response_code(404);
-            echo 'File not found';
+            jsonError('File not found', 404);
             return;
         }
         
@@ -368,10 +373,7 @@ function handleDownload(DocumentService $service, string $documentUuid): void
         exit;
         
     } catch (Exception $e) {
-        http_response_code(500);
-        // Sicher: Keine internen Fehlerdetails an Client
-        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
-        echo 'Download failed' . ($isDev ? ': ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') : '');
+        handleApiException($e, 'Download failed');
     }
 }
 
@@ -388,8 +390,7 @@ function handleView(DocumentService $service, string $documentUuid): void
         // Prüfe ob Dokument existiert
         $document = $service->getDocument($documentUuid);
         if (!$document) {
-            http_response_code(404);
-            echo 'Document not found';
+            jsonError('Document not found', 404);
             return;
         }
         
@@ -399,8 +400,7 @@ function handleView(DocumentService $service, string $documentUuid): void
         if (empty($attachments)) {
             // Dokument ohne Attachments: Nur Admins dürfen zugreifen
             if (!$currentUser || !in_array('admin', $currentUser['roles'] ?? [])) {
-                http_response_code(403);
-                echo 'Access denied';
+                jsonError('Access denied', 403);
                 return;
             }
         }
@@ -408,8 +408,7 @@ function handleView(DocumentService $service, string $documentUuid): void
         
         // Nur wenn scan_status = clean
         if ($document['scan_status'] !== 'clean') {
-            http_response_code(403);
-            echo 'Document is not available for viewing (scan status: ' . $document['scan_status'] . ')';
+            jsonError('Document is not available for viewing (scan status: ' . $document['scan_status'] . ')', 403);
             return;
         }
         
@@ -426,8 +425,7 @@ function handleView(DocumentService $service, string $documentUuid): void
         $filePath = $blobService->getBlobFilePath($document['current_blob_uuid']);
         
         if (!$filePath || !file_exists($filePath)) {
-            http_response_code(404);
-            echo 'File not found';
+            jsonError('File not found', 404);
             return;
         }
         
@@ -451,10 +449,7 @@ function handleView(DocumentService $service, string $documentUuid): void
         exit;
         
     } catch (Exception $e) {
-        http_response_code(500);
-        // Sicher: Keine internen Fehlerdetails an Client
-        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
-        echo 'View failed' . ($isDev ? ': ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') : '');
+        handleApiException($e, 'View failed');
     }
 }
 

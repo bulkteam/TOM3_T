@@ -11,6 +11,11 @@ if (!defined('TOM3_AUTOLOADED')) {
 require_once __DIR__ . '/base-api-handler.php';
 initApiErrorHandling();
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Infrastructure\Auth\AuthHelper;
 use TOM\Infrastructure\Activity\ActivityLogService;
@@ -19,9 +24,7 @@ use TOM\Infrastructure\Utils\UuidHelper;
 try {
     $db = DatabaseConnection::getInstance();
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed']);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -37,9 +40,7 @@ if ($method === 'POST') {
     $data = json_decode(file_get_contents('php://input'), true);
     
     if (empty($data['name'])) {
-        http_response_code(400);
-        echo json_encode(['error' => 'name is required']);
-        exit;
+        jsonError('name is required', 400);
     }
     
     try {
@@ -72,12 +73,10 @@ if ($method === 'POST') {
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
-            http_response_code(409);
-            echo json_encode([
+            jsonResponse([
                 'error' => 'Industry already exists',
                 'industry_uuid' => $existing['industry_uuid']
-            ]);
-            exit;
+            ], 409);
         }
         
         // Füge Branche hinzu
@@ -111,7 +110,7 @@ if ($method === 'POST') {
             ]
         );
         
-        echo json_encode([
+        jsonResponse([
             'success' => true,
             'industry_uuid' => $industryUuid,
             'name' => $name
@@ -119,15 +118,12 @@ if ($method === 'POST') {
         
     } catch (Exception $e) {
         require_once __DIR__ . '/api-security.php';
-        sendErrorResponse($e);
+        handleApiException($e, 'Create industry');
     }
-    exit;
 }
 
 if ($method !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 try {
@@ -255,9 +251,8 @@ try {
         $industries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     
-    echo json_encode($industries ?: []);
+    jsonResponse($industries ?: []);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'Get industries');
 }
 

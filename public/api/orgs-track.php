@@ -3,6 +3,14 @@
  * TOM3 - Track Org Access API
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -15,17 +23,13 @@ try {
     $db = DatabaseConnection::getInstance();
     $orgService = new OrgService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed']);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
@@ -37,17 +41,14 @@ $userId = (string)$currentUser['user_id'];
 $accessType = $data['access_type'] ?? 'recent';
 
 if (!$orgUuid) {
-    http_response_code(400);
-    echo json_encode(['error' => 'org_uuid required']);
-    exit;
+    jsonError('org_uuid required', 400);
 }
 
 try {
     $orgService->trackAccess($userId, $orgUuid, $accessType);
-    echo json_encode(['success' => true]);
+    jsonResponse(['success' => true]);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'Track org access');
 }
 
 

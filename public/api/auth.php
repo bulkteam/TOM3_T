@@ -21,6 +21,8 @@ use TOM\Infrastructure\Security\RateLimiter;
 use TOM\Infrastructure\Database\DatabaseConnection;
 use TOM\Service\User\UserPermissionService;
 require_once __DIR__ . '/api-security.php';
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
 
 // Headers werden bereits vom Router gesetzt
 // Nur setzen, wenn noch nicht gesetzt (für direkten Aufruf)
@@ -34,31 +36,7 @@ try {
     $auth = new AuthService(null, $activityLogService);
     $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    // Verwende SecurityHelper für konsistente APP_ENV-Prüfung
-    $isDev = false;
-    try {
-        $isDev = \TOM\Infrastructure\Security\SecurityHelper::isDevMode();
-    } catch (\RuntimeException $e) {
-        // Wenn APP_ENV-Fehler, zeige diesen an
-        http_response_code(500);
-        echo json_encode(['error' => 'Configuration error', 'message' => $e->getMessage()]);
-        exit;
-    }
-    
-    $error = [
-        'error' => 'Auth service initialization failed',
-        'message' => $isDev ? $e->getMessage() : 'Authentication service unavailable'
-    ];
-    
-    if ($isDev) {
-        $error['file'] = basename($e->getFile());
-        $error['line'] = $e->getLine();
-        $error['trace'] = explode("\n", $e->getTraceAsString());
-    }
-    
-    echo json_encode($error);
-    exit;
+    handleApiException($e, 'Auth service initialization');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -169,14 +147,7 @@ try {
                         ]);
                     }
                 } catch (\Exception $e) {
-                    http_response_code(500);
-                    header('Cache-Control: no-store, no-cache, must-revalidate, private');
-                    echo json_encode([
-                        'error' => 'Failed to get current user',
-                        'message' => $e->getMessage(),
-                        'file' => $e->getFile(),
-                        'line' => $e->getLine()
-                    ]);
+                    handleApiException($e, 'Get current user');
                 }
             } elseif ($action === 'users' && $auth->isDevMode()) {
                 // GET /api/auth/users - Liste aller User (nur Dev-Modus)
@@ -184,11 +155,7 @@ try {
                     $users = $auth->getActiveUsers();
                     echo json_encode($users);
                 } catch (\Exception $e) {
-                    http_response_code(500);
-                    echo json_encode([
-                        'error' => 'Failed to get users',
-                        'message' => $e->getMessage()
-                    ]);
+                    handleApiException($e, 'Get users');
                 }
             } elseif ($action === 'csrf-token') {
                 // GET /api/auth/csrf-token - CSRF-Token für Frontend
@@ -196,11 +163,7 @@ try {
                     $token = generateCsrfToken();
                     echo json_encode(['token' => $token]);
                 } catch (\Exception $e) {
-                    http_response_code(500);
-                    echo json_encode([
-                        'error' => 'Failed to generate CSRF token',
-                        'message' => $e->getMessage()
-                    ]);
+                    handleApiException($e, 'Generate CSRF token');
                 }
             } else {
                 http_response_code(404);
@@ -239,11 +202,7 @@ try {
                     ]);
                 }
             } catch (\Exception $e) {
-                http_response_code(500);
-                echo json_encode([
-                    'error' => 'Login failed',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Login failed');
             }
         } elseif ($action === 'logout') {
             // POST /api/auth/logout - Logout
@@ -251,11 +210,7 @@ try {
                 $auth->logout();
                 echo json_encode(['success' => true]);
             } catch (\Exception $e) {
-                http_response_code(500);
-                echo json_encode([
-                    'error' => 'Logout failed',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Logout failed');
             }
         } else {
             http_response_code(404);
@@ -269,15 +224,7 @@ try {
             break;
     }
 } catch (\Throwable $e) {
-    // Catch any unhandled errors (including fatal errors)
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Internal server error',
-        'message' => $e->getMessage(),
-        'file' => $e->getFile(),
-        'line' => $e->getLine(),
-        'type' => get_class($e)
-    ]);
+    handleApiException($e, 'Unhandled auth error');
 }
 
 

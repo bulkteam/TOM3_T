@@ -7,12 +7,21 @@
  * GET /api/activity-log/entity/{entity_type}/{entity_uuid}?limit=50
  */
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
+if (!defined('TOM3_AUTOLOADED')) {
+    require_once __DIR__ . '/../../vendor/autoload.php';
+    define('TOM3_AUTOLOADED', true);
+}
 
 use TOM\Infrastructure\Activity\ActivityLogService;
 use TOM\Infrastructure\Auth\AuthHelper;
-
-header('Content-Type: application/json; charset=utf-8');
 
 try {
     $activityLogService = new ActivityLogService();
@@ -31,7 +40,7 @@ try {
             $activities = $activityLogService->getUserActivities($userId, $limit, $offset);
             $total = $activityLogService->countActivities(['user_id' => $userId]);
             
-            echo json_encode([
+            jsonResponse([
                 'success' => true,
                 'data' => $activities,
                 'total' => $total,
@@ -47,7 +56,7 @@ try {
             
             $activities = $activityLogService->getEntityActivities($entityType, $entityUuid, $limit);
             
-            echo json_encode([
+            jsonResponse([
                 'success' => true,
                 'data' => $activities
             ]);
@@ -78,7 +87,7 @@ try {
             $activities = $activityLogService->getActivities($filters, $limit, $offset);
             $total = $activityLogService->countActivities($filters);
             
-            echo json_encode([
+            jsonResponse([
                 'success' => true,
                 'data' => $activities,
                 'total' => $total,
@@ -87,18 +96,10 @@ try {
             ]);
         }
     } else {
-        http_response_code(405);
-        echo json_encode([
-            'success' => false,
-            'error' => 'Method not allowed'
-        ]);
+        jsonError('Method not allowed', 405);
     }
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+    handleApiException($e, 'Activity Log');
 }
 
 

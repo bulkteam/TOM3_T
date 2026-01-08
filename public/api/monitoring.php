@@ -3,10 +3,12 @@
  * TOM3 - Monitoring API
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
 // Security Guard: Verhindere direkten Aufruf (nur über Router)
 if (!defined('TOM3_API_ROUTER')) {
-    http_response_code(404);
-    exit;
+    jsonError('Direct access not allowed', 403);
 }
 
 // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
@@ -37,8 +39,7 @@ use TOM\Service\Document\BlobService;
 try {
     $db = DatabaseConnection::getInstance();
 } catch (Exception $e) {
-    // Exception weiterwerfen, damit index.php sie behandelt (mit sicherem Error-Handling)
-    throw $e;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -47,8 +48,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 // $id wird vom Router übergeben (z.B. 'status', 'outbox', etc.)
 if (!isset($id)) {
     // Sollte nie passieren, da Guard bereits prüft - aber sicherheitshalber
-    http_response_code(404);
-    exit;
+    jsonError('Not found', 404);
 }
 
 $endpoint = $id;
@@ -57,72 +57,65 @@ switch ($endpoint) {
     case 'status':
         // GET /api/monitoring/status
         try {
-            echo json_encode(getSystemStatus($db));
+            jsonResponse(getSystemStatus($db));
         } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode([
-                'error' => 'Internal server error',
-                'message' => $e->getMessage(),
-                'file' => basename($e->getFile()),
-                'line' => $e->getLine()
-            ]);
+            handleApiException($e, 'Get system status');
         }
         break;
         
     case 'outbox':
         // GET /api/monitoring/outbox
-        echo json_encode(getOutboxMetrics($db));
+        jsonResponse(getOutboxMetrics($db));
         break;
         
     case 'cases':
         // GET /api/monitoring/cases
-        echo json_encode(getCaseStatistics($db));
+        jsonResponse(getCaseStatistics($db));
         break;
         
     case 'sync':
         // GET /api/monitoring/sync
-        echo json_encode(getSyncStatistics($db));
+        jsonResponse(getSyncStatistics($db));
         break;
         
     case 'errors':
         // GET /api/monitoring/errors
-        echo json_encode(getRecentErrors($db));
+        jsonResponse(getRecentErrors($db));
         break;
         
     case 'event-types':
         // GET /api/monitoring/event-types
-        echo json_encode(getEventTypesDistribution($db));
+        jsonResponse(getEventTypesDistribution($db));
         break;
         
     case 'duplicates':
         // GET /api/monitoring/duplicates
-        echo json_encode(getDuplicateCheckResults($db));
+        jsonResponse(getDuplicateCheckResults($db));
         break;
         
     case 'activity-log':
         // GET /api/monitoring/activity-log
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
-        echo json_encode(getActivityLog($db, $limit));
+        jsonResponse(getActivityLog($db, $limit));
         break;
         
     case 'clamav':
         // GET /api/monitoring/clamav
-        echo json_encode(getClamAvStatus($db));
+        jsonResponse(getClamAvStatus($db));
         break;
         
     case 'scheduled-tasks':
         // GET /api/monitoring/scheduled-tasks
-        echo json_encode(checkScheduledTasks());
+        jsonResponse(checkScheduledTasks());
         break;
         
     case 'scan-metrics':
         // GET /api/monitoring/scan-metrics
-        echo json_encode(getScanMetrics($db));
+        jsonResponse(getScanMetrics($db));
         break;
         
     default:
-        http_response_code(404);
-        echo json_encode(['error' => 'Not found']);
+        jsonError('Not found', 404);
         break;
 }
 

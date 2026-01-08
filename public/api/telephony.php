@@ -11,6 +11,11 @@ require_once __DIR__ . '/base-api-handler.php';
 require_once __DIR__ . '/api-security.php';
 initApiErrorHandling();
 
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -25,12 +30,7 @@ try {
     $timelineService = new WorkItemTimelineService($db);
     $rateLimiter = new RateLimiter($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Database connection failed',
-        'message' => $e->getMessage()
-    ]);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -62,108 +62,102 @@ if (in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH'])) {
     validateCsrfToken($method);
 }
 
-switch ($subResource) {
-    case 'calls':
-        if ($method === 'POST' && !$subId) {
-            // POST /api/telephony/calls - Starte Anruf
-            // Rate-Limit: 20 Calls pro User pro Minute
-            if (!$rateLimiter->checkUserLimit('telephony-calls', $currentUserId, 20, 60)) {
-                http_response_code(429);
-                echo json_encode([
-                    'error' => 'Rate limit exceeded',
-                    'message' => 'Too many calls. Please try again later.'
+try {
+    switch ($subResource) {
+        case 'calls':
+            if ($method === 'POST' && !$subId) {
+                // POST /api/telephony/calls - Starte Anruf
+                // Rate-Limit: 20 Calls pro User pro Minute
+                if (!$rateLimiter->checkUserLimit('telephony-calls', $currentUserId, 20, 60)) {
+                    jsonError('Rate limit exceeded: Too many calls. Please try again later.', 429);
+                }
+                
+                $data = json_decode(file_get_contents('php://input'), true);
+                
+                $workItemUuid = $data['work_item_uuid'] ?? null;
+                $phoneNumber = $data['phone_number'] ?? null;
+                
+                if (!$workItemUuid || !$phoneNumber) {
+                    jsonError('work_item_uuid and phone_number required', 400);
+                }
+                
+                // TODO: SIPgate-Integration hier implementieren
+                // Für jetzt: Erstelle Timeline-Eintrag und gebe Mock-Daten zurück
+                $callRef = 'call_' . uniqid();
+                $activityId = $timelineService->addCallActivity(
+                    $workItemUuid,
+                    $currentUserId,
+                    $phoneNumber,
+                    'initiated',
+                    null,
+                    null,
+                    null
+                );
+                
+                jsonResponse([
+                    'call_ref' => $callRef,
+                    'activity_id' => $activityId,
+                    'phone_number' => $phoneNumber,
+                    'state' => 'initiated',
+                    'message' => 'Call initiated (SIPgate integration pending)'
                 ]);
-                exit;
+                
+            } elseif ($method === 'GET' && $subId) {
+                // GET /api/telephony/calls/{call_ref} - Hole Call-Status
+                // TODO: SIPgate-Status abfragen
+                // Für jetzt: Mock-Daten zurückgeben
+                jsonResponse([
+                    'call_ref' => $subId,
+                    'state' => 'connected',
+                    'initiated_at' => date('Y-m-d H:i:s'),
+                    'connected_at' => date('Y-m-d H:i:s'),
+                    'duration' => 0
+                ]);
+                
+            } else {
+                jsonError('Method not allowed', 405);
             }
+            break;
             
-            $data = json_decode(file_get_contents('php://input'), true);
-            
-            $workItemUuid = $data['work_item_uuid'] ?? null;
-            $phoneNumber = $data['phone_number'] ?? null;
-            
-            if (!$workItemUuid || !$phoneNumber) {
-                http_response_code(400);
-                echo json_encode(['error' => 'work_item_uuid and phone_number required']);
-                exit;
+        case 'activities':
+            if ($method === 'POST' && $subId && $subAction === 'finalize') {
+                // POST /api/telephony/activities/{activity_id}/finalize - Finalisiere Call-Activity
+                $data = json_decode(file_get_contents('php://input'), true);
+                
+                $callDuration = isset($data['call_duration']) ? (int)$data['call_duration'] : null;
+                $outcome = $data['outcome'] ?? null;
+                $notes = $data['notes'] ?? null;
+                $nextActionAt = isset($data['next_action_at']) && !empty($data['next_action_at']) 
+                    ? new \DateTime($data['next_action_at']) 
+                    : null;
+                $nextActionType = $data['next_action_type'] ?? null;
+                
+                // Update Timeline-Eintrag mit finalen Daten
+                $timelineService->updateActivity(
+                    (int)$subId,
+                    $callDuration,
+                    $outcome,
+                    $notes,
+                    $nextActionAt,
+                    $nextActionType
+                );
+                
+                jsonResponse([
+                    'success' => true,
+                    'activity_id' => (int)$subId,
+                    'message' => 'Call activity finalized'
+                ]);
+                
+            } else {
+                jsonError('Method not allowed', 405);
             }
+            break;
             
-            // TODO: SIPgate-Integration hier implementieren
-            // Für jetzt: Erstelle Timeline-Eintrag und gebe Mock-Daten zurück
-            $callRef = 'call_' . uniqid();
-            $activityId = $timelineService->addCallActivity(
-                $workItemUuid,
-                $currentUserId,
-                $phoneNumber,
-                'initiated',
-                null,
-                null,
-                null
-            );
-            
-            echo json_encode([
-                'call_ref' => $callRef,
-                'activity_id' => $activityId,
-                'phone_number' => $phoneNumber,
-                'state' => 'initiated',
-                'message' => 'Call initiated (SIPgate integration pending)'
-            ]);
-            
-        } elseif ($method === 'GET' && $subId) {
-            // GET /api/telephony/calls/{call_ref} - Hole Call-Status
-            // TODO: SIPgate-Status abfragen
-            // Für jetzt: Mock-Daten zurückgeben
-            echo json_encode([
-                'call_ref' => $subId,
-                'state' => 'connected',
-                'initiated_at' => date('Y-m-d H:i:s'),
-                'connected_at' => date('Y-m-d H:i:s'),
-                'duration' => 0
-            ]);
-            
-        } else {
-            http_response_code(405);
-            echo json_encode(['error' => 'Method not allowed']);
-        }
-        break;
-        
-    case 'activities':
-        if ($method === 'POST' && $subId && $subAction === 'finalize') {
-            // POST /api/telephony/activities/{activity_id}/finalize - Finalisiere Call-Activity
-            $data = json_decode(file_get_contents('php://input'), true);
-            
-            $callDuration = isset($data['call_duration']) ? (int)$data['call_duration'] : null;
-            $outcome = $data['outcome'] ?? null;
-            $notes = $data['notes'] ?? null;
-            $nextActionAt = isset($data['next_action_at']) && !empty($data['next_action_at']) 
-                ? new \DateTime($data['next_action_at']) 
-                : null;
-            $nextActionType = $data['next_action_type'] ?? null;
-            
-            // Update Timeline-Eintrag mit finalen Daten
-            $timelineService->updateActivity(
-                (int)$subId,
-                $callDuration,
-                $outcome,
-                $notes,
-                $nextActionAt,
-                $nextActionType
-            );
-            
-            echo json_encode([
-                'success' => true,
-                'activity_id' => (int)$subId,
-                'message' => 'Call activity finalized'
-            ]);
-            
-        } else {
-            http_response_code(405);
-            echo json_encode(['error' => 'Method not allowed']);
-        }
-        break;
-        
-    default:
-        http_response_code(404);
-        echo json_encode(['error' => 'Not found', 'path' => $subResource, 'resource' => 'telephony']);
-        break;
+        default:
+            jsonError('Not found: ' . $subResource, 404);
+            break;
+    }
+} catch (Exception $e) {
+    handleApiException($e, 'Telephony Error');
 }
 

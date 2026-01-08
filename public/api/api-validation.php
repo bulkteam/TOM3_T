@@ -9,6 +9,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/base-api-handler.php';
+
 /**
  * Validiert ein Pflichtfeld
  */
@@ -16,9 +18,7 @@ function validateRequired(array $data, string $field, ?string $message = null): 
 {
     if (empty($data[$field])) {
         $msg = $message ?? "Field '{$field}' is required";
-        http_response_code(400);
-        echo json_encode(['error' => 'Validation error', 'message' => $msg, 'field' => $field]);
-        exit;
+        jsonResponse(['error' => 'Validation error', 'message' => $msg, 'field' => $field], 400);
     }
 }
 
@@ -29,14 +29,12 @@ function validateLength(string $value, int $min, int $max, string $field): void
 {
     $len = mb_strlen($value);
     if ($len < $min || $len > $max) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Validation error',
             'message' => "Field '{$field}' must be between {$min} and {$max} characters",
             'field' => $field,
             'length' => $len
-        ]);
-        exit;
+        ], 400);
     }
 }
 
@@ -46,13 +44,11 @@ function validateLength(string $value, int $min, int $max, string $field): void
 function validateEmail(string $email, string $field = 'email'): void
 {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Validation error',
             'message' => "Field '{$field}' must be a valid email address",
             'field' => $field
-        ]);
-        exit;
+        ], 400);
     }
 }
 
@@ -62,14 +58,12 @@ function validateEmail(string $email, string $field = 'email'): void
 function validateEnum($value, array $allowedValues, string $field): void
 {
     if (!in_array($value, $allowedValues, true)) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Validation error',
             'message' => "Field '{$field}' must be one of: " . implode(', ', $allowedValues),
             'field' => $field,
             'allowed' => $allowedValues
-        ]);
-        exit;
+        ], 400);
     }
 }
 
@@ -80,13 +74,11 @@ function validateUuid(string $uuid, string $field = 'uuid'): void
 {
     $pattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     if (!preg_match($pattern, $uuid)) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Validation error',
             'message' => "Field '{$field}' must be a valid UUID",
             'field' => $field
-        ]);
-        exit;
+        ], 400);
     }
 }
 
@@ -97,13 +89,11 @@ function validateDate(string $date, string $field = 'date'): void
 {
     $d = DateTime::createFromFormat('Y-m-d', $date);
     if (!$d || $d->format('Y-m-d') !== $date) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Validation error',
             'message' => "Field '{$field}' must be a valid date (YYYY-MM-DD)",
             'field' => $field
-        ]);
-        exit;
+        ], 400);
     }
 }
 
@@ -116,18 +106,14 @@ function getValidatedJsonBody(): array
     $data = json_decode($body, true);
     
     if (json_last_error() !== JSON_ERROR_NONE) {
-        http_response_code(400);
-        echo json_encode([
+        jsonResponse([
             'error' => 'Invalid JSON',
             'message' => json_last_error_msg()
-        ]);
-        exit;
+        ], 400);
     }
     
     if (!is_array($data)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Invalid request body', 'message' => 'Expected JSON object']);
-        exit;
+        jsonResponse(['error' => 'Invalid request body', 'message' => 'Expected JSON object'], 400);
     }
     
     return $data;

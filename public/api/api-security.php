@@ -12,6 +12,8 @@ if (!defined('TOM3_AUTOLOADED')) {
     define('TOM3_AUTOLOADED', true);
 }
 
+require_once __DIR__ . '/base-api-handler.php';
+
 use TOM\Infrastructure\Auth\AuthHelper;
 use TOM\Infrastructure\Security\SecurityHelper;
 use TOM\Infrastructure\Security\CsrfTokenService;
@@ -28,12 +30,7 @@ function requireAppEnv(): void
         SecurityHelper::requireAppEnv();
     } catch (\RuntimeException $e) {
         // In Production: Fail sofort
-        http_response_code(500);
-        echo json_encode([
-            'error' => 'Configuration error',
-            'message' => $e->getMessage()
-        ]);
-        exit;
+        jsonError($e->getMessage(), 500);
     }
 }
 
@@ -85,9 +82,7 @@ function requireAuth(): array
 {
     $user = AuthHelper::getCurrentUser();
     if (!$user) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Unauthorized', 'message' => 'Authentication required']);
-        exit;
+        jsonError('Authentication required', 401);
     }
     return $user;
 }
@@ -106,14 +101,7 @@ function requireRole($requiredRole): array
     $userRoles = $user['roles'] ?? [];
     
     if (empty(array_intersect($roles, $userRoles))) {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Forbidden',
-            'message' => 'Insufficient permissions',
-            'required' => $roles,
-            'user_roles' => $userRoles
-        ]);
-        exit;
+        jsonError('Insufficient permissions', 403);
     }
     
     return $user;
@@ -142,14 +130,7 @@ function requireCapability(string $capability): array
     $userRoles = $user['roles'] ?? null;
     
     if (!$permissionService->userHasCapability($userId, $capability, $userRoles)) {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Forbidden',
-            'message' => 'Insufficient permissions',
-            'required_capability' => $capability,
-            'user_roles' => $userRoles ?? []
-        ]);
-        exit;
+        jsonError('Insufficient permissions', 403);
     }
     
     return $user;
@@ -170,14 +151,7 @@ function requireAnyCapability(array $capabilities): array
     $userRoles = $user['roles'] ?? null;
     
     if (!$permissionService->userHasAnyCapability($userId, $capabilities, $userRoles)) {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Forbidden',
-            'message' => 'Insufficient permissions',
-            'required_capabilities' => $capabilities,
-            'user_roles' => $userRoles ?? []
-        ]);
-        exit;
+        jsonError('Insufficient permissions', 403);
     }
     
     return $user;
@@ -232,12 +206,7 @@ function validateCsrfToken(string $method): void
     try {
         CsrfTokenService::requireValidToken($method, $token);
     } catch (\RuntimeException $e) {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Invalid CSRF token',
-            'message' => $e->getMessage()
-        ]);
-        exit;
+        jsonError('Invalid CSRF token: ' . $e->getMessage(), 403);
     }
 }
 
@@ -249,29 +218,7 @@ function validateCsrfToken(string $method): void
  */
 function sendErrorResponse(Exception $e, bool $includeTrace = false): void
 {
-    $isDev = SecurityHelper::isDevMode();
-    
-    $error = [
-        'error' => 'Internal server error',
-        'message' => $isDev ? $e->getMessage() : 'An error occurred'
-    ];
-    
-    if ($isDev && $includeTrace) {
-        $error['file'] = basename($e->getFile());
-        $error['line'] = $e->getLine();
-        $error['trace'] = explode("\n", $e->getTraceAsString());
-    }
-    
-    // In Production: Korrelations-ID für Logs
-    if (!$isDev) {
-        $error['correlation_id'] = bin2hex(random_bytes(8));
-        // Logge Details intern (nicht an Client)
-        error_log("API Error [{$error['correlation_id']}]: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
-    }
-    
-    http_response_code(500);
-    echo json_encode($error);
-    exit;
+    handleApiException($e, 'API Error');
 }
 
 

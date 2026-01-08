@@ -5,9 +5,13 @@
 
 // Security Guard: Verhindere direkten Aufruf (nur über Router)
 if (!defined('TOM3_API_ROUTER')) {
-    http_response_code(404);
-    exit;
+    require_once __DIR__ . '/base-api-handler.php';
+    initApiErrorHandling();
+    jsonError('Direct access not allowed', 403);
 }
+
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
 
 use TOM\Service\PersonService;
 use TOM\Infrastructure\Database\DatabaseConnection;
@@ -27,13 +31,11 @@ if (isset($id) && $id === 'by-org') {
     $includeInactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] == '1';
     
     if (!$orgUuid) {
-        http_response_code(400);
-        echo json_encode(['error' => 'org_uuid parameter required']);
-        exit;
+        jsonError('org_uuid parameter required', 400);
     }
     
     $persons = $personService->listPersonsByOrg($orgUuid, $includeInactive);
-    echo json_encode($persons);
+    jsonResponse($persons);
     exit;
 }
 
@@ -42,7 +44,7 @@ if (isset($id) && $id === 'search') {
     // GET /api/persons/search?q=...
     $query = $_GET['q'] ?? '';
     $persons = $personService->searchPersons($query, true);
-    echo json_encode($persons ?: []);
+    jsonResponse($persons ?: []);
     exit;
 }
 
@@ -54,7 +56,7 @@ if ($personUuid && isset($action)) {
             // GET /api/persons/{uuid}/affiliations
             $includeInactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] === 'true';
             $affiliations = $personService->getPersonAffiliations($personUuid, !$includeInactive);
-            echo json_encode($affiliations ?: []);
+            jsonResponse($affiliations ?: []);
             exit;
         } elseif ($method === 'POST') {
             // POST /api/persons/{uuid}/affiliations
@@ -67,13 +69,9 @@ if ($personUuid && isset($action)) {
             $data['since_date'] = $data['since_date'] ?? date('Y-m-d');
             try {
                 $affiliation = $personService->createAffiliation($data);
-                echo json_encode($affiliation);
+                jsonResponse($affiliation);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode([
-                    'error' => 'Fehler beim Erstellen der Affiliation',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Creating affiliation');
             }
             exit;
         } elseif ($method === 'PUT') {
@@ -82,49 +80,30 @@ if ($personUuid && isset($action)) {
             $data = json_decode(file_get_contents('php://input'), true);
             $affiliationUuid = $data['affiliation_uuid'] ?? null;
             if (!$affiliationUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'affiliation_uuid required']);
-                exit;
+                jsonError('affiliation_uuid required', 400);
             }
             try {
                 $affiliation = $personService->updateAffiliation($affiliationUuid, $data);
-                echo json_encode($affiliation);
-            } catch (\RuntimeException $e) {
-                http_response_code(404);
-                echo json_encode([
-                    'error' => 'Affiliation nicht gefunden',
-                    'message' => $e->getMessage()
-                ]);
+                jsonResponse($affiliation);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode([
-                    'error' => 'Fehler beim Aktualisieren der Affiliation',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Updating affiliation');
             }
             exit;
         } elseif ($method === 'DELETE') {
             // DELETE /api/persons/{uuid}/affiliations?affiliation_uuid=...
             $affiliationUuid = $_GET['affiliation_uuid'] ?? null;
             if (!$affiliationUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'affiliation_uuid parameter required']);
-                exit;
+                jsonError('affiliation_uuid parameter required', 400);
             }
             try {
                 $success = $personService->deleteAffiliation($affiliationUuid);
                 if ($success) {
-                    echo json_encode(['success' => true, 'message' => 'Affiliation gelöscht']);
+                    jsonResponse(['success' => true, 'message' => 'Affiliation gelöscht']);
                 } else {
-                    http_response_code(404);
-                    echo json_encode(['error' => 'Affiliation nicht gefunden']);
+                    jsonError('Affiliation nicht gefunden', 404);
                 }
             } catch (\Exception $e) {
-                http_response_code(500);
-                echo json_encode([
-                    'error' => 'Fehler beim Löschen der Affiliation',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Deleting affiliation');
             }
             exit;
         }
@@ -133,7 +112,7 @@ if ($personUuid && isset($action)) {
             // GET /api/persons/{uuid}/relationships
             $includeInactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] === 'true';
             $relationships = $personService->getPersonRelationships($personUuid, !$includeInactive);
-            echo json_encode($relationships ?: []);
+            jsonResponse($relationships ?: []);
             exit;
         } elseif ($method === 'POST') {
             // POST /api/persons/{uuid}/relationships
@@ -145,37 +124,26 @@ if ($personUuid && isset($action)) {
             $data['direction'] = $data['direction'] ?? 'bidirectional';
             try {
                 $relationship = $personService->createRelationship($data);
-                echo json_encode($relationship);
+                jsonResponse($relationship);
             } catch (\Exception $e) {
-                http_response_code(400);
-                echo json_encode([
-                    'error' => 'Fehler beim Erstellen der Beziehung',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Creating relationship');
             }
             exit;
         } elseif ($method === 'DELETE') {
             // DELETE /api/persons/{uuid}/relationships?relationship_uuid=...
             $relationshipUuid = $_GET['relationship_uuid'] ?? null;
             if (!$relationshipUuid) {
-                http_response_code(400);
-                echo json_encode(['error' => 'relationship_uuid parameter required']);
-                exit;
+                jsonError('relationship_uuid parameter required', 400);
             }
             try {
                 $success = $personService->deleteRelationship($relationshipUuid);
                 if ($success) {
-                    echo json_encode(['success' => true, 'message' => 'Beziehung gelöscht']);
+                    jsonResponse(['success' => true, 'message' => 'Beziehung gelöscht']);
                 } else {
-                    http_response_code(404);
-                    echo json_encode(['error' => 'Beziehung nicht gefunden']);
+                    jsonError('Beziehung nicht gefunden', 404);
                 }
             } catch (\Exception $e) {
-                http_response_code(500);
-                echo json_encode([
-                    'error' => 'Fehler beim Löschen der Beziehung',
-                    'message' => $e->getMessage()
-                ]);
+                handleApiException($e, 'Deleting relationship');
             }
             exit;
         }
@@ -183,7 +151,7 @@ if ($personUuid && isset($action)) {
         // GET /api/persons/{uuid}/audit-trail
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
         $auditTrail = $personService->getAuditTrail($personUuid, $limit);
-        echo json_encode($auditTrail ?: []);
+        jsonResponse($auditTrail ?: []);
         exit;
     }
 }
@@ -208,45 +176,26 @@ switch ($method) {
             $result = $personService->createPerson($data);
             echo json_encode($result);
         } catch (\Exception $e) {
-            http_response_code(400);
-            $message = $e->getMessage();
-            // Prüfe auf Duplikat-Fehler
-            if (strpos($message, 'existiert bereits') !== false || strpos($message, 'already exists') !== false || strpos($message, 'Duplicate entry') !== false) {
-                echo json_encode([
-                    'error' => 'Person bereits vorhanden',
-                    'message' => $message
-                ]);
-            } else {
-                echo json_encode([
-                    'error' => 'Fehler beim Anlegen der Person',
-                    'message' => $message
-                ]);
-            }
+            handleApiException($e, 'Creating person');
         }
         break;
         
     case 'PUT':
         // PUT /api/persons/{uuid}
         if (!$personUuid) {
-            http_response_code(400);
-            echo json_encode(['error' => 'Person UUID required']);
-            break;
+            jsonError('Person UUID required', 400);
         }
         $data = json_decode(file_get_contents('php://input'), true);
         try {
             $result = $personService->updatePerson($personUuid, $data);
-            echo json_encode($result);
-        } catch (\RuntimeException $e) {
-            handleApiException($e, 'Update person');
+            jsonResponse($result);
         } catch (\Exception $e) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Internal server error']);
+            handleApiException($e, 'Updating person');
         }
         break;
         
     default:
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
+        jsonError('Method not allowed', 405);
         break;
 }
 

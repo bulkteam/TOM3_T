@@ -93,7 +93,7 @@ try {
                     $stagingService = new ImportStagingService();
                     handleImportToStaging($stagingService, $id, $userId);
                 } else {
-                    jsonResponse(['error' => 'Invalid endpoint'], 400);
+                    jsonError('Invalid endpoint', 400);
                 }
             } elseif ($action === 'batch' && $id && $subAction === 'commit') {
                 // POST /api/import/batch/{batch_uuid}/commit
@@ -104,7 +104,7 @@ try {
                 $reviewService = new \TOM\Service\Import\ImportReviewService();
                 handleSetDisposition($reviewService, $id, $userId);
             } else {
-                jsonResponse(['error' => 'Invalid endpoint'], 400);
+                jsonError('Invalid endpoint', 400);
             }
             break;
             
@@ -114,7 +114,7 @@ try {
                 $batchService = new \TOM\Service\Import\ImportBatchService();
                 handleDeleteBatch($batchService, $id, $userId);
             } else {
-                jsonResponse(['error' => 'Invalid endpoint'], 400);
+                jsonError('Invalid endpoint', 400);
             }
             break;
             
@@ -150,20 +150,16 @@ try {
                 $templateService = new ImportTemplateService();
                 handleGetTemplate($templateService, $id);
             } else {
-                jsonResponse(['error' => 'Invalid endpoint'], 400);
+                jsonError('Invalid endpoint', 400);
             }
             break;
             
         default:
-            jsonResponse(['error' => 'Method not allowed'], 405);
+            jsonError('Method not allowed', 405);
     }
     
 } catch (Exception $e) {
-    error_log("Import API Error: " . $e->getMessage());
-    jsonResponse([
-        'error' => 'Internal server error',
-        'message' => $e->getMessage()
-    ], 500);
+    handleApiException($e, 'Import API Error');
 }
 
 /**
@@ -171,7 +167,7 @@ try {
  */
 function handleImportUpload($documentService, $importService, $blobService, $userId) {
     if (empty($_FILES['file'])) {
-        jsonResponse(['error' => 'No file uploaded'], 400);
+        jsonError('No file uploaded', 400);
         return;
     }
     
@@ -274,10 +270,7 @@ function handleImportUpload($documentService, $importService, $blobService, $use
         ]);
         
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Upload failed',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Upload failed');
     }
 }
 
@@ -306,7 +299,7 @@ function handleAnalyze($importService, $documentUuid, $userId) {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$doc || !$doc['blob_uuid']) {
-            jsonResponse(['error' => 'Dokument für Batch nicht gefunden'], 404);
+            jsonError('Dokument für Batch nicht gefunden', 404);
             return;
         }
         
@@ -314,7 +307,7 @@ function handleAnalyze($importService, $documentUuid, $userId) {
         $filePath = $blobService->getBlobFilePath($doc['blob_uuid']);
         
         if (!$filePath || !file_exists($filePath)) {
-            jsonResponse(['error' => 'Datei nicht gefunden'], 404);
+            jsonError('Datei nicht gefunden', 404);
             return;
         }
         
@@ -323,10 +316,7 @@ function handleAnalyze($importService, $documentUuid, $userId) {
             $analysis = $importService->analyzeExcel($filePath, $importType);
             jsonResponse(['analysis' => $analysis]);
         } catch (Exception $e) {
-            jsonResponse([
-                'error' => 'Analysis failed',
-                'message' => $e->getMessage()
-            ], 500);
+            handleApiException($e, 'Analysis failed');
         }
         return;
     }
@@ -335,7 +325,7 @@ function handleAnalyze($importService, $documentUuid, $userId) {
     $filePath = $data['file_path'] ?? null;
     
     if (!$filePath || !file_exists($filePath)) {
-        jsonResponse(['error' => 'File not found'], 404);
+        jsonError('File not found', 404);
         return;
     }
     
@@ -343,10 +333,7 @@ function handleAnalyze($importService, $documentUuid, $userId) {
         $analysis = $importService->analyzeExcel($filePath);
         jsonResponse($analysis);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Analysis failed',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Analysis failed');
     }
 }
 
@@ -357,7 +344,7 @@ function handleSaveMapping($importService, $batchUuid, $userId) {
     $data = json_decode(file_get_contents('php://input'), true);
     
     if (empty($data['mapping_config'])) {
-        jsonResponse(['error' => 'mapping_config required'], 400);
+        jsonError('mapping_config required', 400);
         return;
     }
     
@@ -365,10 +352,7 @@ function handleSaveMapping($importService, $batchUuid, $userId) {
         $importService->saveMapping($batchUuid, $data['mapping_config'], (string)$userId);
         jsonResponse(['success' => true]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to save mapping',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to save mapping');
     }
 }
 
@@ -382,7 +366,7 @@ function handleImportToStaging($stagingService, $batchUuid, $userId) {
         $batch = $importService->getBatch($batchUuid);
         
         if (!$batch) {
-            jsonResponse(['error' => 'Batch not found'], 404);
+            jsonError('Batch not found', 404);
             return;
         }
         
@@ -402,7 +386,7 @@ function handleImportToStaging($stagingService, $batchUuid, $userId) {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$doc || !$doc['blob_uuid']) {
-            jsonResponse(['error' => 'File not found for batch'], 404);
+            jsonError('File not found for batch', 404);
             return;
         }
         
@@ -411,7 +395,7 @@ function handleImportToStaging($stagingService, $batchUuid, $userId) {
         $filePath = $blobService->getBlobFilePath($doc['blob_uuid']);
         
         if (!$filePath || !file_exists($filePath)) {
-            jsonResponse(['error' => 'File not found on disk'], 404);
+            jsonError('File not found on disk', 404);
             return;
         }
         
@@ -467,10 +451,7 @@ function handleImportToStaging($stagingService, $batchUuid, $userId) {
             'stats' => $stats
         ]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Import failed',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Import failed');
     }
 }
 
@@ -487,10 +468,7 @@ function handleListBatches($batchService, $userId) {
             'count' => count($batches)
         ]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to list batches',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to list batches');
     }
 }
 
@@ -501,16 +479,13 @@ function handleGetBatchStats($batchService, $batchUuid) {
     try {
         $batch = $batchService->getBatchWithStats($batchUuid);
         if (!$batch) {
-            jsonResponse(['error' => 'Batch not found'], 404);
+            jsonError('Batch not found', 404);
             return;
         }
         
         jsonResponse($batch);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to get batch stats',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to get batch stats');
     }
 }
 
@@ -521,16 +496,13 @@ function handleGetBatch($importService, $batchUuid) {
     try {
         $batch = $importService->getBatch($batchUuid);
         if (!$batch) {
-            jsonResponse(['error' => 'Batch not found'], 404);
+            jsonError('Batch not found', 404);
             return;
         }
         
         jsonResponse($batch);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to get batch',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to get batch');
     }
 }
 
@@ -542,7 +514,7 @@ function handleGetStagingRow($stagingService, $stagingUuid) {
         $row = $stagingService->getStagingRow($stagingUuid);
         
         if (!$row) {
-            jsonResponse(['error' => 'Staging row not found'], 404);
+            jsonError('Staging row not found', 404);
             return;
         }
         
@@ -576,10 +548,7 @@ function handleGetStagingRow($stagingService, $stagingUuid) {
             'import_status' => $row['import_status']
         ]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to get staging row',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to get staging row');
     }
 }
 
@@ -599,10 +568,7 @@ function handleGetBatchStagingRows($stagingService, $batchUuid) {
             'count' => count($rows)
         ]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to get staging rows',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to get staging rows');
     }
 }
 
@@ -644,22 +610,10 @@ function handleIndustryDecision($decisionService, $stagingUuid, $userId) {
                 'message' => 'UUID für bestehende Level 3 Branche ist erforderlich.'
             ], 400);
         } else {
-            // Unbekannter Fehler - logge Details
-            error_log("IndustryDecision Error: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString());
-            jsonResponse([
-                'error' => 'Decision failed',
-                'message' => $e->getMessage(),
-                'error_code' => $errorCode
-            ], 500);
+            handleApiException($e, 'Industry decision failed');
         }
     } catch (Exception $e) {
-        // Allgemeiner Fehler - logge Details
-        error_log("IndustryDecision Exception: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString());
-        jsonResponse([
-            'error' => 'Decision failed',
-            'message' => $e->getMessage(),
-            'type' => get_class($e)
-        ], 500);
+        handleApiException($e, 'Decision failed');
     }
 }
 
@@ -671,10 +625,7 @@ function handleListTemplates($templateService, $importType) {
         $templates = $templateService->listTemplates($importType, true);
         jsonResponse(['templates' => $templates]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to list templates',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to list templates');
     }
 }
 
@@ -690,10 +641,7 @@ function handleGetTemplate($templateService, $templateUuid) {
         }
         jsonResponse(['template' => $template]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to get template',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to get template');
     }
 }
 
@@ -718,10 +666,7 @@ function handleCreateTemplate($templateService, $userId) {
         );
         jsonResponse(['template_uuid' => $templateUuid, 'success' => true]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to create template',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to create template');
     }
 }
 
@@ -741,10 +686,7 @@ function handleUpdateTemplate($templateService, $templateUuid, $userId) {
         );
         jsonResponse(['success' => true]);
     } catch (Exception $e) {
-        jsonResponse([
-            'error' => 'Failed to update template',
-            'message' => $e->getMessage()
-        ], 500);
+        handleApiException($e, 'Failed to update template');
     }
 }
 

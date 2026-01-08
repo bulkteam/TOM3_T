@@ -3,6 +3,14 @@
  * TOM3 - Track Document Access API
  */
 
+require_once __DIR__ . '/base-api-handler.php';
+initApiErrorHandling();
+
+// Security Guard: Verhindere direkten Aufruf
+if (!defined('TOM3_API_ROUTER')) {
+    jsonError('Direct access not allowed', 403);
+}
+
 if (!defined('TOM3_AUTOLOADED')) {
     require_once __DIR__ . '/../../vendor/autoload.php';
     define('TOM3_AUTOLOADED', true);
@@ -16,17 +24,13 @@ try {
     $db = DatabaseConnection::getInstance();
     $documentService = new DocumentService($db);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed']);
-    exit;
+    handleApiException($e, 'Database connection');
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+    jsonError('Method not allowed', 405);
 }
 
 // Security: Auth erzwingen (kein 'default_user' Fallback)
@@ -39,17 +43,14 @@ $documentUuid = $data['document_uuid'] ?? null;
 $accessType = $data['access_type'] ?? 'recent';
 
 if (!$documentUuid) {
-    http_response_code(400);
-    echo json_encode(['error' => 'document_uuid required']);
-    exit;
+    jsonError('document_uuid required', 400);
 }
 
 try {
     $documentService->trackAccess($userId, $documentUuid, $accessType);
-    echo json_encode(['success' => true]);
+    jsonResponse(['success' => true]);
 } catch (Exception $e) {
-    require_once __DIR__ . '/api-security.php';
-    sendErrorResponse($e);
+    handleApiException($e, 'Track document access');
 }
 
 
