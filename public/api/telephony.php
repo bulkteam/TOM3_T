@@ -38,20 +38,11 @@ $method = $_SERVER['REQUEST_METHOD'];
 // $id ist z.B. 'calls' für /api/telephony/calls
 // $action ist z.B. null oder 'finalize' für /api/telephony/activities/{id}/finalize
 
-// Parse zusätzliche Pfad-Teile
-$requestUri = $_SERVER['REQUEST_URI'];
-$path = parse_url($requestUri, PHP_URL_PATH);
-$path = preg_replace('#^/tom3/public#i', '', $path);
-$path = preg_replace('#^/api/?|^api/?#', '', $path);
-$path = trim($path, '/');
-$parts = explode('/', $path);
+$parts = parseApiPathParts('telephony');
 
-// telephony/calls -> $parts[0] = 'telephony', $parts[1] = 'calls'
-// telephony/calls/{call_ref} -> $parts[0] = 'telephony', $parts[1] = 'calls', $parts[2] = '{call_ref}'
-// telephony/activities/{activity_id}/finalize -> $parts[0] = 'telephony', $parts[1] = 'activities', $parts[2] = '{activity_id}', $parts[3] = 'finalize'
-$subResource = $parts[1] ?? null; // 'calls' oder 'activities'
-$subId = $parts[2] ?? null; // call_ref oder activity_id
-$subAction = $parts[3] ?? null; // 'finalize' etc.
+$subResource = $parts[0] ?? null;
+$subId = $parts[1] ?? null;
+$subAction = $parts[2] ?? null;
 
 // Auth prüfen
 $currentUser = requireAuth();

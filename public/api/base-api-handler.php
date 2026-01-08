@@ -182,3 +182,24 @@ function handleApiException(\Throwable $e, string $context = 'API request'): voi
     jsonResponse($error, 500);
 }
 
+function parseApiPathParts(?string $resourceToFilter = null): array
+{
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
+    if (preg_match('#/api/(.*)$#', $path, $matches)) {
+        $path = $matches[1];
+    } else {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+        if ($scriptDir !== '/' && $scriptDir !== '' && stripos($path, $scriptDir) === 0) {
+            $path = substr($path, strlen($scriptDir));
+        }
+        $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    }
+    $path = trim($path, '/');
+    $parts = $path === '' ? [] : explode('/', $path);
+    if ($resourceToFilter) {
+        $parts = array_values(array_filter($parts, function($p) use ($resourceToFilter) { return $p !== $resourceToFilter; }));
+    }
+    return $parts;
+}
+

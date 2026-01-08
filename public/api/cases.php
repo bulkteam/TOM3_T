@@ -53,8 +53,16 @@ $pathParts = null;
 if ($action === 'requirements') {
     $requestUri = $_SERVER['REQUEST_URI'];
     $path = parse_url($requestUri, PHP_URL_PATH);
-    $path = preg_replace('#^/tom3/public#i', '', $path);
-    $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    // Extract path relative to /api/
+    if (preg_match('#/api/(.*)$#', $path, $matches)) {
+        $path = $matches[1];
+    } else {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME']);
+        if ($scriptDir !== '/' && stripos($path, $scriptDir) === 0) {
+            $path = substr($path, strlen($scriptDir));
+        }
+        $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    }
     $path = trim($path, '/');
     $pathParts = explode('/', $path);
 }
@@ -90,12 +98,21 @@ try {
                 // POST /api/cases/{uuid}/notes
                 $data = json_decode(file_get_contents('php://input'), true);
                 $note = $data['note'] ?? '';
+                if (!$caseUuid) {
+                    jsonError('case_uuid required', 400);
+                }
                 $result = $caseService->addNote($caseUuid, $note);
                 jsonResponse($result);
             } elseif ($action === 'requirements' && isset($pathParts[3], $pathParts[4]) && $pathParts[4] === 'fulfill') {
                 // POST /api/cases/{uuid}/requirements/{req_uuid}/fulfill
                 $requirementUuid = $pathParts[3];
                 $data = json_decode(file_get_contents('php://input'), true);
+                if (!$caseUuid) {
+                    jsonError('case_uuid required', 400);
+                }
+                if (!$requirementUuid) {
+                    jsonError('requirement_uuid required', 400);
+                }
                 $result = $caseService->fulfillRequirement($caseUuid, $requirementUuid, $data);
                 jsonResponse($result);
             } else {
@@ -121,6 +138,9 @@ try {
         case 'PUT':
             // PUT /api/cases/{uuid}
             $data = json_decode(file_get_contents('php://input'), true);
+            if (!$caseUuid) {
+                jsonError('case_uuid required', 400);
+            }
             $result = $caseService->updateCase($caseUuid, $data);
             
             // Track Zugriff auf Organisation, wenn Case mit Org verknüpft ist
