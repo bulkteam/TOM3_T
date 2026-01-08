@@ -9,7 +9,7 @@ Der Neo4j Sync-Worker verarbeitet Events aus der `outbox_event` Tabelle und sync
 ### Option 1: PowerShell-Script (Empfohlen)
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
 ```
 
@@ -43,10 +43,10 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
    - Neu → Wiederholen alle 5 Minuten
    - Dauer: Unbegrenzt
 5. **Aktionen:**
-   - Neu → Programm starten
-   - Programm/Script: `wscript.exe`
-   - Argumente: `"C:\xampp\htdocs\TOM3\scripts\sync-neo4j-worker.vbs"`
-   - **Hinweis:** Verwende den VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
+- Neu → Programm starten
+- Programm/Script: `wscript.exe`
+- Argumente: `"C:\xampp\htdocs\TOM3_T\scripts\sync-neo4j-worker.vbs"`
+- **Hinweis:** Verwende den VBScript-Wrapper für unsichtbare Ausführung (keine aufblinkende Konsole)
 6. **Bedingungen:**
    - ✅ "Aufgabe starten, unabhängig davon, ob Computer im Netzbetrieb oder Batteriebetrieb ist"
 7. **Einstellungen:**
@@ -162,7 +162,7 @@ Unregister-ScheduledTask -TaskName "TOM3-Neo4j-Sync-Worker" -Confirm:$false
 **Lösung:** Task aktualisieren, um VBScript-Wrapper zu verwenden:
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\update-neo4j-sync-task.ps1
 ```
 

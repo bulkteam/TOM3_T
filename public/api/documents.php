@@ -94,8 +94,16 @@ try {
     // Für komplexere Pfade müssen wir nochmal parsen
     $requestUri = $_SERVER['REQUEST_URI'];
     $path = parse_url($requestUri, PHP_URL_PATH);
-    $path = preg_replace('#^/tom3/public#i', '', $path);
-    $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    // Extract path relative to /api/
+    if (preg_match('#/api/(.*)$#', $path, $matches)) {
+        $path = $matches[1];
+    } else {
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME']);
+        if ($scriptDir !== '/' && stripos($path, $scriptDir) === 0) {
+            $path = substr($path, strlen($scriptDir));
+        }
+        $path = preg_replace('#^/api/?|^api/?#', '', $path);
+    }
     $path = trim($path, '/');
     $parts = explode('/', $path);
     
@@ -416,7 +424,8 @@ function handleView(DocumentService $service, string $documentUuid): void
         $mimeType = $document['mime_detected'] ?? '';
         if ($mimeType !== 'application/pdf' && !str_starts_with($mimeType, 'image/')) {
             // Für andere Dateitypen: Redirect zu Download
-            header('Location: /tom3/public/api/documents/' . $documentUuid . '/download');
+            $basePath = dirname($_SERVER['SCRIPT_NAME']);
+            header('Location: ' . $basePath . '/documents/' . $documentUuid . '/download');
             exit;
         }
         

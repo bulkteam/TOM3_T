@@ -48,7 +48,7 @@ TOM3 benötigt folgende automatische Tasks:
 **Einrichtung:**
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
 ```
 
@@ -70,7 +70,7 @@ Get-ScheduledTask -TaskName "TOM3-Neo4j-Sync-Worker" | Get-ScheduledTaskInfo
 
 **Task aktualisieren (falls Konsole aufblinkt):**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\update-neo4j-sync-task.ps1
 ```
 
@@ -83,7 +83,7 @@ powershell -ExecutionPolicy Bypass -File scripts\update-neo4j-sync-task.ps1
 **Einrichtung:**
 
 ```batch
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 scripts\setup-scheduled-tasks.bat
 ```
 
@@ -122,7 +122,7 @@ Die Text-Extraktion erfolgt **nicht** direkt beim Upload, sondern asynchron übe
 **Einrichtung:**
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-extract-text-worker-task.ps1
 ```
 
@@ -176,7 +176,7 @@ php scripts\jobs\extract-text-worker.php
 **Einrichtung:**
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-activity-log-maintenance-job.ps1
 ```
 
@@ -203,7 +203,7 @@ Get-ScheduledTask -TaskName "TOM3-ActivityLog-Maintenance" | Get-ScheduledTaskIn
 **Einrichtung:**
 
 ```batch
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 scripts\setup-scheduled-tasks.bat
 ```
 
@@ -223,7 +223,7 @@ scripts\setup-scheduled-tasks.bat
 **Einrichtung:**
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-clamav-scan-worker.ps1
 ```
 
@@ -258,7 +258,7 @@ Manchmal bleiben Blobs im `pending` Status, obwohl:
 **Einrichtung:**
 
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker-schtasks.ps1
 ```
 
@@ -306,37 +306,37 @@ php scripts\jobs\fix-pending-scans.php
 
 **Neo4j Sync Worker:**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-neo4j-sync-automation.ps1
 ```
 
 **Activity-Log Wartung:**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-activity-log-maintenance-job.ps1
 ```
 
 **Extract Text Worker:**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-extract-text-worker-task.ps1
 ```
 
 **ClamAV Scan Worker (wenn aktiv):**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-clamav-scan-worker.ps1
 ```
 
 **Fix Pending Scans Worker (empfohlen):**
 ```powershell
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 powershell -ExecutionPolicy Bypass -File scripts\setup-fix-pending-scans-worker-schtasks.ps1
 ```
 
 **MySQL Tasks:**
 ```batch
-cd C:\xampp\htdocs\TOM3
+cd C:\xampp\htdocs\TOM3_T
 scripts\setup-scheduled-tasks.bat
 ```
 

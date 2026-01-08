@@ -34,6 +34,7 @@ class Neo4jService
                 // Füge Document Root Pfade hinzu (nur wenn gesetzt)
                 if (isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT'])) {
                     $docRoot = $_SERVER['DOCUMENT_ROOT'];
+                    $possiblePaths[] = $docRoot . '/TOM3_T/config/database.php';
                     $possiblePaths[] = $docRoot . '/TOM3/config/database.php';
                     $possiblePaths[] = $docRoot . '/tom3/config/database.php';
                     // Prüfe auch ohne TOM3 (falls direkt im htdocs)

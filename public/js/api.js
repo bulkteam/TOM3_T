@@ -658,6 +658,10 @@ class TOM3API {
             method: 'POST'
         });
     }
+    
+    async getWorkItem(workItemUuid) {
+        return this.request(`/work-items/${workItemUuid}`);
+    }
 
     // Monitoring
     async getMonitoringStatus() {

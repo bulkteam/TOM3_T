@@ -29,14 +29,27 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
-$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$path = preg_replace('#^/tom3/public#i', '', $path);
-$path = preg_replace('#^/api/access-tracking/?|^access-tracking/?#', '', $path);
-$path = trim($path, '/');
-$parts = explode('/', $path);
 
-$entityType = $parts[0] ?? null; // 'org' | 'person'
-$action = $parts[1] ?? null; // 'recent' | 'track'
+// VERWENDE VARIABLEN AUS INDEX.PHP ROUTER
+// $id entspricht dem Entity-Typ (org, person, document)
+// $action entspricht der Aktion (recent, track)
+// Wenn diese Datei direkt aufgerufen würde (was oben verhindert wird), wären sie null.
+$entityType = $id ?? null;
+// $action ist bereits $action
+
+// Fallback für Robustheit, falls Router-Logik sich ändert
+if (!$entityType) {
+    // Versuche Pfad manuell zu parsen, aber OHNE hardcodierten Base-Pfad
+    // Wir nehmen an, der Pfad endet auf /access-tracking/{entity}/{action}
+    $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    $parts = explode('/', trim($path, '/'));
+    // Suche nach 'access-tracking' und nimm die Teile danach
+    $index = array_search('access-tracking', $parts);
+    if ($index !== false && isset($parts[$index + 1])) {
+        $entityType = $parts[$index + 1];
+        $action = $parts[$index + 2] ?? null;
+    }
+}
 
 // Validiere Entity-Typ
 if (!in_array($entityType, ['org', 'person', 'document'])) {
@@ -97,5 +110,3 @@ if ($action === 'recent') {
 } else {
     jsonError('Action not found', 404);
 }
-
-

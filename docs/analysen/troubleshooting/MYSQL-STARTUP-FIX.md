@@ -46,10 +46,10 @@ Falls MySQL-Probleme auftreten, führe manuell aus:
 
 ```batch
 # Windows Batch
-C:\xampp\htdocs\TOM3\scripts\ensure-mysql-running.bat
+C:\xampp\htdocs\TOM3_T\scripts\ensure-mysql-running.bat
 
 # PowerShell
-powershell -ExecutionPolicy Bypass -File C:\xampp\htdocs\TOM3\scripts\ensure-mysql-running.ps1
+powershell -ExecutionPolicy Bypass -File C:\xampp\htdocs\TOM3_T\scripts\ensure-mysql-running.ps1
 ```
 
 ### Als Scheduled Task
@@ -59,7 +59,7 @@ Für automatische Prüfung beim Systemstart:
 1. Öffne "Aufgabenplanung" (Task Scheduler)
 2. Erstelle neue Aufgabe
 3. Trigger: "Beim Anmelden" oder "Beim Starten des Computers"
-4. Aktion: `C:\xampp\htdocs\TOM3\scripts\ensure-mysql-running.bat`
+4. Aktion: `C:\xampp\htdocs\TOM3_T\scripts\ensure-mysql-running.bat`
 5. Als Administrator ausführen
 
 ## Was passiert beim App-Start?

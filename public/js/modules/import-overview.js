@@ -44,7 +44,7 @@ export class ImportOverviewModule {
      */
     async loadBatchesList() {
         try {
-            const response = await fetch('/tom3/public/api/import/batches');
+            const response = await fetch(`${window.API?.baseUrl || '/api'}/import/batches`);
             if (!response.ok) {
                 throw new Error('Fehler beim Laden der Batches');
             }

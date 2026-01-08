@@ -87,7 +87,7 @@ export class ImportUploadModule {
         progressText.textContent = 'Wird hochgeladen...';
         
         try {
-            const response = await this.importModule.fetchWithToken('/tom3/public/api/import/upload', {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -163,7 +163,7 @@ export class ImportUploadModule {
             Utils.showInfo('Template wird angewendet...');
             
             const response = await this.importModule.fetchWithToken(
-                `/tom3/public/api/import/batch/${this.importModule.currentBatch}/apply-template`,
+                `${window.API?.baseUrl || '/api'}/import/batch/${this.importModule.currentBatch}/apply-template`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

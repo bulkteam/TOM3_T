@@ -440,8 +440,16 @@ export class DocumentSearchModule {
                 this.loadRecentDocuments();
             }
             
-            const url = `/tom3/public/api/documents/${documentUuid}/download`;
-            window.open(url, '_blank');
+            const baseUrl = window.API?.baseUrl || '/api';
+            const url = `${baseUrl}/documents/${documentUuid}/download`;
+            
+            // Create a temporary link element
+            const link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         } catch (error) {
             console.error('Download failed:', error);
             Utils.showError('Download fehlgeschlagen');
@@ -458,7 +466,8 @@ export class DocumentSearchModule {
                 this.loadRecentDocuments();
             }
             
-            const url = `/tom3/public/api/documents/${documentUuid}/view`;
+            const baseUrl = window.API?.baseUrl || '/api';
+            const url = `${baseUrl}/documents/${documentUuid}/view`;
             window.open(url, '_blank');
         } catch (error) {
             console.error('View failed:', error);

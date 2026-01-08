@@ -33,7 +33,7 @@ php scripts/partition-activity-log.php --dry-run
 **Automatisierung:**
 ```bash
 # Cron-Job: Monatlich am 1. Tag um 2:00 Uhr
-0 2 1 * * cd /path/to/TOM3 && php scripts/partition-activity-log.php
+0 2 1 * * cd /path/to/TOM3_T && php scripts/partition-activity-log.php
 ```
 
 ### 2. Archivierung
@@ -60,7 +60,7 @@ php scripts/archive-activity-log.php --dry-run
 **Automatisierung:**
 ```bash
 # Cron-Job: Monatlich am 1. Tag um 2:30 Uhr
-30 2 1 * * cd /path/to/TOM3 && php scripts/archive-activity-log.php
+30 2 1 * * cd /path/to/TOM3_T && php scripts/archive-activity-log.php
 ```
 
 ### 3. Kombinierter Wartungs-Job
@@ -93,7 +93,7 @@ php scripts/jobs/activity-log-maintenance.php
 **Automatisierung:**
 ```bash
 # Cron-Job: Monatlich am 1. Tag um 2:00 Uhr
-0 2 1 * * cd /path/to/TOM3 && php scripts/jobs/activity-log-maintenance.php
+0 2 1 * * cd /path/to/TOM3_T && php scripts/jobs/activity-log-maintenance.php
 ```
 
 ## Cron-Job Setup
@@ -108,13 +108,13 @@ crontab -e
 **2. Eintrag hinzufügen:**
 ```bash
 # Activity-Log Wartung: Monatlich am 1. Tag um 2:00 Uhr
-0 2 1 * * cd /path/to/TOM3 && php scripts/jobs/activity-log-maintenance.php >> /path/to/TOM3/logs/cron.log 2>&1
+0 2 1 * * cd /path/to/TOM3_T && php scripts/jobs/activity-log-maintenance.php >> /path/to/TOM3_T/logs/cron.log 2>&1
 ```
 
 **3. Log-Verzeichnis erstellen:**
 ```bash
-mkdir -p /path/to/TOM3/logs
-chmod 755 /path/to/TOM3/logs
+mkdir -p /path/to/TOM3_T/logs
+chmod 755 /path/to/TOM3_T/logs
 ```
 
 ### Windows (Task Scheduler)
@@ -126,8 +126,8 @@ chmod 755 /path/to/TOM3/logs
 - **Trigger:** Monatlich, am 1. Tag, um 2:00 Uhr
 - **Aktion:** Programm starten
   - **Programm:** `C:\xampp\php\php.exe`
-  - **Argumente:** `C:\xampp\htdocs\TOM3\scripts\jobs\activity-log-maintenance.php`
-  - **Arbeitsverzeichnis:** `C:\xampp\htdocs\TOM3`
+  - **Argumente:** `C:\xampp\htdocs\TOM3_T\scripts\jobs\activity-log-maintenance.php`
+  - **Arbeitsverzeichnis:** `C:\xampp\htdocs\TOM3_T`
 
 **3. Erweiterte Einstellungen:**
 - Task auch ausführen, wenn Benutzer nicht angemeldet ist
@@ -139,10 +139,10 @@ Falls Sie die Wartungsaufgaben getrennt ausführen möchten:
 
 ```bash
 # Partitionierung: Monatlich am 1. Tag um 2:00 Uhr
-0 2 1 * * cd /path/to/TOM3 && php scripts/partition-activity-log.php
+0 2 1 * * cd /path/to/TOM3_T && php scripts/partition-activity-log.php
 
 # Archivierung: Monatlich am 1. Tag um 2:30 Uhr
-30 2 1 * * cd /path/to/TOM3 && php scripts/archive-activity-log.php
+30 2 1 * * cd /path/to/TOM3_T && php scripts/archive-activity-log.php
 ```
 
 ## Log-Dateien
@@ -316,7 +316,7 @@ php scripts/partition-activity-log.php
 **Empfohlener Setup:**
 ```bash
 # Einmaliger Cron-Job für alle Wartungsaufgaben
-0 2 1 * * cd /path/to/TOM3 && php scripts/jobs/activity-log-maintenance.php
+0 2 1 * * cd /path/to/TOM3_T && php scripts/jobs/activity-log-maintenance.php
 ```
 
 

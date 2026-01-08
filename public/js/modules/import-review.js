@@ -21,7 +21,7 @@ export class ImportReviewModule {
         
         try {
             // Lade Batch-Status
-            const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.importModule.currentBatch}/stats`);
+            const batchResponse = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${this.importModule.currentBatch}/stats`);
             if (!batchResponse.ok) {
                 throw new Error('Batch nicht gefunden');
             }
@@ -99,7 +99,7 @@ export class ImportReviewModule {
      */
     async loadStagingRows(batchUuid) {
         try {
-            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}/staging-rows`);
+            const response = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${batchUuid}/staging-rows`);
             
             if (!response.ok) {
                 return [];
@@ -211,7 +211,7 @@ export class ImportReviewModule {
         try {
             Utils.showInfo('Setze Disposition...');
             
-            const response = await this.importModule.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/disposition`, {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/staging/${stagingUuid}/disposition`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -679,7 +679,7 @@ export class ImportReviewModule {
             });
             
             // Speichere Korrekturen über API
-            const response = await this.importModule.fetchWithToken(`/tom3/public/api/import/staging/${stagingUuid}/corrections`, {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/staging/${stagingUuid}/corrections`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -719,7 +719,7 @@ export class ImportReviewModule {
         }
         
         // Prüfe, ob es pending Rows gibt, die automatisch approved werden sollen
-        const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.importModule.currentBatch}/stats`);
+        const batchResponse = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${this.importModule.currentBatch}/stats`);
         const batch = await batchResponse.json();
         const batchStats = batch.stats || {};
         const hasPendingRows = (batchStats.pending_rows || 0) > 0;
@@ -756,7 +756,7 @@ export class ImportReviewModule {
             
             Utils.showInfo('Import wird durchgeführt...');
             
-            const response = await this.importModule.fetchWithToken(`/tom3/public/api/import/batch/${this.importModule.currentBatch}/commit`, {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/batch/${this.importModule.currentBatch}/commit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

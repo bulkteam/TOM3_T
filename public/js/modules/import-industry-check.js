@@ -918,7 +918,7 @@ export class ImportIndustryCheckModule {
                 const level3Uuid = level3Select?.value || null;
                 
                 if (level1Uuid && level2Uuid) {
-                    await this.importModule.fetchWithToken(`/tom3/public/api/import/staging/${row.staging_uuid}/industry-decision`, {
+                    await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/staging/${row.staging_uuid}/industry-decision`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

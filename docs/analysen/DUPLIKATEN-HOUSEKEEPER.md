@@ -353,7 +353,7 @@ if ($resource === 'monitoring' && $id === 'duplicates') {
 
 ```powershell
 # Erstellt einen täglichen Windows Task Scheduler Job für Duplikaten-Prüfung
-$action = New-ScheduledTaskAction -Execute "php.exe" -Argument "C:\xampp\htdocs\TOM3\scripts\check-duplicates.php" -WorkingDirectory "C:\xampp\htdocs\TOM3"
+$action = New-ScheduledTaskAction -Execute "php.exe" -Argument "C:\xampp\htdocs\TOM3_T\scripts\check-duplicates.php" -WorkingDirectory "C:\xampp\htdocs\TOM3_T"
 $trigger = New-ScheduledTaskTrigger -Daily -At "02:00"  # Täglich um 2 Uhr
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
@@ -365,7 +365,7 @@ Register-ScheduledTask -TaskName "TOM3-DuplicateCheck" -Action $action -Trigger 
 
 ```batch
 @echo off
-cd /d C:\xampp\htdocs\TOM3
+cd /d C:\xampp\htdocs\TOM3_T
 php scripts\check-duplicates.php >> logs\duplicate-check.log 2>&1
 ```
 

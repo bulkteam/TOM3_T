@@ -73,7 +73,7 @@ Automatische Backups vor kritischen Operationen.
 1. Öffne "Aufgabenplanung" (Task Scheduler)
 2. Erstelle neue Aufgabe
 3. Trigger: "Beim Anmelden" oder "Beim Starten des Computers"
-4. Aktion: `C:\xampp\htdocs\TOM3\scripts\mysql-auto-recovery.bat`
+4. Aktion: `C:\xampp\htdocs\TOM3_T\scripts\mysql-auto-recovery.bat`
 5. Als Administrator ausführen
 
 ### 2. Regelmäßige Backups

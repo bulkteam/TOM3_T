@@ -23,7 +23,7 @@ export class ImportMappingModule {
             let analysis = this.importModule.analysis;
             
             if (!analysis || !analysis.mapping_suggestion) {
-                const batchResponse = await fetch(`/tom3/public/api/import/batch/${this.importModule.currentBatch}/stats`);
+                const batchResponse = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${this.importModule.currentBatch}/stats`);
                 if (!batchResponse.ok) {
                     throw new Error('Batch nicht gefunden');
                 }
@@ -237,7 +237,7 @@ export class ImportMappingModule {
                 return;
             }
             
-            const response = await this.importModule.fetchWithToken(`/tom3/public/api/import/mapping/${this.importModule.currentBatch}`, {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/mapping/${this.importModule.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mapping_config: mappingConfig })
@@ -272,7 +272,7 @@ export class ImportMappingModule {
                 throw new Error('Kein Mapping gefunden. Bitte speichern Sie zuerst das Mapping.');
             }
             
-            const stagingResponse = await this.importModule.fetchWithToken(`/tom3/public/api/import/staging/${this.importModule.currentBatch}`, {
+            const stagingResponse = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/staging/${this.importModule.currentBatch}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -320,7 +320,7 @@ export class ImportMappingModule {
         try {
             Utils.showInfo('Lade Analyse-Daten...');
             
-            const response = await this.importModule.fetchWithToken(`/tom3/public/api/import/analyze`, {
+            const response = await this.importModule.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -340,7 +340,7 @@ export class ImportMappingModule {
             
         } catch (error) {
             console.error('Error reloading analysis:', error);
-            const batchResponse = await fetch(`/tom3/public/api/import/batch/${batchUuid}/stats`);
+            const batchResponse = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${batchUuid}/stats`);
             if (batchResponse.ok) {
                 const batch = await batchResponse.json();
                 if (batch.mapping_config) {

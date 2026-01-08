@@ -7,6 +7,10 @@
 
 declare(strict_types=1);
 
+// Definiere Router-Flag (wird von allen API-Handlern geprüft)
+// MUSS vor den requires stehen, da api-security.php -> base-api-handler.php das Flag prüft
+define('TOM3_API_ROUTER', true);
+
 // Unterdrücke Deprecation-Warnungen von laudis/neo4j-php-client (PHP 8.1+ Kompatibilität)
 // Dies muss VOR dem Autoloading geschehen, da die Klasse beim Laden bereits den Fehler wirft
 $oldErrorReporting = error_reporting();
@@ -18,9 +22,6 @@ ini_set('log_errors', '1');
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/api-security.php';
-
-// Definiere Router-Flag (wird von allen API-Handlern geprüft)
-define('TOM3_API_ROUTER', true);
 
 // Prüfe APP_ENV (setzt Default auf 'local' wenn nicht gesetzt)
 requireAppEnv();

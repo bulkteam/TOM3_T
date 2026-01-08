@@ -130,7 +130,7 @@ export class ImportModule {
         try {
             const page = document.getElementById('page-import');
             
-            const response = await fetch(`/tom3/public/api/import/batch/${batchUuid}/stats`);
+            const response = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${batchUuid}/stats`);
             if (!response.ok) {
                 throw new Error('Batch nicht gefunden');
             }
@@ -250,7 +250,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Lade Analyse-Daten...');
             
-            const response = await this.fetchWithToken(`/tom3/public/api/import/analyze`, {
+            const response = await this.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -270,7 +270,7 @@ export class ImportModule {
             
         } catch (error) {
             console.error('Error reloading analysis:', error);
-            const batchResponse = await fetch(`/tom3/public/api/import/batch/${batchUuid}/stats`);
+            const batchResponse = await fetch(`${window.API?.baseUrl || '/api'}/import/batch/${batchUuid}/stats`);
             if (batchResponse.ok) {
                 const batch = await batchResponse.json();
                 if (batch.mapping_config) {
@@ -543,7 +543,7 @@ export class ImportModule {
         try {
             Utils.showInfo('Importiere Daten in Staging...');
             
-            const response = await this.fetchWithToken(`/tom3/public/api/import/batch/${this.currentBatch}/import-to-staging`, {
+            const response = await this.fetchWithToken(`${window.API?.baseUrl || '/api'}/import/batch/${this.currentBatch}/import-to-staging`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });

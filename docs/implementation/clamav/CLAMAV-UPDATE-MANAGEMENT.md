@@ -312,7 +312,7 @@ exit(0);
 **scripts/setup-clamav-monitoring.ps1:**
 ```powershell
 # Erstellt Task für ClamAV-Update-Monitoring
-$action = New-ScheduledTaskAction -Execute "php" -Argument "C:\xampp\htdocs\TOM3\scripts\jobs\check-clamav-updates.php"
+$action = New-ScheduledTaskAction -Execute "php" -Argument "C:\xampp\htdocs\TOM3_T\scripts\jobs\check-clamav-updates.php"
 $trigger = New-ScheduledTaskTrigger -Daily -At 3AM
 Register-ScheduledTask -TaskName "TOM3-ClamAV-Update-Check" -Action $action -Trigger $trigger
 ```

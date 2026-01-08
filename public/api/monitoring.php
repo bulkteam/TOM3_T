@@ -186,6 +186,7 @@ function checkNeo4j(): array
                     dirname(__DIR__, 2) . '/config/database.php',  // Alternative
                     getcwd() . '/config/database.php',  // Vom aktuellen Arbeitsverzeichnis
                     $_SERVER['DOCUMENT_ROOT'] . '/TOM3/config/database.php',  // Von Document Root
+                    $_SERVER['DOCUMENT_ROOT'] . '/TOM3_T/config/database.php', // New Path
                     $_SERVER['DOCUMENT_ROOT'] . '/tom3/config/database.php'  // Case-insensitive
                 ];
                 

@@ -39,7 +39,7 @@
 
 Führe manuell aus:
 ```batch
-C:\xampp\htdocs\TOM3\scripts\mysql-auto-recovery.bat
+C:\xampp\htdocs\TOM3_T\scripts\mysql-auto-recovery.bat
 ```
 
 **Oder** verwende das neue Start-Skript mit Auto-Recovery:
@@ -51,9 +51,9 @@ C:\xampp\mysql_start_with_recovery.bat
 
 1. Stelle sicher, dass MySQL läuft
 2. Führe aus:
-   ```batch
-   C:\xampp\htdocs\TOM3\scripts\mysql-backup.bat
-   ```
+```batch
+C:\xampp\htdocs\TOM3_T\scripts\mysql-backup.bat
+```
 3. Prüfe ob Backup erstellt wurde:
    - `C:\xampp\mysql\backup\tom_backup_YYYYMMDD_HHMMSS.sql`
 
@@ -61,7 +61,7 @@ C:\xampp\mysql_start_with_recovery.bat
 
 **Als Administrator ausführen:**
 ```batch
-C:\xampp\htdocs\TOM3\scripts\setup-scheduled-tasks.bat
+C:\xampp\htdocs\TOM3_T\scripts\setup-scheduled-tasks.bat
 ```
 
 Dies erstellt:
@@ -79,9 +79,9 @@ Falls du das Recovery-Skript direkt in XAMPP integrieren möchtest:
 
 1. Öffne `C:\xampp\mysql_start.bat`
 2. Füge am Anfang hinzu:
-   ```batch
-   call "C:\xampp\htdocs\TOM3\scripts\mysql-auto-recovery.bat"
-   ```
+```batch
+call "C:\xampp\htdocs\TOM3_T\scripts\mysql-auto-recovery.bat"
+```
 
 ## 📊 Monitoring
 

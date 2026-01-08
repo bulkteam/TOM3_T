@@ -54,3 +54,6 @@ build/
 
 # Externe Daten
 externe Daten/
+ 
+# Misc sensitive runtime files
+cookies.txt

@@ -41,28 +41,22 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Wenn von index.php aufgerufen, verwende die bereits geparsten Variablen
-// Ansonsten parse den Pfad selbst
-if (isset($id) || isset($action)) {
-    // Von index.php: $id ist der erste Teil nach 'auth' (z.B. 'current')
-    $action = $id ?? $action ?? null;
-} else {
-    // Direkter Aufruf: Parse den Pfad selbst
-    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    $path = parse_url($requestUri, PHP_URL_PATH) ?? '';
-    
-    // Entferne /TOM3/public oder /tom3/public falls vorhanden (case-insensitive)
-    $path = preg_replace('#^/tom3/public#i', '', $path);
-    // Entferne /api prefix
-    $path = preg_replace('#^/api/?|^api/?#', '', $path);
-    $path = trim($path, '/');
-    
-    $pathParts = explode('/', $path);
-    // Filtere 'auth' heraus, da wir bereits wissen dass wir in auth.php sind
-    $pathParts = array_filter($pathParts, function($p) { return $p !== 'auth' && $p !== ''; });
-    $pathParts = array_values($pathParts);
-    
-    $action = $pathParts[0] ?? null; // First part after 'auth' is the action
+// VERWENDE VARIABLEN AUS INDEX.PHP ROUTER
+// $id ist der erste Teil nach 'auth' (z.B. 'current')
+// Wenn diese Datei direkt aufgerufen würde, wären sie null.
+$action = $id ?? $action ?? null;
+
+// Fallback für Robustheit, falls Router-Logik sich ändert
+if (!$action) {
+    // Versuche Pfad manuell zu parsen, aber OHNE hardcodierten Base-Pfad
+    // Wir nehmen an, der Pfad endet auf /auth/{action}
+    $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    $parts = explode('/', trim($path, '/'));
+    // Suche nach 'auth' und nimm die Teile danach
+    $index = array_search('auth', $parts);
+    if ($index !== false && isset($parts[$index + 1])) {
+        $action = $parts[$index + 1];
+    }
 }
 
 // Debug: Log action for troubleshooting (remove in production)
@@ -98,133 +92,96 @@ try {
                             // Person-Management
                             'person.read', 'person.write', 'person.delete',
                             // Document-Management
-                            'document.read', 'document.upload', 'document.delete',
-                            // Import (nur Upload/Review, nicht Backend-Operationen)
-                            'import.upload', 'import.review',
+                            'document.read', 'document.write', 'document.delete', 'document.archive',
                             // Case-Management
-                            'case.read', 'case.write', 'case.delete',
-                            // Project-Management
-                            'project.read', 'project.write', 'project.delete',
+                            'case.read', 'case.write', 'case.close',
+                            // Import-Management
+                            'import.read', 'import.write',
                             // Admin
-                            'admin.manage_users', 'admin.manage_roles', 'admin.view_monitoring', 'admin.export_data'
+                            'admin.users', 'admin.config', 'admin.logs'
                         ];
                         
-                        // Filtere nur die Capabilities, die der User hat UND Frontend-relevant sind
-                        $capabilities = array_intersect($allCapabilities, $frontendCapabilities);
+                        // Filtere Capabilities
+                        $capabilities = array_values(array_unique(array_intersect($allCapabilities, $frontendCapabilities)));
                         
-                        // Minimal-Response (keine PII wie Email, keine Role-Details)
-                        // WICHTIG: user_id muss vorhanden sein für Frontend-Kompatibilität
-                        $response = [
-                            'authenticated' => true,
-                            'user_id' => (string)$userId, // Als String für Konsistenz
-                            'user' => [
-                                'id' => $userId,
-                                'user_id' => (string)$userId, // Für Frontend-Kompatibilität
-                                'name' => $user['name'] ?? 'Unknown',
-                                'email' => $user['email'] ?? null,
-                                'displayName' => $user['name'] ?? 'Unknown',
-                                'roles' => $userRoles
-                            ],
-                            'capabilities' => array_values($capabilities) // array_values für konsistente Indizierung
-                        ];
+                        // Add some basic info for UI
+                        $user['capabilities'] = $capabilities;
                         
-                        // Optional: Roles für Backward Compatibility (kann später entfernt werden)
-                        if (!empty($userRoles)) {
-                            $response['roles'] = $userRoles;
-                        }
-                        
-                        $json = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                        if ($json === false) {
-                            throw new \RuntimeException('JSON encoding failed: ' . json_last_error_msg());
-                        }
-                        echo $json;
+                        jsonResponse($user);
                     } else {
-                        http_response_code(401);
-                        header('Cache-Control: no-store, no-cache, must-revalidate, private');
-                        echo json_encode([
-                            'authenticated' => false,
-                            'error' => 'Not authenticated'
-                        ]);
+                        // Kein User eingeloggt -> 401 Unauthorized
+                        // WICHTIG: Frontend erwartet 401 um Login-Page zu zeigen
+                        jsonError('Not authenticated', 401);
                     }
-                } catch (\Exception $e) {
-                    handleApiException($e, 'Get current user');
-                }
-            } elseif ($action === 'users' && $auth->isDevMode()) {
-                // GET /api/auth/users - Liste aller User (nur Dev-Modus)
-                try {
-                    $users = $auth->getActiveUsers();
-                    echo json_encode($users);
-                } catch (\Exception $e) {
-                    handleApiException($e, 'Get users');
+                } catch (Exception $e) {
+                    // Logge den Fehler, aber sende 401 an den Client damit er nicht abstürzt
+                    error_log("Auth current user error: " . $e->getMessage());
+                    jsonError('Authentication error', 401);
                 }
             } elseif ($action === 'csrf-token') {
-                // GET /api/auth/csrf-token - CSRF-Token für Frontend
-                try {
-                    $token = generateCsrfToken();
-                    echo json_encode(['token' => $token]);
-                } catch (\Exception $e) {
-                    handleApiException($e, 'Generate CSRF token');
+                // GET /api/auth/csrf-token - Neuen CSRF-Token holen
+                // Erfordert Session
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
                 }
-            } else {
-                http_response_code(404);
-                echo json_encode(['error' => 'Not found', 'action' => $action]);
-            }
-        break;
-        
-    case 'POST':
-        if ($action === 'login' && $auth->isDevMode()) {
-            // POST /api/auth/login - Login (nur Dev-Modus)
-            // Rate-Limit: 5 Versuche pro IP pro Minute
-            if (!$rateLimiter->checkIpLimit('auth-login', 5, 60)) {
-                http_response_code(429);
-                echo json_encode([
-                    'error' => 'Rate limit exceeded',
-                    'message' => 'Too many login attempts. Please try again later.'
-                ]);
-                exit;
-            }
-            
-            try {
-                $data = json_decode(file_get_contents('php://input'), true);
-                $userId = (int)($data['user_id'] ?? 0);
                 
-                if ($auth->login($userId)) {
-                    $user = $auth->getCurrentUser();
-                    echo json_encode([
-                        'success' => true,
-                        'user' => $user
-                    ]);
-                } else {
-                    http_response_code(401);
-                    echo json_encode([
-                        'success' => false,
-                        'error' => 'Invalid user'
-                    ]);
+                if (empty($_SESSION['csrf_token'])) {
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 }
-            } catch (\Exception $e) {
-                handleApiException($e, 'Login failed');
+                
+                jsonResponse(['token' => $_SESSION['csrf_token']]);
+            } else {
+                jsonError('Endpoint not found', 404);
             }
-        } elseif ($action === 'logout') {
-            // POST /api/auth/logout - Logout
-            try {
-                $auth->logout();
-                echo json_encode(['success' => true]);
-            } catch (\Exception $e) {
-                handleApiException($e, 'Logout failed');
-            }
-        } else {
-            http_response_code(404);
-            echo json_encode(['error' => 'Not found']);
-        }
-        break;
-        
-        default:
-            http_response_code(405);
-            echo json_encode(['error' => 'Method not allowed']);
             break;
+
+        case 'POST':
+            if ($action === 'login') {
+                // POST /api/auth/login
+                $data = json_decode(file_get_contents('php://input'), true);
+                $username = $data['username'] ?? '';
+                $password = $data['password'] ?? '';
+                
+                if ($auth->isDevMode() && isset($data['user_id'])) {
+                    $userId = (int)$data['user_id'];
+                    if ($auth->login($userId)) {
+                        $user = $auth->getCurrentUser();
+                        jsonResponse(['success' => true, 'user' => $user]);
+                    } else {
+                        jsonError('Invalid user', 401);
+                    }
+                    break;
+                }
+                
+                if (!$username || !$password) {
+                    jsonError('Username and password required', 400);
+                }
+                
+                // Rate Limiting prüfen
+                $ip = $_SERVER['REMOTE_ADDR'];
+                if (!$rateLimiter->checkLimit($ip, 'login_attempt', 5, 300)) { // 5 Versuche pro 5 Min
+                    jsonError('Too many login attempts. Please try again later.', 429);
+                }
+                
+                if ($auth->login($username, $password)) {
+                    // Login erfolgreich
+                    $user = $auth->getCurrentUser();
+                    jsonResponse(['success' => true, 'user' => $user]);
+                } else {
+                    jsonError('Invalid credentials', 401);
+                }
+            } elseif ($action === 'logout') {
+                // POST /api/auth/logout
+                $auth->logout();
+                jsonResponse(['success' => true]);
+            } else {
+                jsonError('Endpoint not found', 404);
+            }
+            break;
+
+        default:
+            jsonError('Method not allowed', 405);
     }
-} catch (\Throwable $e) {
-    handleApiException($e, 'Unhandled auth error');
+} catch (Exception $e) {
+    handleApiException($e, 'Auth API Error');
 }
-
-
