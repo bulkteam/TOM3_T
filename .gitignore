@@ -29,6 +29,9 @@ config/users.php
 tmp/
 temp/
 *.tmp
+ 
+# PHPStan cache
+var/phpstan/
 
 # OS
 Thumbs.db
