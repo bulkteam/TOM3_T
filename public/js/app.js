@@ -19,6 +19,7 @@ import { ImportModule } from './modules/import.js';
 import { InsideSalesModule } from './modules/inside-sales.js';
 import { SalesOpsModule } from './modules/sales-ops.js';
 import { Utils } from './modules/utils.js';
+import { ActivityLogModule } from './modules/activity-log.js';
 
 class TOM3App {
     constructor() {
@@ -40,6 +41,7 @@ class TOM3App {
         this.import = new ImportModule(this);
         this.insideSales = new InsideSalesModule(this);
         this.salesOps = new SalesOpsModule(this);
+        this.activityLog = new ActivityLogModule(this);
         
         // Module-Referenz für Zugriff von anderen Modulen
         this.modules = {

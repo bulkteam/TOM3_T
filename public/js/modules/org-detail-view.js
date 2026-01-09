@@ -140,6 +140,7 @@ export class OrgDetailViewModule {
                     <button class="org-detail-tab" data-tab="dokumente">
                         Dokumente<span id="org-documents-count-badge" class="org-detail-tab-badge" style="display: none;"></span>
                     </button>
+                    <button class="org-detail-tab" data-tab="aktivitaeten">Aktivitäten</button>
                 </div>
                 
                 <!-- Tab Content -->
@@ -391,6 +392,19 @@ export class OrgDetailViewModule {
                     ` : `
                         <div class="org-detail-empty">Keine USt-IDs vorhanden</div>
                     `}
+                </div>
+                
+                <!-- Aktivitäten Tab -->
+                <div class="org-detail-tab-content" data-tab-content="aktivitaeten">
+                    <div class="org-detail-section">
+                        <div class="org-detail-section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h4>Aktivitäten</h4>
+                            <button class="btn btn-sm btn-primary" onclick="app.activityLog.showEntityActivityLog('org','${orgUuid}','${Utils.escapeHtml(org.name || '')}')">Alle Aktivitäten anzeigen</button>
+                        </div>
+                        <div id="org-activities-container" class="org-detail-list">
+                            <div class="org-detail-empty">Klicke auf „Alle Aktivitäten anzeigen“, um die Timeline zu öffnen.</div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="org-detail-section">

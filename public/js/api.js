@@ -453,6 +453,13 @@ class TOM3API {
         return this.request(`/activity-log?${params.toString()}`);
     }
     
+    // Activity-Log für eine Entität
+    async getEntityActivities(entityType, entityUuid, limit = 100) {
+        const safeType = encodeURIComponent(entityType);
+        const safeUuid = encodeURIComponent(entityUuid);
+        return this.request(`/activity-log/entity/${safeType}/${safeUuid}?limit=${limit}`);
+    }
+    
     async getUserActivities(userId, limit = 50, offset = 0) {
         return this.request(`/activity-log/user/${userId}?limit=${limit}&offset=${offset}`);
     }
